@@ -22,7 +22,7 @@ public class ResourceDownloadTool {
     private static final int MAX_CONCURRENCY = 3;
     private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36";
 
-    @Tool(name = "downloadResource", description = "Download a single image from a URL. Returns the local file path on success.")
+    @Tool(name = "downloadResource", description = "Download a single image from a URL. Returns the local file path on success. Call searchBaiduImages first to get real URLs — do NOT fabricate URLs.")
     public String downloadResource(
             @ToolParam(description = "The URL of the image to download") String url,
             @ToolParam(description = "File name to save as, e.g. image.jpg") String fileName,
@@ -33,27 +33,25 @@ public class ResourceDownloadTool {
         return downloadSingle(url, dir + fileName, t);
     }
 
-    @Tool(name = "downloadImages", description = "Download multiple images concurrently. Input URLs and fileNames as comma-separated lists. Returns local paths for all.")
+    @Tool(name = "downloadImages", description = "Download multiple images concurrently. Pass URL array + file name array, returns local paths. Call searchBaiduImages first, pick 2-3 best URLs, then pass them here. Do NOT fabricate URLs. Failed downloads are skipped automatically.")
     public String downloadImages(
-            @ToolParam(description = "Comma-separated image URLs") String urls,
-            @ToolParam(description = "Comma-separated file names, must match URLs count") String fileNames,
+            @ToolParam(description = "Array of image URLs") String[] urls,
+            @ToolParam(description = "Array of file names, must match URLs length") String[] fileNames,
             @ToolParam(description = "Timeout in ms per image (optional, default 15000)") Integer timeout) {
         int t = (timeout != null && timeout > 0) ? timeout : DEFAULT_TIMEOUT;
-        String[] urlArr = urls.split(",");
-        String[] nameArr = fileNames.split(",");
-        if (urlArr.length != nameArr.length) {
-            return "Error: URLs count (" + urlArr.length + ") != file names count (" + nameArr.length + ")";
+        if (urls.length != fileNames.length) {
+            return "Error: URLs count (" + urls.length + ") != file names count (" + fileNames.length + ")";
         }
 
         String dir = FileConstant.FILE_SAVE_DIR + "/downloads/";
         FileUtil.mkdir(dir);
 
-        int threads = Math.min(urlArr.length, MAX_CONCURRENCY);
+        int threads = Math.min(urls.length, MAX_CONCURRENCY);
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         List<Callable<String>> tasks = new ArrayList<>();
-        for (int i = 0; i < urlArr.length; i++) {
-            String u = urlArr[i].trim();
-            String path = dir + nameArr[i].trim();
+        for (int i = 0; i < urls.length; i++) {
+            String u = urls[i].trim();
+            String path = dir + fileNames[i].trim();
             int finalT = t;
             tasks.add(() -> downloadSingle(u, path, finalT));
         }
@@ -78,22 +76,28 @@ public class ResourceDownloadTool {
     }
 
     private String downloadSingle(String url, String fullPath, int timeout) {
+        // 从 URL 提取源站作为 Referer（绕过图片反盗链）
+        String referer = extractOrigin(url);
+
+        // HEAD 试探（非致命，失败也继续尝试 GET）
         try {
             int status = HttpRequest.head(url)
                     .header("User-Agent", UA)
-                    .timeout(5000)
+                    .header("Referer", referer)
+                    .timeout(HEAD_TIMEOUT)
                     .execute()
                     .getStatus();
             if (status >= 400) {
-                return "FAILED: HTTP " + status + " — " + url;
+                // HEAD 返回 4xx，但继续尝试 GET
             }
-        } catch (Exception e) {
-            return "FAILED: unreachable (" + e.getMessage() + ") — " + url;
+        } catch (Exception ignored) {
+            // HEAD 可能被 CDN 封掉，不阻塞后续 GET
         }
 
         try {
             HttpResponse response = HttpRequest.get(url)
                     .header("User-Agent", UA)
+                    .header("Referer", referer)
                     .timeout(timeout)
                     .execute();
 
@@ -113,6 +117,27 @@ public class ResourceDownloadTool {
             return "OK: " + fullPath.replace("\\", "/");
         } catch (Exception e) {
             return "FAILED: " + e.getMessage() + " — " + url;
+        }
+    }
+
+    /**
+     * 从 URL 提取域名作为 Referer，绕过常见图片 CDN 的反盗链检查
+     */
+    private static String extractOrigin(String url) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String host = uri.getHost();
+            // 百度图库 CDN 需要 Referer 指向 image.baidu.com 才能绕过反盗链
+            if (host != null && (host.contains(".baidu.com") || host.equals("baidu.com"))) {
+                return "https://image.baidu.com/";
+            }
+            int port = uri.getPort();
+            if (port == 80 || port == 443 || port == -1) {
+                return uri.getScheme() + "://" + host;
+            }
+            return uri.getScheme() + "://" + host + ":" + port;
+        } catch (Exception e) {
+            return "https://image.baidu.com";
         }
     }
 }

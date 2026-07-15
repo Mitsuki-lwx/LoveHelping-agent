@@ -4,6 +4,7 @@ import cn.hutool.core.io.FileUtil;
 import cn.lwx.lwxaiagent.constant.FileConstant;
 import com.itextpdf.io.image.ImageDataFactory;
 import com.itextpdf.kernel.colors.ColorConstants;
+import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.font.PdfFont;
 import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
@@ -16,7 +17,6 @@ import com.itextpdf.layout.element.ListItem;
 import com.itextpdf.layout.element.Paragraph;
 import com.itextpdf.layout.element.Text;
 import com.itextpdf.layout.properties.TextAlignment;
-import com.itextpdf.layout.properties.UnitValue;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -44,7 +46,7 @@ public class PDFGenerationTool {
     private static final Pattern HORIZONTAL_RULE = Pattern.compile("^---\\s*$");
     private static final Pattern IMAGE_PATTERN = Pattern.compile("^!\\[(.*?)\\]\\((.*?)\\)$");
 
-    @Tool(description = "Generate a styled PDF file with markdown content. Supports headings, bold, lists, and images.")
+    @Tool(description = "Generate a styled PDF with markdown content. Supports: headings (# ## ###), bold (**text**), lists (- / 1.), images (![](local_path)). Rules: ① imagePath param supports ONE cover image only — embed multiple images (4-6) using ![](path) in markdown body; ② duplicate image paths are auto-deduplicated; ③ emoji and markdown tables are NOT supported (auto-removed); ④ use simple filenames without special chars; ⑤ image paths come from downloadImages output")
     public String generatePDF(
             @ToolParam(description = "File name (e.g. plan.pdf)") String fileName,
             @ToolParam(description = "Content in markdown format") String content,
@@ -54,7 +56,7 @@ public class PDFGenerationTool {
         try {
             FileUtil.mkdir(fileDir);
 
-            content = removeEmoji(content);
+            content = sanitizeContent(content);
 
             try (PdfWriter writer = new PdfWriter(filePath);
                  PdfDocument pdf = new PdfDocument(writer);
@@ -63,29 +65,40 @@ public class PDFGenerationTool {
                 PdfFont font = PdfFontFactory.createFont("STSongStd-Light", "UniGB-UCS2-H");
                 document.setMargins(50, 50, 50, 50);
 
+                // 用于记录已渲染的图片 URL，避免重复
+                Set<String> seenImages = new HashSet<>();
+
                 String title = extractTitle(content);
                 if (title != null) {
+                    // 封面标题区域
+                    Div coverDiv = new Div();
+                    coverDiv.setBackgroundColor(new DeviceRgb(0xF5, 0xF0, 0xEB));
+                    coverDiv.setPadding(30);
+                    coverDiv.setMarginTop(100);
+                    coverDiv.setMarginBottom(20);
+
                     Paragraph coverTitle = new Paragraph(title)
                             .setFont(font)
                             .setFontSize(TITLE_FONT_SIZE)
                             .setTextAlignment(TextAlignment.CENTER)
-                            .setMarginTop(150);
-                    document.add(coverTitle);
+                            .setFontColor(new DeviceRgb(0x1A, 0x3C, 0x6E));
+                    coverDiv.add(coverTitle);
 
                     Paragraph coverDate = new Paragraph(java.time.LocalDate.now().toString())
                             .setFont(font)
                             .setFontSize(12)
                             .setTextAlignment(TextAlignment.CENTER)
-                            .setMarginTop(20);
-                    document.add(coverDate);
+                            .setMarginTop(10);
+                    coverDiv.add(coverDate);
+                    document.add(coverDiv);
                     document.add(new Paragraph("\n"));
                 }
 
                 if (imagePath != null && !imagePath.isBlank()) {
+                    seenImages.add(imagePath);
                     try {
                         Image img = new Image(ImageDataFactory.create(imagePath));
-                        img.setMaxWidth(UnitValue.createPercentValue(80));
-                        img.setAutoScale(true);
+                        img.scaleToFit(500, 350);
                         document.add(img);
                         document.add(new Paragraph("\n"));
                     } catch (Exception e) {
@@ -93,7 +106,7 @@ public class PDFGenerationTool {
                     }
                 }
 
-                renderMarkdown(document, content, font);
+                renderMarkdown(document, content, font, seenImages);
 
             }
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
@@ -104,18 +117,17 @@ public class PDFGenerationTool {
         }
     }
 
-    private String removeEmoji(String content) {
+    private String sanitizeContent(String content) {
         if (content == null) return null;
-        // 移除会导致 STSong 字体编码问题的 emoji 字符
-        String cleaned = content
-                .replaceAll("[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]", "")  // 代理对（大部分 emoji）
-                .replaceAll("[\\u2600-\\u27BF]", "")  // 杂项符号 & 丁贝符
-                .replaceAll("[\\u2300-\\u23FF]", "")  // 杂项技术符号
-                .replaceAll("[\\uFE00-\\uFE0F]", "")  // 变体选择器
-                .replaceAll("[\\u200D]", "")  // 零宽连字
-                .replaceAll("\\|", " ");  // 表格竖线替换为空格（PDF 不支持 markdown 表格）
-        // 折叠多个空格为一个
-        return cleaned.replaceAll("\\s{3,}", "  ").trim();
+        // 移除 emoji（STSong 字体不支持），替换表格竖线
+        return content
+                .replaceAll("[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]", "")
+                .replaceAll("[\\u2600-\\u27BF]", "")
+                .replaceAll("[\\u2300-\\u23FF]", "")
+                .replaceAll("[\\uFE00-\\uFE0F]", "")
+                .replaceAll("[\\u200D]", "")
+                .replace('|', ' ')
+                .trim();
     }
 
     private String extractTitle(String content) {
@@ -123,10 +135,11 @@ public class PDFGenerationTool {
         return m.find() ? m.group(1).trim() : null;
     }
 
-    private void renderMarkdown(Document document, String content, PdfFont font) {
+    private void renderMarkdown(Document document, String content, PdfFont font, Set<String> seenImages) {
         String[] lines = content.split("\n");
         List currentList = null;
         boolean orderedList = false;
+        boolean isFirstH1 = true;
 
         for (String rawLine : lines) {
             String line = rawLine.trim();
@@ -160,11 +173,15 @@ public class PDFGenerationTool {
                     currentList = null;
                 }
                 String imgPath = imgMatcher.group(2);
+                // 图片去重：同一 URL 只渲染一次
+                if (!seenImages.add(imgPath)) {
+                    continue;
+                }
                 try {
                     Image img = new Image(ImageDataFactory.create(imgPath));
-                    img.setMaxWidth(UnitValue.createPercentValue(90));
-                    img.setAutoScale(true);
+                    img.scaleToFit(500, 400);
                     document.add(img);
+                    document.add(new Paragraph("\n"));
                 } catch (Exception e) {
                     log.warn("PDF markdown 内嵌图片加载失败, path={}: {}", imgPath, e.getMessage());
                 }
@@ -187,12 +204,24 @@ public class PDFGenerationTool {
                 Paragraph heading = new Paragraph()
                         .setFont(font)
                         .setFontSize(size)
-                        .setMarginTop(15)
+                        .setMarginTop(level.length() == 1 ? 25 : 15)
                         .setMarginBottom(8);
+                // H1 标题使用深蓝色
+                if (level.length() == 1) {
+                    heading.setFontColor(new DeviceRgb(0x1A, 0x3C, 0x6E));
+                }
                 for (Text t : parseInline(text, font)) {
                     heading.add(t);
                 }
                 document.add(heading);
+                // H1 底部加分隔线
+                if (level.length() == 1) {
+                    Div lineDiv = new Div();
+                    lineDiv.setHeight(2f);
+                    lineDiv.setBackgroundColor(new DeviceRgb(0x1A, 0x3C, 0x6E));
+                    lineDiv.setMarginBottom(12);
+                    document.add(lineDiv);
+                }
                 continue;
             }
 

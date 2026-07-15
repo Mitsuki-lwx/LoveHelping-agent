@@ -9,11 +9,14 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.deepseek.DeepSeekAssistantMessage;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -76,6 +79,8 @@ public abstract class BaseAgent {
             List<String> results = new ArrayList<>();
             // 累积文件输出（仅在最终结果展示）
             StringBuilder pendingFileOutput = new StringBuilder();
+            boolean fileOutputShown = false;
+            Set<String> seenFileOutputs = new HashSet<>();
             //步骤执行循环，直到完成或出错
             try {
                 for (int i = 0; i < maxSteps&& this.state == AgentState.RUNNING; i++) {
@@ -93,7 +98,7 @@ public abstract class BaseAgent {
                     boolean toolsCalled = isToolsCalled();
 
                     // 累积文件输出（仅用于最终结果展示）
-                    String fileOutput = extractFileOutput(stepResult);
+                    String fileOutput = extractFileOutput(stepResult, seenFileOutputs);
                     if (toolsCalled && fileOutput != null) {
                         if (pendingFileOutput.length() > 0) pendingFileOutput.append("\n");
                         pendingFileOutput.append(fileOutput);
@@ -106,19 +111,17 @@ public abstract class BaseAgent {
 
                     String displayText;
                     if (toolsCalled) {
-                        // 中间思考步骤：如果本轮生成了文件，直接展示（避免 AI 持续调工具导致永不进入最终结果分支）
-                        StringBuilder sb = new StringBuilder("💭 ");
-                        sb.append(thought != null ? thought : "");
-                        if (fileOutput != null) {
-                            sb.append("\n\n").append(fileOutput);
-                        }
-                        displayText = sb.toString();
+                        // 中间思考步骤：只展示思考内容，过滤掉 URL 列表等噪音，文件链接统一在最终结果展示
+                        String text = thought != null ? removeUrlLines(thought) : "";
+                        displayText = text.isEmpty() ? "" : "💭 " + text;
                     } else {
-                        // 最终答案：追加累积的文件输出
+                        // 最终答案：用模型可视文本（而非 reasoning），追加累积的文件输出
+                        String answerText = extractLastText();
                         StringBuilder sb = new StringBuilder("✨ ");
-                        sb.append(thought != null ? thought : stepResult);
+                        sb.append(answerText != null ? answerText : stepResult);
                         if (pendingFileOutput.length() > 0) {
                             sb.append("\n\n").append(pendingFileOutput);
+                            fileOutputShown = true;
                         }
                         displayText = sb.toString();
                     }
@@ -129,6 +132,10 @@ public abstract class BaseAgent {
                     //输出思考过程给sseEmitter，而不是原始工具数据
                     emitter.send("\n" + displayText);
 
+                }
+                // 循环结束：如果还有未展示的文件输出（如调用了 terminate 工具结束），补发
+                if (pendingFileOutput.length() > 0 && !fileOutputShown) {
+                    emitter.send("\n✨ 文件已生成，点击链接查看：\n\n" + pendingFileOutput);
                 }
                 if (currentStep >= maxSteps) {
                     this.state = AgentState.FINISHED;
@@ -174,9 +181,35 @@ public abstract class BaseAgent {
     public void cleanup(){};
 
     /**
-     * 从消息列表中提取最新的 AssistantMessage 文本（即模型的思考过程）
+     * 外部停止 Agent 执行：设置状态为 FINISHED，循环会在当前 step 结束后退出
+     */
+    public void stop() {
+        this.state = AgentState.FINISHED;
+    }
+
+    /**
+     * 从消息列表中提取最新的 AssistantMessage 推理内容（DeepSeek 的 actual reasoning）
+     * 优先取 DeepSeekAssistantMessage.getReasoningContent()，fallback 到 getText()
      */
     private String extractLastThought() {
+        for (int i = messageList.size() - 1; i >= 0; i--) {
+            Message msg = messageList.get(i);
+            if (msg instanceof DeepSeekAssistantMessage) {
+                String r = ((DeepSeekAssistantMessage) msg).getReasoningContent();
+                if (r != null && !r.isBlank()) return r;
+                return ((AssistantMessage) msg).getText();
+            }
+            if (msg instanceof AssistantMessage) {
+                return ((AssistantMessage) msg).getText();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 提取最新 AssistantMessage 的可视文本内容（getText），与 reasoningContent 区分
+     */
+    private String extractLastText() {
         for (int i = messageList.size() - 1; i >= 0; i--) {
             Message msg = messageList.get(i);
             if (msg instanceof AssistantMessage) {
@@ -203,9 +236,9 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 从 stepResult 中提取可访问的文件 URL（包含 /api/ 的链接）
+     * 从 stepResult 中提取可访问的文件 URL（包含 /api/ 的链接），已包含的路径跳过
      */
-    private String extractFileOutput(String stepResult) {
+    private String extractFileOutput(String stepResult, Set<String> seenOutputs) {
         if (stepResult == null || stepResult.isEmpty()) return null;
         StringBuilder sb = new StringBuilder();
         // JSON 序列化会将 \n 转义为 literal \\n，先还原
@@ -222,6 +255,10 @@ public abstract class BaseAgent {
                 String info = (idx >= 0) ? trimmed.substring(idx + 7).trim() : trimmed;
                 // 去掉行首的冗余 📄 前缀
                 info = info.replaceAll("^📄\\s*", "");
+                // 去重：如果这个路径已经展示过，跳过
+                if (!seenOutputs.add(info)) {
+                    continue;
+                }
                 if (sb.length() > 0) sb.append("\n");
                 sb.append(info);
             }
@@ -244,5 +281,26 @@ public abstract class BaseAgent {
             sb.append(line);
         }
         return sb.toString();
+    }
+
+    /**
+     * 移除思考内容中的 URL 行和工具执行状态行（对用户无意义）
+     */
+    private String removeUrlLines(String text) {
+        if (text == null || text.isEmpty()) return text;
+        StringBuilder sb = new StringBuilder();
+        for (String line : text.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            // 跳过任何包含 URL 的行
+            if (trimmed.contains("http://") || trimmed.contains("https://")) continue;
+            // 跳过工具结果状态行："N张成功了，N张失败了" 或 "现在有N张成功下载的图片"
+            if (trimmed.matches(".*\\d+\\s*张.*(?:成功|失败).*")) continue;
+            // 跳过纯本地路径列举行
+            if (trimmed.matches(".*[A-Za-z]:[/\\\\].*")) continue;
+            if (sb.length() > 0) sb.append("\n");
+            sb.append(line);
+        }
+        return sb.toString().trim();
     }
 }

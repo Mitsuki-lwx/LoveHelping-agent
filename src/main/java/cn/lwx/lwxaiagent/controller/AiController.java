@@ -9,10 +9,13 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
+
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 public class AiController {
@@ -24,6 +27,9 @@ public class AiController {
 
     @Resource
     private ChatModel deepseekChatModel;
+
+    private final ConcurrentHashMap<String, LoveManus> activeSessions = new ConcurrentHashMap<>();
+
     @GetMapping("Love_app/chat/sync")
     public String chatSync(String prompt,String chatId) {
         return loveApp.doChat(prompt,chatId);
@@ -68,9 +74,34 @@ public class AiController {
     }
 
     @GetMapping(value = "Love_app/chat/LoveManus")
-    public SseEmitter doChatWithLoveManus(String message) {
-        LoveManus loveManus = new LoveManus(toolCallbacks,deepseekChatModel);
-        //获取恋爱咨询的专属手稿，便于用户保存和回顾。
-        return loveManus.runStream(message);
+    public SseEmitter doChatWithLoveManus(String message, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = UUID.randomUUID().toString();
+        }
+        String finalSessionId = sessionId;
+        LoveManus loveManus = new LoveManus(toolCallbacks, deepseekChatModel);
+        activeSessions.put(finalSessionId, loveManus);
+
+        SseEmitter emitter = loveManus.runStream(message);
+
+        // 清理会话
+        emitter.onCompletion(() -> activeSessions.remove(finalSessionId));
+        emitter.onTimeout(() -> activeSessions.remove(finalSessionId));
+        emitter.onError(e -> activeSessions.remove(finalSessionId));
+
+        // 以 header 形式返回 sessionId，方便前端后续发停止请求
+        // 前端在 EventSource 的 onopen 中可以读取此响应头
+        return emitter;
+    }
+
+    @GetMapping("Love_app/chat/LoveManus/stop/{sessionId}")
+    public String stopLoveManus(@PathVariable String sessionId) {
+        LoveManus agent = activeSessions.get(sessionId);
+        if (agent != null) {
+            agent.stop();
+            activeSessions.remove(sessionId);
+            return "stopped";
+        }
+        return "no_active_session";
     }
 }

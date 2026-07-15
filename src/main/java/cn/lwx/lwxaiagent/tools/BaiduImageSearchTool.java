@@ -18,8 +18,8 @@ public class BaiduImageSearchTool {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Tool(description = "搜索百度图片并返回图片URL列表（不下载），根据关键词搜索图片URL，每次最多返回6条")
-    public String searchBaiduImages(@ToolParam(description = "搜索关键词，如：风景、壁纸、动漫") String keyword) {
+    @Tool(description = "Search Baidu Images and return image URLs (URLs only, no download). Works best with specific Chinese keywords like '上海外滩夜景' rather than generic terms like '风景'. Returns max 6 unique URLs. Do NOT fabricate URLs — only use real URLs returned by this tool.")
+    public String searchBaiduImages(@ToolParam(description = "Search keyword, e.g. '上海外滩夜景', '美食', '风景'") String keyword) {
         try {
             log.info("开始搜索百度图片: {}", keyword);
 

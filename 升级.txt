@@ -1,0 +1,379 @@
+以下是项目一（AI恋爱大师 → 企业级情感服务中台）的完整改造流程，按实施顺序分为 8 个阶段：
+
+---
+
+## 阶段一：架构重构与多租户设计
+
+### 1.1 总体架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    接入层                                      │
+│  小程序 / Web / API Gateway (Spring Cloud Gateway)            │
+├─────────────────────────────────────────────────────────────────┤
+│                    安全与合规层                                │
+│  内容审核（阿里绿网） │ 敏感信息脱敏 │ Prompt注入防护          │
+├─────────────────────────────────────────────────────────────────┤
+│                    多租户治理层                                │
+│  租户隔离（数据/知识库/配额） │ 用户分级 │ 审计日志            │
+├─────────────────────────────────────────────────────────────────┤
+│                    RAG 核心引擎                                │
+│  查询改写 │ 混合检索（ES+Milvus）│ RRF融合 │ GraphRAG          │
+│  知识库版本管理 │ RAGAS质量评估 │ 反馈闭环优化                │
+├─────────────────────────────────────────────────────────────────┤
+│                    对话与记忆层                                │
+│  Spring AI（多轮对话） │ 记忆持久化（Redis+ES+Milvus）        │
+│  工具调用（MCP Client） │ MCP 服务（地图/天气/日历）          │
+├─────────────────────────────────────────────────────────────────┤
+│                    可观测性                                    │
+│  LangSmith全链路追踪 │ 业务指标看板（Grafana）                │
+├─────────────────────────────────────────────────────────────────┤
+│                    数据层                                      │
+│  Milvus（知识库向量） │ ES（混合检索+日志）│ Redis            │
+│  NebulaGraph（知识图谱）│ PostgreSQL（业务数据）              │
+├─────────────────────────────────────────────────────────────────┤
+│                    模型层                                      │
+│  模型网关（One-API）：Claude / GPT-4 / 国产模型              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 多租户隔离方案
+
+采用**元数据（Metadata）过滤隔离**，这是 99% 企业 SaaS RAG 项目的首选方案：
+
+**核心设计**：向量库统一共享，文档入库时绑定租户、角色、业务标签元数据，检索时强制拼接过滤条件。
+
+**三级权限架构**：
+- **租户层隔离**：通过 `tenantId` 区分不同企业/租户数据
+- **角色层隔离**：区分 ADMIN/普通用户权限
+- **文档层隔离**：通过标签区分公开/私密文档
+
+**实现方式**：基于 `ThreadLocal` 实现请求级租户、角色信息透传，适配网关解析 JWT Token。
+
+```java
+// 多租户上下文工具类
+public class TenantContext {
+    private static final ThreadLocal<String> currentTenant = new ThreadLocal<>();
+    private static final ThreadLocal<String> currentRole = new ThreadLocal<>();
+
+    public static void setTenant(String tenantId) { currentTenant.set(tenantId); }
+    public static String getTenant() { return currentTenant.get(); }
+    // 每次请求结束后必须调用 clear() 防止内存泄漏
+    public static void clear() { currentTenant.remove(); currentRole.remove(); }
+}
+```
+
+**检索时强制过滤**：
+```java
+// 构建过滤条件
+var filter = Filter.and(
+    Filter.eq("tenantId", TenantContext.getTenant()),
+    Filter.eq("role", TenantContext.getRole())
+);
+// 所有检索请求必须携带此 filter，从代码层硬拦截越权查询
+```
+
+---
+
+## 阶段二：数据层改造
+
+### 2.1 向量数据库升级：PGvector → Milvus
+
+**技术选型对比**：
+
+| 维度 | PGvector | Milvus 2.x |
+|---|---|---|
+| 查询延迟 | 10-30ms（磁盘） | 5-15ms |
+| 吞吐量 | 1-5万 QPS | 50万+ QPS |
+| 混合检索 | 弱 | 原生支持 BM25 + 向量 |
+| 运维复杂度 | 低 | 中 |
+
+**迁移方案**：
+1. 将现有 PGvector 中的向量数据导出
+2. 在 Milvus 中按租户创建独立 Collection（`knowledge_tenant_{id}`）
+3. 每条文档存储：`id`、`vector`、`metadata（tenantId/role/tags）`、`text`
+
+### 2.2 引入 Elasticsearch 做混合检索
+
+**为什么需要 ES**：纯向量检索对精确关键词（如"失恋后如何走出来"中的"失恋"）召回效果差，ES 的 BM25 关键词检索可以兜底。
+
+**数据同步**：
+- 文档入库时，同时写入 Milvus（向量）和 ES（全文索引）
+- ES Index 字段：`id`、`text`、`tenantId`、`role`、`tags`、`createTime`
+
+### 2.3 引入 NebulaGraph 做知识图谱（GraphRAG）
+
+**为什么需要图数据库**：情感问题有强关联性（失恋 → 自卑 → 社交恐惧 → 抑郁倾向），图结构能天然表达这种多跳关系。
+
+**GraphRAG 实现流程**：
+1. **实体抽取**：用 LLM 从情感问答对中抽取实体（如"失恋"、"自卑"、"社交恐惧"）
+2. **关系抽取**：抽取实体间关系（如"失恋" → "导致" → "自卑"）
+3. **存入 NebulaGraph**：以三元组（头实体、关系、尾实体）存储
+4. **检索时**：从问题中提取实体 → 在图中检索子图（深度 2-3）→ 子图结果作为上下文送入 LLM
+
+**NebulaGraph 部署方式**：支持 Docker 一键部署、K8s 集群部署、云托管三种方式。
+
+---
+
+## 阶段三：混合检索引擎改造
+
+### 3.1 双路召回 + RRF 融合
+
+**工作流程**：
+
+```
+用户查询
+    ├──→ Milvus（向量语义检索）→ Top 50
+    └──→ Elasticsearch（BM25 关键词检索）→ Top 50
+              ↓
+         RRF 融合排序
+              ↓
+         Top 10（送入 LLM）
+```
+
+**RRF（Reciprocal Rank Fusion）算法**：
+
+```
+RRF_score(d) = Σ 1/(k + rank_i(d))
+```
+
+其中 `k=60` 为经验常数，`rank_i(d)` 是文档 d 在第 i 个检索器中的排名。
+
+**预期效果**：准确率从纯向量检索的 60-65% 提升至 85%。
+
+### 3.2 Re-ranking 二次精排（可选升级）
+
+在 RRF 融合后，用 **Cross-Encoder 模型**（如 BGE-Reranker）对 Top-K 候选集进行二次精排。
+
+**效果**：准确率进一步提升至 92%。
+
+---
+
+## 阶段四：GraphRAG 实现
+
+### 4.1 知识图谱构建流程
+
+**Step 1：实体与关系抽取**
+
+用 LLM 从情感问答对中抽取：
+
+```json
+{
+  "entities": ["失恋", "自卑", "社交恐惧", "抑郁"],
+  "relations": [
+    {"head": "失恋", "relation": "导致", "tail": "自卑"},
+    {"head": "自卑", "relation": "导致", "tail": "社交恐惧"},
+    {"head": "社交恐惧", "relation": "可能导致", "tail": "抑郁"}
+  ]
+}
+```
+
+**Step 2：存入 NebulaGraph**
+
+```cypher
+// NebulaGraph nGQL
+CREATE VERTEX entity(name, type, description);
+CREATE EDGE leads_to(weight);
+INSERT VERTEX entity(name, type, description) VALUES "失恋":("失恋", "emotion", "...");
+INSERT EDGE leads_to(weight) FROM "失恋" TO "自卑" SET weight = 0.8;
+```
+
+**Step 3：检索时图遍历**
+
+```cypher
+// 从问题中提取实体，检索子图深度 2
+MATCH p=(start:entity {name: "失恋"})-[:leads_to*1..2]->(end) RETURN p;
+```
+
+### 4.2 混合检索 + GraphRAG 融合
+
+```
+用户查询
+    ├──→ 实体抽取（LLM）
+    ├──→ 图检索（NebulaGraph）→ 子图上下文
+    ├──→ 向量检索（Milvus）→ Top 50
+    └──→ 关键词检索（ES）→ Top 50
+              ↓
+         上下文融合 + RRF 排序
+              ↓
+         Top 10（送入 LLM）
+```
+
+---
+
+## 阶段五：RAG 质量评估（RAGAS）
+
+### 5.1 RAGAS 评估指标
+
+| 指标 | 说明 |
+|---|---|
+| **Faithfulness（忠实度）** | 答案是否基于检索到的上下文，有无幻觉 |
+| **Answer Relevancy（答案相关性）** | 答案是否直接回答了问题 |
+| **Context Precision（上下文精度）** | 检索到的上下文中相关文档的比例 |
+| **Context Recall（上下文召回率）** | 相关文档被成功检索到的比例 |
+
+### 5.2 评估架构
+
+- **生产环境**：Spring AI + Elasticsearch + Milvus
+- **测试环境**：Python + RAGAS（测试集生成 + 指标评估）
+
+**实施步骤**：
+1. 准备黄金测试集（人工标注的 Q&A 对）
+2. 用 Python + RAGAS 跑评估，生成指标报告
+3. 根据评估结果优化检索策略和 Prompt
+4. 建立**持续评估管道**：每次知识库更新自动触发评估
+
+---
+
+## 阶段六：MCP 工具标准化
+
+### 6.1 MCP 协议概述
+
+MCP（Model Context Protocol）是 AI 模型与工具链的标准化通信协议，提供三大核心能力：
+- **动态工具调用**：通过 JSON Schema 定义工具接口
+- **上下文管理**：支持多轮对话状态同步
+- **跨语言兼容**：基于 HTTP/WebSocket 实现多语言互通
+
+### 6.2 Spring AI MCP 集成
+
+Spring AI 提供 MCP Client 和 MCP Server 的 Boot Starter。
+
+**Maven 依赖**：
+```xml
+<dependency>
+    <groupId>org.springframework.ai</groupId>
+    <artifactId>spring-ai-mcp</artifactId>
+</dependency>
+<!-- stdio 进程通信 -->
+<dependency>
+    <groupId>org.springframework.ai</groupId>
+    <artifactId>spring-ai-mcp-stdio</artifactId>
+</dependency>
+<!-- 或 SSE 远程通信 -->
+<dependency>
+    <groupId>org.springframework.ai</groupId>
+    <artifactId>spring-ai-mcp-sse</artifactId>
+</dependency>
+```
+
+### 6.3 恋爱项目中的 MCP 工具
+
+以下工具均按 MCP 标准暴露为 Tool：
+
+| 工具名称 | 功能 | 数据源 |
+|---|---|---|
+| `search_map` | 搜索附近约会地点 | 高德/百度地图 API |
+| `get_weather` | 查询天气 | 和风天气 API |
+| `recommend_restaurant` | 推荐餐厅 | 大众点评 API |
+| `create_calendar_event` | 创建日历事件 | Google Calendar API |
+| `search_emotion_article` | 搜索情感文章 | 内部知识库 |
+
+**工具注册示例**：
+
+```java
+@Component
+public class SearchMapTool implements Tool {
+    @Override
+    public String getName() { return "search_map"; }
+
+    @Override
+    public JsonSchema getSchema() {
+        return JsonSchema.builder()
+            .addProperty("location", JsonSchema.STRING, "用户位置")
+            .addProperty("type", JsonSchema.STRING, "场所类型（餐厅/咖啡厅/公园）")
+            .build();
+    }
+
+    @Override
+    public String execute(Map<String, Object> params) {
+        // 调用地图 API
+        return mapService.searchNearby(params);
+    }
+}
+```
+
+---
+
+## 阶段七：可观测性（LangSmith）
+
+### 7.1 LangSmith 集成
+
+LangSmith 是 LLM 应用的可观测性平台，3 行环境变量即可接入，自动追踪全链路。
+
+**Java 集成方式**：
+
+```java
+// 使用 @Traceable 注解追踪任意函数
+@Traceable
+public String generateResponse(String query) {
+    // 1. 检索（RAG）
+    // 2. LLM 调用
+    // 3. 后处理
+    return response;
+}
+```
+
+### 7.2 追踪内容
+
+- **每次对话**：用户输入 → 检索结果 → LLM 输出
+- **每次工具调用**：工具名称 → 参数 → 结果 → 耗时
+- **Token 消耗**：输入 Token / 输出 Token / 费用
+- **RAG 质量**：检索到的文档列表 → 用于后续分析
+
+### 7.3 业务指标看板（Grafana）
+
+| 指标 | 说明 |
+|---|---|
+| RAG Hit Rate | 检索命中率 |
+| 平均响应延迟 | 端到端延迟 |
+| 用户满意度 | 用户反馈评分 |
+| Token 消耗趋势 | 按租户/按场景统计 |
+| 工具调用成功率 | 各工具的调用成功率 |
+
+---
+
+## 阶段八：部署与量化目标
+
+### 8.1 部署架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    K8s 集群                                 │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐      │
+│  │ API     │  │ RAG     │  │ 对话    │  │ MCP     │      │
+│  │ Gateway │  │ Engine  │  │ Service │  │ Server  │      │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘      │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐                    │
+│  │ Milvus  │  │    ES   │  │  Redis  │                    │
+│  └─────────┘  └─────────┘  └─────────┘                    │
+│  ┌─────────┐                                               │
+│  │NebulaGraph│                                             │
+│  └─────────┘                                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 量化目标
+
+| 指标 | 现状（改造前） | 目标（改造后） |
+|---|---|---|
+| RAG 召回率（Hit Rate） | ~60% | > 90% |
+| 平均响应延迟 | 3-5s | < 1.5s |
+| 多租户隔离安全性 | 无隔离 | 数据 0 泄漏 |
+| 知识库规模 | 1 万文档 | 10 万+ 文档 |
+| API 成本 | 单一模型固定成本 | 模型路由降低 30% |
+| 可观测性 | 无 | 全链路追踪 + 业务看板 |
+
+---
+
+## 改造清单总结
+
+| 阶段 | 改造内容 | 优先级 |
+|---|---|---|
+| 阶段一 | 多租户架构 + Spring Security 集成 | P0 |
+| 阶段二 | PGvector → Milvus + ES + NebulaGraph | P0 |
+| 阶段三 | 混合检索（双路召回 + RRF 融合） | P0 |
+| 阶段四 | GraphRAG（实体抽取 + 图检索） | P1 |
+| 阶段五 | RAGAS 评估体系 | P1 |
+| 阶段六 | MCP 工具标准化 | P1 |
+| 阶段七 | LangSmith + Grafana 可观测性 | P2 |
+| 阶段八 | K8s 容器化部署 | P2 |
