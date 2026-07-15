@@ -28,7 +28,7 @@ public class WebSearchTool {
         this.apiKey = apiKey;
     }
 
-    @Tool(description = "Search for information from Google Search Engine via Serper API")
+    @Tool(description = "Search the internet for current information using Google Search. Returns up to 5 search results with titles, snippets, and URLs. Use this to find up-to-date information, news, or facts that are not in the local knowledge base.")
     public String searchWeb(@ToolParam(description = "Search query keyword") String query) {
         if (!StringUtils.hasText(query)) {
             return "Error searching Serper: query is required";

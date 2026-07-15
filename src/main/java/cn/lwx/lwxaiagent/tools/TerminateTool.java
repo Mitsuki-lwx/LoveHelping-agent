@@ -6,7 +6,7 @@ import org.springframework.ai.tool.annotation.Tool;
  *
  */
 public class TerminateTool {
-    @Tool(description = "Terminate the current task. Call when: ① all work is done (e.g. PDF generated); ② cannot proceed further after reasonable attempts; ③ user asks to stop. Do NOT call while there is still unfinished work.")
+    @Tool(description = "Terminate the current task. Call when the user's request has been fully satisfied, when you cannot proceed further after reasonable attempts, or when the user asks to stop. Do NOT call while there is still unfinished work.")
     public String doTerminate() {
         return "Terminating the program.";
     }

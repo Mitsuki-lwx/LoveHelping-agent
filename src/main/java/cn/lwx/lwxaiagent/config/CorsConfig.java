@@ -26,5 +26,7 @@ public class CorsConfig implements WebMvcConfigurer {
         String baseDir = System.getProperty("user.dir").replace("\\", "/");
         registry.addResourceHandler("/files/**")
                 .addResourceLocations("file:" + baseDir + "/");
+        registry.addResourceHandler("/files/downloads/**")
+                .addResourceLocations("file:" + baseDir + "/downloads/");
     }
 }

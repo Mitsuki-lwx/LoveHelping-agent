@@ -45,8 +45,7 @@ public class LoveApp {
     @Resource
     private Advisor loveAppRagCloudAdvisor;
 
-
-    @Resource//按照类型注入
+    @Resource
     private VectorStore PgVectorVectorStore;
 
 
@@ -163,11 +162,6 @@ public class LoveApp {
                 .prompt()//这一步是创建一个 Prompt 对象，并设置用户输入的消息
                 .user( message)
                 .advisors(spec -> spec.param(CONVERSATION_ID, chatId))//这里的意思是设置对话的ID，这个ID是唯一的
-                //RAG知识库问答
-                //.advisors(questionAnswerAdvisor)
-                //RAG检索增强（基于百炼）
-                //.advisors(loveAppRagCloudAdvisor)
-                //RAG检索增强（基于本地向量数据库）
                 .advisors(questionAnswerAdvisorWithPgVectorStore)
                 //.advisors(LoveAppRagCustomAdvisorFactory.createLoveAppRagCustomAdvisor(LoveAppVectorStore, "单身"))
                 .call()
@@ -186,12 +180,23 @@ public class LoveApp {
                 .user(message)
                 .advisors(new MyLoggerAdvisor())
                 .advisors(spec -> spec.param(CONVERSATION_ID, chatId))
-                .toolCallbacks(allTools)  // ✅ 直接传数组，不用转换
+                .toolCallbacks(allTools)
                 .call()
                 .chatResponse();
         String content = response.getResult().getOutput().getText();
         log.info("content: {}", content);
         return content;
+    }
+
+    public Flux<String> doChatByStreamWithTools(String message, String chatId) {
+        return chatClient
+                .prompt()
+                .user(message)
+                .advisors(new MyLoggerAdvisor())
+                .advisors(spec -> spec.param(CONVERSATION_ID, chatId))
+                .toolCallbacks(allTools)
+                .stream()
+                .content();
     }
 
     @Resource

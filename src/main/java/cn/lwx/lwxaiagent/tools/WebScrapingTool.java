@@ -8,7 +8,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 public class WebScrapingTool {
     private static final int MAX_CONTENT_CHARS = 4000;
 
-    @Tool(name = "scrapeWebPage", description = "Scrape content from a web page")
+    @Tool(name = "scrapeWebPage", description = "Fetch and extract the text content from a web page URL. Returns up to 4000 characters of clean text. Use this after searchWeb to get the full content of a specific page.")
     public String scrapeWebPage(@ToolParam(description = "The URL of the web page to scrape") String url) {
         // 这里可以添加实际的网页爬取逻辑
         // 例如，使用Jsoup库来爬取网页内容

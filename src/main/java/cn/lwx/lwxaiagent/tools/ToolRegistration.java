@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.tools;
 
+import jakarta.annotation.Resource;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,6 +11,10 @@ import org.springframework.context.annotation.Configuration;
 public class ToolRegistration {
     @Value("${search-api.api-key:}")
     private String searchApiKey;
+
+    @Resource
+    private KnowledgeSearchTool knowledgeSearchTool;
+
     @Bean
     public ToolCallback[] allTools() {
 
@@ -29,7 +34,8 @@ public class ToolRegistration {
                 baiduImageSearchTool,
                 terminalOperationTool,
                 pdfGenerationTool,
-                resourceDownloadTool
+                resourceDownloadTool,
+                knowledgeSearchTool
         );
 
     }

@@ -9,7 +9,7 @@ import static cn.lwx.lwxaiagent.constant.FileConstant.FILE_SAVE_DIR;
 @Component
 public class FileOperationTool {
 
-    @Tool(name = "readFile", description = "Read the content of a file")
+    @Tool(name = "readFile", description = "Read the content of a text file (markdown, json, txt) from the application directory. Returns the full text content. Use this when you need to examine previously created files.")
     public String readFile(@ToolParam(description = "Name of the file to read") String fileName) {
         // 这里可以添加实际的文件读取逻辑
         String filePath = FILE_SAVE_DIR+"/" + fileName;
@@ -20,7 +20,7 @@ public class FileOperationTool {
         }
     }
 
-    @Tool(name = "writeFile", description = "Write content to a file")
+    @Tool(name = "writeFile", description = "Write text content to a file in the application directory. Creates the file if it does not exist, overwrites if it does. Use this to save intermediate results or generated content.")
     public String writeFile(@ToolParam(description = "Name of the file to write") String fileName, @ToolParam(description = "Content to write") String content) {
         // 这里可以添加实际的文件写入逻辑
         String filePath = FILE_SAVE_DIR+"/" + fileName;

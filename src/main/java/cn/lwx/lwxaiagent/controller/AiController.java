@@ -2,8 +2,10 @@ package cn.lwx.lwxaiagent.controller;
 
 import cn.lwx.lwxaiagent.agent.LoveManus;
 import cn.lwx.lwxaiagent.app.LoveApp;
-import io.reactivex.Emitter;
 import jakarta.annotation.Resource;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.MessageWindowChatMemory;
+import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.http.MediaType;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import reactor.core.publisher.Flux;
 
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -28,11 +31,19 @@ public class AiController {
     @Resource
     private ChatModel deepseekChatModel;
 
+    @Resource
+    private JdbcChatMemoryRepository chatMemoryRepository;
+
     private final ConcurrentHashMap<String, LoveManus> activeSessions = new ConcurrentHashMap<>();
 
     @GetMapping("Love_app/chat/sync")
     public String chatSync(String prompt,String chatId) {
         return loveApp.doChat(prompt,chatId);
+    }
+
+    @GetMapping(value = "Love_app/chat/sse/tools", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> chatSseWithTools(String prompt, String chatId) {
+        return loveApp.doChatByStreamWithTools(prompt, chatId);
     }
     // 流式响应端点：使用 Server-Sent Events (SSE) 实现实时聊天。PRODUCES 指定响应类型为 text/event-stream，适合前端实时接收数据。
     @GetMapping(value = "Love_app/chat/sse",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -74,23 +85,37 @@ public class AiController {
     }
 
     @GetMapping(value = "Love_app/chat/LoveManus")
-    public SseEmitter doChatWithLoveManus(String message, String sessionId) {
+    public SseEmitter doChatWithLoveManus(String message, String sessionId, HttpServletResponse response) {
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
         }
         String finalSessionId = sessionId;
-        LoveManus loveManus = new LoveManus(toolCallbacks, deepseekChatModel);
-        activeSessions.put(finalSessionId, loveManus);
+
+        // 复用已有 Agent 实例以保持对话历史，或创建新的
+        LoveManus loveManus = activeSessions.get(finalSessionId);
+        if (loveManus == null) {
+            loveManus = new LoveManus(toolCallbacks, deepseekChatModel);
+            // 绑定 MySQL 持久化记忆
+            ChatMemory mysqlMemory = MessageWindowChatMemory.builder()
+                    .chatMemoryRepository(chatMemoryRepository)
+                    .maxMessages(50)
+                    .build();
+            loveManus.setChatMemory(mysqlMemory);
+            loveManus.setConversationId(finalSessionId);
+            activeSessions.put(finalSessionId, loveManus);
+        } else {
+            loveManus.resetForNextTurn();
+        }
+
+        // 在响应头返回 sessionId，前端可在 EventSource.onopen 中读取
+        response.setHeader("X-Session-Id", finalSessionId);
 
         SseEmitter emitter = loveManus.runStream(message);
 
-        // 清理会话
-        emitter.onCompletion(() -> activeSessions.remove(finalSessionId));
+        // 清理会话（注意：实际不清除，以支持多轮对话。超时/错误时清理）
         emitter.onTimeout(() -> activeSessions.remove(finalSessionId));
         emitter.onError(e -> activeSessions.remove(finalSessionId));
 
-        // 以 header 形式返回 sessionId，方便前端后续发停止请求
-        // 前端在 EventSource 的 onopen 中可以读取此响应头
         return emitter;
     }
 

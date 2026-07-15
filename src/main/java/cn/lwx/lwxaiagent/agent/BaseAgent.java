@@ -5,6 +5,7 @@ import cn.lwx.lwxaiagent.agent.model.AgentState;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
@@ -47,6 +48,10 @@ public abstract class BaseAgent {
     //上下文记忆用springai的List
     private List<Message> messageList = new ArrayList<>();
 
+    // MySQL 持久化记忆（可选，通过 AiController 注入）
+    private ChatMemory chatMemory;
+    private String conversationId;
+
     public SseEmitter runStream(String userPrompt) {
         SseEmitter emitter = new SseEmitter(600000L); //设置超时时间为10分钟
 
@@ -73,6 +78,14 @@ public abstract class BaseAgent {
             //设置状态为运行中
             this.state = AgentState.RUNNING;
 
+            // 从 MySQL 加载历史记忆（仅 messageList 为空时，避免复用 Agent 重复加载）
+            if (chatMemory != null && conversationId != null && messageList.isEmpty()) {
+                List<Message> history = chatMemory.get(conversationId);
+                if (history != null && !history.isEmpty()) {
+                    messageList.addAll(0, history);
+                }
+            }
+
             //记录信息上下文
             messageList.add(new UserMessage(userPrompt));
             //保存结果列表
@@ -81,11 +94,11 @@ public abstract class BaseAgent {
             StringBuilder pendingFileOutput = new StringBuilder();
             boolean fileOutputShown = false;
             Set<String> seenFileOutputs = new HashSet<>();
+
             //步骤执行循环，直到完成或出错
             try {
                 for (int i = 0; i < maxSteps&& this.state == AgentState.RUNNING; i++) {
                     int stepNumber = i + 1;
-                    log.info("Agent {} executing step {}/{}", this.name, stepNumber, maxSteps);
                     //执行单步骤并记录结果
                     String stepResult = step();
                     this.currentStep = stepNumber;
@@ -119,23 +132,34 @@ public abstract class BaseAgent {
                         String answerText = extractLastText();
                         StringBuilder sb = new StringBuilder("✨ ");
                         sb.append(answerText != null ? answerText : stepResult);
-                        if (pendingFileOutput.length() > 0) {
-                            sb.append("\n\n").append(pendingFileOutput);
-                            fileOutputShown = true;
+                        if (pendingFileOutput.length() > 0 && !sb.toString().contains("/api/")) {
+                            String files = pendingFileOutput.toString()
+                                .replaceAll("/api/files/downloads/[^\\s)\"]+\\.(png|jpg|jpeg|gif|webp)\\b", "![]($0)");
+                            sb.append("\n\n").append(files);
                         }
+                        fileOutputShown = true;
+                        pendingFileOutput.setLength(0);
                         displayText = sb.toString();
                     }
                     // 清理输出：移除本地文件系统路径，折叠多余换行
                     displayText = removeLocalPaths(displayText);
                     displayText = displayText.replaceAll("\\n{3,}", "\n\n");
                     results.add("Step " + stepNumber + " result: " + stepResult);
+                    log.info("Agent {} SSE send total ({} chars)", this.name, displayText.length());
                     //输出思考过程给sseEmitter，而不是原始工具数据
-                    emitter.send("\n" + displayText);
+                    emitter.send(displayText);
+
+                    // 未调工具 = 回答完毕，结束本轮
+                    if (!toolsCalled) {
+                        this.state = AgentState.FINISHED;
+                    }
 
                 }
                 // 循环结束：如果还有未展示的文件输出（如调用了 terminate 工具结束），补发
                 if (pendingFileOutput.length() > 0 && !fileOutputShown) {
-                    emitter.send("\n✨ 文件已生成，点击链接查看：\n\n" + pendingFileOutput);
+                    String files = pendingFileOutput.toString()
+                        .replaceAll("/api/files/downloads/[^\\s)\"]+\\.(png|jpg|jpeg|gif|webp)\\b", "![]($0)");
+                    emitter.send("\n✨ " + files);
                 }
                 if (currentStep >= maxSteps) {
                     this.state = AgentState.FINISHED;
@@ -156,6 +180,15 @@ public abstract class BaseAgent {
                 //emitter.complete();
             }
             finally {
+                // 持久化对话历史到 MySQL
+                if (chatMemory != null && conversationId != null && !messageList.isEmpty()) {
+                    try {
+                        chatMemory.clear(conversationId);
+                        chatMemory.add(conversationId, messageList);
+                    } catch (Exception e) {
+                        log.warn("Failed to persist chat memory: {}", e.getMessage());
+                    }
+                }
                 this.cleanup();
             }
         });
@@ -166,11 +199,7 @@ public abstract class BaseAgent {
             log.warn("SSEEmitter for agent timed out.");
             emitter.complete();
         });
-        emitter.onCompletion(() -> {//设置完成回调
-            if(this.state == AgentState.RUNNING) {
-                this.state = AgentState.FINISHED;
-            }
-            this.cleanup();
+        emitter.onCompletion(() -> {
             log.info("SSEEmitter for agent completed.");
         });
         return emitter;
@@ -185,6 +214,15 @@ public abstract class BaseAgent {
      */
     public void stop() {
         this.state = AgentState.FINISHED;
+    }
+
+    /**
+     * 重置状态以支持多轮对话：清空步骤计数，状态恢复 IDLE，但保留 messageList（对话历史）
+     * 调用前需确保前一轮已结束（state == FINISHED）
+     */
+    public void resetForNextTurn() {
+        this.state = AgentState.IDIE;
+        this.currentStep = 0;
     }
 
     /**
@@ -267,20 +305,16 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 移除文本中的本地文件系统路径（如 D:\path\to\file.pdf），只保留可访问的 URL
+     * 将本地文件路径（如 D:\path\to\downloads\file.png）转为可访问的 HTTP URL（/api/files/downloads/file.png）
      */
     private String removeLocalPaths(String text) {
         if (text == null || text.isEmpty()) return text;
-        StringBuilder sb = new StringBuilder();
-        for (String line : text.split("\n")) {
-            // 如果行包含 Windows 盘符路径（如 D:\...），跳过该行
-            if (line.matches(".*[a-zA-Z]:\\\\.*")) {
-                continue;
-            }
-            if (sb.length() > 0) sb.append("\n");
-            sb.append(line);
-        }
-        return sb.toString();
+        String result = text.replaceAll("[a-zA-Z]:[\\\\/].*?downloads[\\\\/]", "/api/files/downloads/");
+        result = result.replaceAll(
+                "(?<!\\()/api/files/downloads/[^\\s)\"]+\\.(png|jpg|jpeg|gif|webp)\\b",
+            "![]($0)"
+        );
+        return result;
     }
 
     /**
@@ -292,12 +326,13 @@ public abstract class BaseAgent {
         for (String line : text.split("\n")) {
             String trimmed = line.trim();
             if (trimmed.isEmpty()) continue;
-            // 跳过任何包含 URL 的行
             if (trimmed.contains("http://") || trimmed.contains("https://")) continue;
-            // 跳过工具结果状态行："N张成功了，N张失败了" 或 "现在有N张成功下载的图片"
             if (trimmed.matches(".*\\d+\\s*张.*(?:成功|失败).*")) continue;
-            // 跳过纯本地路径列举行
             if (trimmed.matches(".*[A-Za-z]:[/\\\\].*")) continue;
+            // 跳过错误分析和自我修正（对用户无意义）
+            if (trimmed.startsWith("The error")) continue;
+            if (trimmed.startsWith("Let me remove")) continue;
+            if (trimmed.startsWith("I should avoid")) continue;
             if (sb.length() > 0) sb.append("\n");
             sb.append(line);
         }

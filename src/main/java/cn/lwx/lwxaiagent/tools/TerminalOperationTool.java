@@ -10,7 +10,7 @@ import java.nio.charset.Charset;
 
 public class TerminalOperationTool {
 
-    @Tool(description = "Execute a command in the terminal")
+    @Tool(description = "Execute a terminal command (cmd on Windows, bash on Linux/Mac). Returns command output as text. Use this only when you need to run system commands or scripts. Security: commands run with the application's system permissions.")
     public String executeTerminalCommand(@ToolParam(description = "Command to execute in the terminal") String command) {
         StringBuilder output = new StringBuilder();
         try {

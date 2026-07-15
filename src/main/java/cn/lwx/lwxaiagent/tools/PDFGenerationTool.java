@@ -46,7 +46,7 @@ public class PDFGenerationTool {
     private static final Pattern HORIZONTAL_RULE = Pattern.compile("^---\\s*$");
     private static final Pattern IMAGE_PATTERN = Pattern.compile("^!\\[(.*?)\\]\\((.*?)\\)$");
 
-    @Tool(description = "Generate a styled PDF with markdown content. Supports: headings (# ## ###), bold (**text**), lists (- / 1.), images (![](local_path)). Rules: ① imagePath param supports ONE cover image only — embed multiple images (4-6) using ![](path) in markdown body; ② duplicate image paths are auto-deduplicated; ③ emoji and markdown tables are NOT supported (auto-removed); ④ use simple filenames without special chars; ⑤ image paths come from downloadImages output")
+    @Tool(description = "Generate a styled PDF with markdown content. ONLY use when the user explicitly asks for a PDF file. For showing images, use markdown image syntax in your response instead. Supports: headings (# ## ###), bold (**text**), lists (- / 1.), images (![](local_path)). Rules: imagePath param supports one cover image only — embed multiple images (4-6) using ![](path) in the markdown body. Duplicate image paths are auto-deduplicated. Emoji and markdown tables are NOT supported (auto-removed). Use simple filenames without special characters. Image paths come from downloadImages output.")
     public String generatePDF(
             @ToolParam(description = "File name (e.g. plan.pdf)") String fileName,
             @ToolParam(description = "Content in markdown format") String content,
@@ -112,8 +112,9 @@ public class PDFGenerationTool {
             String encodedFileName = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
             String urlPath = "/api/files/pdf/" + encodedFileName;
             return "✅ PDF 已生成！\n\n📄 [" + fileName + "](" + urlPath + ")\n\n点击上方链接可在浏览器中预览或下载。";
-        } catch (IOException e) {
-            return "❌ PDF 生成失败：" + e.getMessage();
+        } catch (Exception e) {
+            log.warn("PDF generation failed: {}", e.getMessage());
+            return "PDF generation failed. Please avoid unsupported characters (emoji, special symbols) in the content and try again.";
         }
     }
 
@@ -173,6 +174,11 @@ public class PDFGenerationTool {
                     currentList = null;
                 }
                 String imgPath = imgMatcher.group(2);
+                // 将 HTTP URL 解析回本地文件路径（PDF 渲染需要实际文件）
+                if (imgPath.startsWith("/api/files/downloads/")) {
+                    imgPath = imgPath.replace("/api/files/downloads/",
+                            cn.lwx.lwxaiagent.constant.FileConstant.FILE_SAVE_DIR.replace("\\", "/") + "/downloads/");
+                }
                 // 图片去重：同一 URL 只渲染一次
                 if (!seenImages.add(imgPath)) {
                     continue;

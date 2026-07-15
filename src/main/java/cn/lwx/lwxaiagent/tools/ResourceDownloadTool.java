@@ -33,7 +33,7 @@ public class ResourceDownloadTool {
         return downloadSingle(url, dir + fileName, t);
     }
 
-    @Tool(name = "downloadImages", description = "Download multiple images concurrently. Pass URL array + file name array, returns local paths. Call searchBaiduImages first, pick 2-3 best URLs, then pass them here. Do NOT fabricate URLs. Failed downloads are skipped automatically.")
+    @Tool(name = "downloadImages", description = "Download multiple images concurrently. Pass URL array + file name array, returns local paths. After downloading, return the paths to the user directly using markdown image syntax `![](path)` so the images are displayed inline. Do NOT generate PDF unless the user explicitly asks for a PDF file. Failed downloads are skipped automatically.")
     public String downloadImages(
             @ToolParam(description = "Array of image URLs") String[] urls,
             @ToolParam(description = "Array of file names, must match URLs length") String[] fileNames,
@@ -114,7 +114,7 @@ public class ResourceDownloadTool {
                 return "FAILED: empty file — " + url;
             }
 
-            return "OK: " + fullPath.replace("\\", "/");
+            return "OK: /api/files/downloads/" + new File(fullPath).getName();
         } catch (Exception e) {
             return "FAILED: " + e.getMessage() + " — " + url;
         }
