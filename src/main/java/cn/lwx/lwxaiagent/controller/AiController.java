@@ -84,6 +84,11 @@ public class AiController {
         return emitter;
     }
 
+    @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> chatSseWithRAG(String prompt, String chatId) {
+        return loveApp.doChatByStreamWithRAG(prompt, chatId);
+    }
+
     @GetMapping(value = "Love_app/chat/LoveManus")
     public SseEmitter doChatWithLoveManus(String message, String sessionId, HttpServletResponse response) {
         if (sessionId == null || sessionId.isBlank()) {

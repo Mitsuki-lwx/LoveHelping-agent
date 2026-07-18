@@ -3,6 +3,11 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+/**
+ * 这是pgvector数据库连接属性
+ * @author lwx
+ *
+ */
 @Data
 @Component
 @ConfigurationProperties(prefix = "app.pgvector.datasource")

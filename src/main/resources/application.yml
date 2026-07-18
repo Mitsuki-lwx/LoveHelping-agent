@@ -19,6 +19,11 @@ spring:
       client:
         stdio:
           servers-configuration: classpath:mcp-servers.json
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
 # 自定义 PostgreSQL 配置（给 pgvector 用）
 app:
   pgvector:
@@ -53,6 +58,19 @@ knife4j:
 logging:
   level:
     org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: debug
+
+# 检索模式切换：pgvector（默认）| hybrid
+rag:
+  type: hybrid
+  hybrid:
+    milvus:
+      host: 172.28.23.117
+      port: 19530
+      collection-name: love_knowledge
+      vector-dim: 1024
+    rrf:
+      k: 60
+      topK: 10
 
 search-api:
   api-key: b0236c51e1233e79e3c703aa360ef5a949f97c24

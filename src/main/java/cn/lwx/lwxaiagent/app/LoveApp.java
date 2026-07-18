@@ -166,9 +166,19 @@ public class LoveApp {
                 //.advisors(LoveAppRagCustomAdvisorFactory.createLoveAppRagCustomAdvisor(LoveAppVectorStore, "单身"))
                 .call()
                 .chatResponse();//这里是获取 ChatResponse 对象，里面包括输入、输出、错误等信息
-        String content = chatResponse.getResult().getOutput().getText();//这里的链式调用分别是：从response中获取结果，再获取输出，最后获取输出的文本
-//        log.info("content:{}",content);
+        String content = chatResponse.getResult().getOutput().getText();
         return content;
+    }
+
+    public Flux<String> doChatByStreamWithRAG(String message, String chatId) {
+        QuestionAnswerAdvisor ragAdvisor = QuestionAnswerAdvisor.builder(PgVectorVectorStore).build();
+        return chatClient
+                .prompt()
+                .user(message)
+                .advisors(spec -> spec.param(CONVERSATION_ID, chatId))
+                .advisors(ragAdvisor)
+                .stream()
+                .content();
     }
 
     @Resource
