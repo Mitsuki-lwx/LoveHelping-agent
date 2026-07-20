@@ -23,7 +23,6 @@ import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -49,7 +48,7 @@ public class LoveApp {
     @Resource
     private VectorStore PgVectorVectorStore;
 
-    public LoveApp(JdbcChatMemoryRepository chatMemoryRepository, @Qualifier("deepSeekChatModel") ChatModel deepseekChatModel) {
+    public LoveApp(JdbcChatMemoryRepository chatMemoryRepository, ChatModel chatModel) {
         // 依赖注入：ChatModel 由 Spring 提供，避免手动创建。
 
         // 初始化基于 JDBC 的对话记忆：跨进程持久化、适合多轮对话。
@@ -62,7 +61,7 @@ public class LoveApp {
                 .chatMemoryRepository(new InMemoryChatMemoryRepository())// 设置 ChatMemoryRepository，这是一个存储对话记忆的仓库，用于存储对话中的消息
                 .maxMessages(10) // 这个是最大返回的消息数量
                 .build();
-        chatClient = ChatClient.builder(deepseekChatModel)
+        chatClient = ChatClient.builder(chatModel)
                 // 默认系统提示：所有对话都会自动带上。
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(

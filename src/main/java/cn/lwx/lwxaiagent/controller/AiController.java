@@ -8,6 +8,7 @@ import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,8 +29,8 @@ public class AiController {
     @Resource
     private ToolCallback[] toolCallbacks;
 
-    @Resource
-    private ChatModel deepSeekChatModel;
+    @Autowired
+    private ChatModel chatModel;
 
     @Resource
     private JdbcChatMemoryRepository chatMemoryRepository;
@@ -108,7 +109,7 @@ public class AiController {
         // 复用已有 Agent 实例以保持对话历史，或创建新的
         LoveManus loveManus = activeSessions.get(finalSessionId);
         if (loveManus == null) {
-            loveManus = new LoveManus(toolCallbacks, deepSeekChatModel);
+            loveManus = new LoveManus(toolCallbacks, chatModel);
             // 绑定 MySQL 持久化记忆
             ChatMemory mysqlMemory = MessageWindowChatMemory.builder()
                     .chatMemoryRepository(chatMemoryRepository)

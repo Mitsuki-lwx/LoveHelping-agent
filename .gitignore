@@ -2,6 +2,24 @@
 application-local.yml
 tmp
 
+### MCP servers config (contains API keys) ###
+src/main/resources/mcp-servers.json
+
+### Personal notes ###
+shanghai_plan.md
+*约会*.md
+*约会*.txt
+升级方案*.txt
+
+### Runtime generated files ###
+baidu_images/
+downloads/
+pdf/
+logs/
+
+### AI agent local config ###
+.claude/
+
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar

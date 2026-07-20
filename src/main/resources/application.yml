@@ -7,7 +7,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
-    password: 123456
+    password: ${MYSQL_PASSWORD:}
   ai:
     chat:
       memory:
@@ -19,19 +19,31 @@ spring:
       client:
         stdio:
           servers-configuration: classpath:mcp-servers.json
+
+    # OpenAI 兼容接口（支持 OpenAI / 任何 OpenAI 格式 API）
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: gpt-4o
+
 management:
   tracing:
     enabled: true
     sampling:
       probability: 1.0
 # 自定义 PostgreSQL 配置（给 pgvector 用）
+# 默认聊天模型：deepseek（默认）| openai
+# 想切换 OpenAI 时改成 openai，并设置 spring.ai.openai.api-key
 app:
+  chat:
+    provider: deepseek
   pgvector:
     datasource:
       driver-class-name: org.postgresql.Driver
       url: jdbc:postgresql://localhost:5432/postgres
       username: postgres
-      password: 123456
+      password: ${PGVECTOR_PASSWORD:}
 
 server:
   port: 8088
@@ -76,7 +88,7 @@ rag:
       topK: 10
 
 search-api:
-  api-key: b0236c51e1233e79e3c703aa360ef5a949f97c24
+  api-key: ${SEARCH_API_KEY:}
 
 # MyBatis-Plus 配置（使用已有 MySQL 数据源）
 mybatis-plus:
@@ -85,5 +97,5 @@ mybatis-plus:
 
 # JWT 配置（第二期：多租户）
 jwt:
-  secret: lwx-ai-agent-secret-key-need-at-least-32-chars
+  secret: ${JWT_SECRET:}
   expiration-ms: 86400000  # 24 小时

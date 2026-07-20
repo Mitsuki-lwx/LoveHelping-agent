@@ -2,12 +2,13 @@ spring:
   ai:
     mcp:
       server:
-        name: yu-image-search-mcp-server
+        name: lwx-agent-mcp
         version: 0.0.1
         type: SYNC
-
         stdio: true
-
   main:
     web-application-type: none
     banner-mode: off
+
+search-api:
+  api-key: ${SEARCH_API_KEY:}
