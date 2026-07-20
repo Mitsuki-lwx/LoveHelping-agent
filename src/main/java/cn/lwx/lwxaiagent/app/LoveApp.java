@@ -1,11 +1,8 @@
 package cn.lwx.lwxaiagent.app;
 
 import cn.lwx.lwxaiagent.advisor.MyLoggerAdvisor;
-import cn.lwx.lwxaiagent.advisor.ReReadingAdvisor;
-import cn.lwx.lwxaiagent.rag.LoveAppRagCustomAdvisorFactory;
-import cn.lwx.lwxaiagent.rag.MyKeywordEnricher;
+import cn.lwx.lwxaiagent.harness.governance.GuardrailAdvisor;
 import cn.lwx.lwxaiagent.rag.QueryRewriter;
-import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -13,7 +10,6 @@ import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryRepository;
 import org.springframework.ai.chat.model.ChatModel;
@@ -22,7 +18,6 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -48,32 +43,18 @@ public class LoveApp {
     @Resource
     private VectorStore PgVectorVectorStore;
 
-    public LoveApp(JdbcChatMemoryRepository chatMemoryRepository, ChatModel chatModel) {
-        // 依赖注入：ChatModel 由 Spring 提供，避免手动创建。
-
-        // 初始化基于 JDBC 的对话记忆：跨进程持久化、适合多轮对话。
-        ChatMemory chatMemoryByJDBC = MessageWindowChatMemory.builder()
+    public LoveApp(JdbcChatMemoryRepository chatMemoryRepository, ChatModel chatModel,
+                   GuardrailAdvisor guardrailAdvisor) {
+        ChatMemory chatMemory = MessageWindowChatMemory.builder()
                 .chatMemoryRepository(chatMemoryRepository)
                 .maxMessages(10)
                 .build();
-        // 初始化基于内存的对话记忆：仅当前进程可用，用于快速验证。
-        ChatMemory chatMemory = MessageWindowChatMemory.builder()// 创建一个基于内存的 ChatMemory 对象，MessageWindowChatMemory
-                .chatMemoryRepository(new InMemoryChatMemoryRepository())// 设置 ChatMemoryRepository，这是一个存储对话记忆的仓库，用于存储对话中的消息
-                .maxMessages(10) // 这个是最大返回的消息数量
-                .build();
         chatClient = ChatClient.builder(chatModel)
-                // 默认系统提示：所有对话都会自动带上。
                 .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
-                        // 绑定对话记忆，按 conversationId 关联上下文。
-                        MessageChatMemoryAdvisor.builder(chatMemoryByJDBC)
-                                .build(),
-                        // 日志
-                        new MyLoggerAdvisor()
-                        // 重新阅读,但是会消耗两倍的token
-                        //new ReReadingAdvisor()
-
-
+                        MessageChatMemoryAdvisor.builder(chatMemory).build(),
+                        new MyLoggerAdvisor(),
+                        guardrailAdvisor
                 )
                 .build();
 

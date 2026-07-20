@@ -173,11 +173,11 @@
             <artifactId>spring-ai-starter-model-deepseek</artifactId>
         </dependency>
 
-        <!-- OpenAI 通用接口（兼容任何 OpenAI 格式的 API） -->
-        <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-openai</artifactId>
-        </dependency>
+<!--        &lt;!&ndash; OpenAI 通用接口（兼容任何 OpenAI 格式的 API） &ndash;&gt;-->
+<!--        <dependency>-->
+<!--            <groupId>org.springframework.ai</groupId>-->
+<!--            <artifactId>spring-ai-starter-model-openai</artifactId>-->
+<!--        </dependency>-->
 
         <!-- Elasticsearch BM25 检索 SDK -->
         <dependency>

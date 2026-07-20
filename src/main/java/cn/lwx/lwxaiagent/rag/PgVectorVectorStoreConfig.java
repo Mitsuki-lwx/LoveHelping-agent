@@ -8,6 +8,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,7 +31,7 @@ public class PgVectorVectorStoreConfig {
 
 
     @Bean
-    public VectorStore PgVectorVectorStore(EmbeddingModel embeddingModel) {
+    public VectorStore PgVectorVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
         // 创建一个 PostgreSQL 数据源 用来存储向量数据
         DataSource pgDataSource = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())

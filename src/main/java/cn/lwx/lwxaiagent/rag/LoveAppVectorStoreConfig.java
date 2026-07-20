@@ -6,6 +6,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -29,7 +30,7 @@ public class LoveAppVectorStoreConfig {
     private MyKeywordEnricher myKeywordEnricher;
 
     @Bean//创建一个向量存储对象
-    VectorStore LoveAppVectorStore(EmbeddingModel embeddingModel) {//创建一个向量存储对象.注入嵌入模型对象
+    VectorStore LoveAppVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {//创建一个向量存储对象.注入嵌入模型对象
         SimpleVectorStore vectorStore = SimpleVectorStore.builder(embeddingModel).build();//创建一个向量存储对象
         List<Document> documents = loveAppDocumentLoader.loadMarkdowns();//加载Markdown文档
         //List<Document> splitDocuments = mytokenTextSplitter.splitDocuments(documents);//分割文档

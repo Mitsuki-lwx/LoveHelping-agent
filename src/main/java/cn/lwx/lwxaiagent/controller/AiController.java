@@ -2,6 +2,8 @@ package cn.lwx.lwxaiagent.controller;
 
 import cn.lwx.lwxaiagent.agent.LoveManus;
 import cn.lwx.lwxaiagent.app.LoveApp;
+import cn.lwx.lwxaiagent.evolution.SessionTracker;
+import cn.lwx.lwxaiagent.tenant.TenantContext;
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
@@ -35,6 +37,9 @@ public class AiController {
     @Resource
     private JdbcChatMemoryRepository chatMemoryRepository;
 
+    @Resource
+    private SessionTracker sessionTracker;
+
     private final ConcurrentHashMap<String, LoveManus> activeSessions = new ConcurrentHashMap<>();
 
     @GetMapping("Love_app/chat/sync")
@@ -44,12 +49,16 @@ public class AiController {
 
     @GetMapping(value = "Love_app/chat/sse/tools", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatSseWithTools(String prompt, String chatId) {
-        return loveApp.doChatByStreamWithTools(prompt, chatId);
+        String tenantId = TenantContext.getTenantId();
+        return loveApp.doChatByStreamWithTools(prompt, chatId)
+                .doFinally(sig -> sessionTracker.onMessageSent(chatId, tenantId));
     }
     // 流式响应端点：使用 Server-Sent Events (SSE) 实现实时聊天。PRODUCES 指定响应类型为 text/event-stream，适合前端实时接收数据。
     @GetMapping(value = "Love_app/chat/sse",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatSse(String prompt, String chatId) {
-        return loveApp.doChatByStream(prompt,chatId);
+        String tenantId = TenantContext.getTenantId();
+        return loveApp.doChatByStream(prompt,chatId)
+                .doFinally(sig -> sessionTracker.onMessageSent(chatId, tenantId));
     }
 
     @GetMapping(value = "Love_app/chat/sse")
@@ -96,7 +105,9 @@ public class AiController {
      */
     @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatSseWithRAG(String prompt, String chatId) {
-        return loveApp.doChatByStreamWithRAG(prompt, chatId);
+        String tenantId = TenantContext.getTenantId();
+        return loveApp.doChatByStreamWithRAG(prompt, chatId)
+                .doFinally(sig -> sessionTracker.onMessageSent(chatId, tenantId));
     }
 
     @GetMapping(value = "Love_app/chat/LoveManus")

@@ -2,6 +2,7 @@ package cn.lwx.lwxaiagent.retrieval;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,7 +30,7 @@ public class HybridRetrievalConfig {
      */
     @Bean
     public MilvusVectorRetriever milvusVectorRetriever(
-            HybridRetrievalProperties props, EmbeddingModel embeddingModel) {
+            HybridRetrievalProperties props, @Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
         var m = props.getHybrid().getMilvus();
         log.info("Initializing Milvus retriever: {}:{}", m.getHost(), m.getPort());
         var retriever = new MilvusVectorRetriever(

@@ -21,11 +21,11 @@ spring:
           servers-configuration: classpath:mcp-servers.json
 
     # OpenAI 兼容接口（支持 OpenAI / 任何 OpenAI 格式 API）
-    openai:
-      api-key: ${OPENAI_API_KEY:}
-      chat:
-        options:
-          model: gpt-4o
+#    openai:
+#      api-key: ${OPENAI_API_KEY:}
+#      chat:
+#        options:
+#          model: gpt-4o
 
 management:
   tracing:
@@ -86,6 +86,12 @@ rag:
     rrf:
       k: 60
       topK: 10
+
+evolution:
+  enabled: true
+  idle-timeout-seconds: 300
+  quality-threshold: 5
+  extract-delay-seconds: 30
 
 search-api:
   api-key: ${SEARCH_API_KEY:}
