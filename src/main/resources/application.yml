@@ -34,7 +34,7 @@ app:
       password: 123456
 
 server:
-  port: 8123
+  port: 8088
   servlet:
     context-path: /api
 
@@ -63,6 +63,9 @@ logging:
 rag:
   type: hybrid
   hybrid:
+    es:
+      uris: http://172.28.23.117:9200
+      index: love_knowledge
     milvus:
       host: 172.28.23.117
       port: 19530
@@ -74,3 +77,13 @@ rag:
 
 search-api:
   api-key: b0236c51e1233e79e3c703aa360ef5a949f97c24
+
+# MyBatis-Plus 配置（使用已有 MySQL 数据源）
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+# JWT 配置（第二期：多租户）
+jwt:
+  secret: lwx-ai-agent-secret-key-need-at-least-32-chars
+  expiration-ms: 86400000  # 24 小时

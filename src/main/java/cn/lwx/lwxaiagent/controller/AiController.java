@@ -29,7 +29,7 @@ public class AiController {
     private ToolCallback[] toolCallbacks;
 
     @Resource
-    private ChatModel deepseekChatModel;
+    private ChatModel deepSeekChatModel;
 
     @Resource
     private JdbcChatMemoryRepository chatMemoryRepository;
@@ -84,6 +84,15 @@ public class AiController {
         return emitter;
     }
 
+    /**
+     * 流式 RAG 对话端点（新增，第一期）。
+     * 前端不需要 Agent 时使用此接口，走 PGvector 知识库检索 + 流式输出。
+     * <p>
+     * 与 /Love_app/chat/sse 的区别：多了 QuestionAnswerAdvisor，
+     * 会在调用 LLM 前自动检索知识库，将相关文档拼入上下文。
+     * <p>
+     * 适用场景：纯问答式知识库查询，不需要 Agent 的工具调用能力。
+     */
     @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatSseWithRAG(String prompt, String chatId) {
         return loveApp.doChatByStreamWithRAG(prompt, chatId);
@@ -99,7 +108,7 @@ public class AiController {
         // 复用已有 Agent 实例以保持对话历史，或创建新的
         LoveManus loveManus = activeSessions.get(finalSessionId);
         if (loveManus == null) {
-            loveManus = new LoveManus(toolCallbacks, deepseekChatModel);
+            loveManus = new LoveManus(toolCallbacks, deepSeekChatModel);
             // 绑定 MySQL 持久化记忆
             ChatMemory mysqlMemory = MessageWindowChatMemory.builder()
                     .chatMemoryRepository(chatMemoryRepository)

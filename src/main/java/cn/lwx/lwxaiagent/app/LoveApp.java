@@ -23,6 +23,7 @@ import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -48,13 +49,7 @@ public class LoveApp {
     @Resource
     private VectorStore PgVectorVectorStore;
 
-
-
-    /**
-     * 初始化ChatClint
-     * @param deepseekChatModel
-     */
-    public LoveApp(ChatModel deepseekChatModel, JdbcChatMemoryRepository chatMemoryRepository) {
+    public LoveApp(JdbcChatMemoryRepository chatMemoryRepository, @Qualifier("deepSeekChatModel") ChatModel deepseekChatModel) {
         // 依赖注入：ChatModel 由 Spring 提供，避免手动创建。
 
         // 初始化基于 JDBC 的对话记忆：跨进程持久化、适合多轮对话。
@@ -170,6 +165,18 @@ public class LoveApp {
         return content;
     }
 
+    /**
+     * 流式 RAG 对话（新增，第一期）。
+     * 在流式输出的基础上，加上了 QuestionAnswerAdvisor（PGvector 向量检索），
+     * 实现"检索 + 生成"的流水线。
+     * <p>
+     * 前端通过 {@code /Love_app/chat/sse/rag} 端点调用此方法，
+     * 适用于不需要 Agent 工具调用、仅需知识库问答的场景。
+     *
+     * @param message 用户输入
+     * @param chatId 对话 ID，用于关联对话记忆
+     * @return SSE 流式响应（Flux<String>）
+     */
     public Flux<String> doChatByStreamWithRAG(String message, String chatId) {
         QuestionAnswerAdvisor ragAdvisor = QuestionAnswerAdvisor.builder(PgVectorVectorStore).build();
         return chatClient

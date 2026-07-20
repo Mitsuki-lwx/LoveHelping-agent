@@ -40,7 +40,7 @@ public class PgVectorVectorStoreConfig {
                 .build();
         // 创建一个 PostgreSQL JdbcTemplate，用来执行数据库操作
         JdbcTemplate pgJdbcTemplate = new JdbcTemplate(pgDataSource);
-
+        // 创建一个 PgVectorStore，用来存储向量数据
         PgVectorStore vectorStore = PgVectorStore.builder(pgJdbcTemplate, embeddingModel)
                 .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
                 .indexType(PgVectorStore.PgIndexType.HNSW)
@@ -68,6 +68,7 @@ public class PgVectorVectorStoreConfig {
             log.info("原始文档数: {}, 去重后: {}", documents.size(), uniqueDocs.size());
 
             // DashScope API限制：每批最多10条
+            //这是一个工具类，用于将一个列表分割成多个子列表，每个子列表的大小不超过指定的最大值。在这里，它被用来将去重后的文档列表分割成每批最多10条的子列表，以便批量添加到向量存储中。
             List<List<Document>> batches = ListUtil.partition(uniqueDocs, 10);
             for (List<Document> batch : batches) {
                 vectorStore.add(batch);

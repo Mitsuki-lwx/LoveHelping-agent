@@ -11,11 +11,11 @@ import java.util.List;
 @Component
 public class MyKeywordEnricher {
 
-    @Resource
-    private ChatModel deepseekChatModel;
+    @Resource(name = "dashScopeChatModel")
+    private ChatModel dashScopeChatModel;
 
     public List<Document> enrichDocuments(List<Document> documents) {
-        KeywordMetadataEnricher enricher = KeywordMetadataEnricher.builder(deepseekChatModel)
+        KeywordMetadataEnricher enricher = KeywordMetadataEnricher.builder(dashScopeChatModel)
                 .keywordCount(5)
                 .build();
         return enricher.apply(documents);

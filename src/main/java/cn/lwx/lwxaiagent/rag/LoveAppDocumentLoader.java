@@ -11,6 +11,14 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+/**
+ * LoveAppDocumentLoader 是一个用于加载 Markdown 文档的组件类。
+ * 它使用 Spring 的 ResourcePatternResolver 来扫描项目中的指定目录（classpath:document
+ * ）下的所有 Markdown 文件，并将其内容读取为 Document 对象列表。
+ * 该类还支持为每个文档添加额外的元数据，如文件
+ * 名和状态信息。加载过程中，如果遇到任何 IO 异常，会记录错误日志。
+ */
 @Component
 @Slf4j
 public class LoveAppDocumentLoader {
@@ -36,8 +44,13 @@ public class LoveAppDocumentLoader {
                         .withAdditionalMetadata("filename", fileName)//添加元数据，元数据是一个键值对，键是filename，值是文件名
                         .withAdditionalMetadata("status",fileName.substring(fileName.length()-6,fileName.length()-4))
                         .build();
-                MarkdownDocumentReader reader = new MarkdownDocumentReader(resource, config);//创建MarkdownDocumentReader对象
-                allDocuments.addAll(reader.get());
+                MarkdownDocumentReader reader = new MarkdownDocumentReader(resource, config);
+                List<Document> docs = reader.get();
+                // 给所有文档加上 tenantId 元数据（默认 "default"，多租户时由数据隔离使用）
+                for (Document doc : docs) {
+                    doc.getMetadata().putIfAbsent("tenantId", "default");
+                }
+                allDocuments.addAll(docs);
             }
         } catch (IOException e) {
             log.error("Markdown 文档加载失败", e);

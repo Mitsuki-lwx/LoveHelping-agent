@@ -1,15 +1,17 @@
 package cn.lwx.lwxaiagent.agent;
 
 import cn.lwx.lwxaiagent.advisor.MyLoggerAdvisor;
+import jakarta.annotation.Resource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 @Component
 public class LoveManus extends ToolCallAgent{
 
-    public LoveManus(ToolCallback[] avilableTools, ChatModel deepseekChatModel) {
+    public LoveManus(ToolCallback[] avilableTools, @Qualifier("deepSeekChatModel") ChatModel deepseekChatModel) {
         super(avilableTools);
         this.setName("LoveManus");
 
