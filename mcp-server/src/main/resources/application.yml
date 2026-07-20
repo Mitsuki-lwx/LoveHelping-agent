@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: lwx-agent-mcp
+  profiles:
+    active: sse
+server:
+  port: 8125
