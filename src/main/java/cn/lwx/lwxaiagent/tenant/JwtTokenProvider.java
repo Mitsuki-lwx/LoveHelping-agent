@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.tenant;
 
+import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;

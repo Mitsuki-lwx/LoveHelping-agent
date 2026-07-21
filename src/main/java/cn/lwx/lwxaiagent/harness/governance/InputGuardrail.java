@@ -26,14 +26,22 @@ public class InputGuardrail {
             Pattern.compile("(傻逼|操你|滚你妈|去死|废物|狗日的)")
     );
 
+    private static final List<Pattern> VAGUE_PATTERNS = List.of(
+            Pattern.compile("^[^，。？\\?]{1,15}$"),
+            Pattern.compile("(?i)^(怎么|如何|怎样|咋|该怎么办|怎么办|帮帮我|求救|急)(追|撩|哄|挽回|表白|相处|分手|吵架|生气|冷淡)"),
+            Pattern.compile("(?i)^(她|他|对方)(生气|不理我|冷淡|出轨|提分手|说分手)"),
+            Pattern.compile("(?i)^(吵架了|分手了|闹矛盾|冷战|有矛盾|出问题了)"),
+            Pattern.compile("(?i)^(喜欢一个人|爱上|暗恋|想追|在一起)怎么办")
+    );
+
     public GuardrailResult check(String input) {
         if (input == null || input.isBlank()) return GuardrailResult.pass();
 
         for (Pattern p : INJECTION_PATTERNS) {
             if (p.matcher(input).find()) {
                 log.warn("Input blocked (injection): {} -> {}", p.pattern(), truncate(input));
-                String fallback = "检测到潜在的 Prompt 注入尝试，请正常描述你的情感问题。";
-                return GuardrailResult.block("prompt_injection", fallback);
+                return GuardrailResult.block("prompt_injection",
+                        "检测到潜在的 Prompt 注入尝试，请正常描述你的情感问题。");
             }
         }
 
@@ -46,8 +54,21 @@ public class InputGuardrail {
         }
         if (abuseHit != null) {
             log.warn("Input blocked (abuse): {} -> {}", abuseHit, truncate(input));
-            String fallback = "请使用文明语言描述你的问题，我会尽力帮助你。";
-            return GuardrailResult.block("abusive_language", fallback);
+            return GuardrailResult.block("abusive_language",
+                    "请使用文明语言描述你的问题，我会尽力帮助你。");
+        }
+
+        for (Pattern p : VAGUE_PATTERNS) {
+            if (p.matcher(input.trim()).find()) {
+                log.info("Input vague: {} matched pattern {}", truncate(input), p.pattern());
+                return GuardrailResult.vagueHint(
+                        "你的描述比较简略，能多说说具体情况吗？比如：\n" +
+                        "• 你们在一起多久了？\n" +
+                        "• 具体发生了什么事？\n" +
+                        "• 你尝试过什么方式沟通？\n" +
+                        "• 对方有什么反应？\n\n" +
+                        "告诉我更多细节，我才能给你更有针对性的建议 😊");
+            }
         }
 
         return GuardrailResult.pass();

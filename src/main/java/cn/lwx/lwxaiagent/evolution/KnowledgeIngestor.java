@@ -1,5 +1,7 @@
 package cn.lwx.lwxaiagent.evolution;
 
+import cn.lwx.lwxaiagent.entity.KnowledgeEntry;
+import cn.lwx.lwxaiagent.mapper.KnowledgeEntryMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -7,6 +9,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +32,7 @@ public class KnowledgeIngestor {
     @Qualifier("dashscopeEmbeddingModel")
     private EmbeddingModel embeddingModel;
 
+    @Transactional
     public void ingest(List<ConversationExtractor.ExtractedEntry> entries,
                        String tenantId, String sessionId) {
         for (var entry : entries) {

@@ -1,20 +1,12 @@
-package cn.lwx.lwxaiagent.tenant;
+package cn.lwx.lwxaiagent.controller;
 
+import cn.lwx.lwxaiagent.tenant.UserService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 认证控制器：注册 + 登录。
- * <p>
- * 端点：
- * POST /auth/register  — 注册新用户，返回 JWT
- * POST /auth/login     — 登录，返回 JWT
- * <p>
- * 这些端点不需要 Authorization 头（已在 SecurityConfig 中放行）。
- */
 @Slf4j
 @RestController
 @RequestMapping("/auth")

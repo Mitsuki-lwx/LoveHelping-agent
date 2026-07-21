@@ -1,4 +1,4 @@
-package cn.lwx.lwxaiagent.evolution;
+package cn.lwx.lwxaiagent.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;

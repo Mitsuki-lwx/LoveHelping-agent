@@ -1,6 +1,6 @@
 package cn.lwx.lwxaiagent.agent;
 
-import cn.lwx.lwxaiagent.advisor.MyLoggerAdvisor;
+import cn.lwx.lwxaiagent.harness.MyLoggerAdvisor;
 import jakarta.annotation.Resource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;

@@ -4,7 +4,7 @@ import cn.lwx.lwxaiagent.retrieval.HybridRetrievalProperties;
 import cn.lwx.lwxaiagent.retrieval.HybridRetrievalService;
 import cn.lwx.lwxaiagent.retrieval.MilvusVectorRetriever;
 import cn.lwx.lwxaiagent.retrieval.RetrieverType;
-import cn.lwx.lwxaiagent.tenant.TenantContext;
+import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;

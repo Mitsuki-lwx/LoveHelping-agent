@@ -41,7 +41,11 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         String userText = getUserText(request);
         GuardrailResult inputCheck = inputGuardrail.check(userText);
         if (inputCheck.blocked()) {
-            log.warn("Input guardrail blocked: {}", inputCheck.reason());
+            if (inputCheck.vague()) {
+                log.info("Input vague → asking clarification: {}", truncate(userText));
+            } else {
+                log.warn("Input blocked ({}): {}", inputCheck.reason(), truncate(userText));
+            }
             return fallbackResponse(inputCheck.fallback());
         }
 
@@ -61,7 +65,11 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         String userText = getUserText(request);
         GuardrailResult inputCheck = inputGuardrail.check(userText);
         if (inputCheck.blocked()) {
-            log.warn("Input guardrail blocked (stream): {}", inputCheck.reason());
+            if (inputCheck.vague()) {
+                log.info("Input vague (stream) → asking clarification: {}", truncate(userText));
+            } else {
+                log.warn("Input blocked (stream) ({}): {}", inputCheck.reason(), truncate(userText));
+            }
             return Flux.just(fallbackResponse(inputCheck.fallback()));
         }
 
@@ -91,6 +99,10 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    private String truncate(String s) {
+        return s.length() > 50 ? s.substring(0, 50) + "..." : s;
     }
 
     private ChatClientResponse fallbackResponse(String text) {

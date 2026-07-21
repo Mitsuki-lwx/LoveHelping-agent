@@ -1,5 +1,6 @@
-package cn.lwx.lwxaiagent.evolution;
+package cn.lwx.lwxaiagent.mapper;
 
+import cn.lwx.lwxaiagent.entity.KnowledgeEntry;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

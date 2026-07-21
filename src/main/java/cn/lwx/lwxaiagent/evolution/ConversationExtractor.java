@@ -1,5 +1,9 @@
 package cn.lwx.lwxaiagent.evolution;
 
+import cn.lwx.lwxaiagent.entity.KnowledgeEntry;
+import cn.lwx.lwxaiagent.entity.KnowledgeVote;
+import cn.lwx.lwxaiagent.mapper.KnowledgeEntryMapper;
+import cn.lwx.lwxaiagent.mapper.KnowledgeVoteMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -8,6 +12,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +41,7 @@ public class ConversationExtractor {
     }
 
     @Async("evolutionExecutor")
+    @Transactional
     public void extractSession(String chatId, String tenantId) {
         try {
             if (entryMapper.countBySessionId(chatId) > 0) {

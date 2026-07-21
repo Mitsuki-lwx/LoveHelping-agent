@@ -1,8 +1,7 @@
-package cn.lwx.lwxaiagent.evolution;
+package cn.lwx.lwxaiagent.evolution.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 @Data
 @ConfigurationProperties(prefix = "evolution")

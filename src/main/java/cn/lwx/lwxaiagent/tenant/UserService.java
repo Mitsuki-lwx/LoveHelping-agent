@@ -1,5 +1,7 @@
 package cn.lwx.lwxaiagent.tenant;
 
+import cn.lwx.lwxaiagent.entity.User;
+import cn.lwx.lwxaiagent.mapper.UserMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;

@@ -32,6 +32,12 @@ management:
     enabled: true
     sampling:
       probability: 1.0
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 3000ms
+
 # 自定义 PostgreSQL 配置（给 pgvector 用）
 # 默认聊天模型：deepseek（默认）| openai
 # 想切换 OpenAI 时改成 openai，并设置 spring.ai.openai.api-key
@@ -44,6 +50,9 @@ app:
       url: jdbc:postgresql://localhost:5432/postgres
       username: postgres
       password: ${PGVECTOR_PASSWORD:}
+  rate-limit:
+    enabled: true
+    daily-quota: 5
 
 server:
   port: 8088
