@@ -18,15 +18,16 @@ public class SecurityConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(tenantInterceptor)
-                .addPathPatterns("/Love_app/**")
+                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/auth/me")
                 .excludePathPatterns(
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
                         "/actuator/**",
-                        "/auth/**",
+                        "/auth/login",
+                        "/auth/register",
                         "/tenant/token"
                 );
-        log.info("TenantInterceptor registered for /Love_app/**");
+        log.info("TenantInterceptor registered for /Love_app/**, /memory/**, /evolution/**, /auth/me");
     }
 
     @Bean

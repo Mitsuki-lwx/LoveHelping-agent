@@ -1,0 +1,39 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "ik_analyzer": {
+          "type": "custom",
+          "tokenizer": "ik_smart"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "analyzer": "ik_analyzer"
+      },
+      "text": {
+        "type": "text",
+        "analyzer": "ik_analyzer",
+        "fields": {
+          "ik": {
+            "type": "text",
+            "analyzer": "ik_smart"
+          }
+        }
+      },
+      "metadata": {
+        "type": "text",
+        "index": false
+      },
+      "tenant_id": {
+        "type": "keyword"
+      }
+    }
+  }
+}

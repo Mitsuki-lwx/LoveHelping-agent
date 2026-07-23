@@ -1,6 +1,9 @@
 package cn.lwx.lwxaiagent.controller;
 
+import cn.lwx.lwxaiagent.tenant.JwtTokenProvider;
 import cn.lwx.lwxaiagent.tenant.UserService;
+import cn.lwx.lwxaiagent.tenant.context.TenantContext;
+import io.jsonwebtoken.Claims;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -15,6 +18,9 @@ public class AuthController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private JwtTokenProvider jwtTokenProvider;
+
     @PostMapping("/register")
     public Map<String, Object> register(@RequestBody Map<String, String> body) {
         String username = body.get("username");
@@ -28,7 +34,7 @@ public class AuthController {
 
         try {
             String token = userService.register(username, password, tenantId, role);
-            return Map.of("success", true, "token", token, "username", username);
+            return Map.of("success", true, "token", token, "username", username, "role", role);
         } catch (RuntimeException e) {
             return Map.of("success", false, "message", e.getMessage());
         }
@@ -45,9 +51,25 @@ public class AuthController {
 
         try {
             String token = userService.login(username, password);
-            return Map.of("success", true, "token", token, "username", username);
+            // 从 token 中解码出 role
+            String role = "USER";
+            try {
+                Claims claims = jwtTokenProvider.parseToken(token);
+                role = claims.get("role", String.class);
+            } catch (Exception ignored) {}
+            return Map.of("success", true, "token", token, "username", username, "role", role);
         } catch (RuntimeException e) {
             return Map.of("success", false, "message", e.getMessage());
         }
+    }
+
+    @GetMapping("/me")
+    public Map<String, Object> me() {
+        String userId = TenantContext.getUserId();
+        String role = TenantContext.getRole();
+        if (userId == null) {
+            return Map.of("success", false, "message", "未登录");
+        }
+        return Map.of("success", true, "username", userId, "role", role != null ? role : "USER");
     }
 }

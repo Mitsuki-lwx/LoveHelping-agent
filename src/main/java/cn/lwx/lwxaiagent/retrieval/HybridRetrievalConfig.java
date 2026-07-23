@@ -1,11 +1,14 @@
 package cn.lwx.lwxaiagent.retrieval;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import io.milvus.v2.client.MilvusClientV2;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 
 /**
  * 混合检索 Spring 配置类。
@@ -18,56 +21,43 @@ import org.springframework.context.annotation.Configuration;
  * 4. HybridRetrievalService — 统一入口
  * <p>
  * 默认模式 {@code rag.type=pgvector} 时，所有 @ConditionalOnProperty 都不会命中。
+ * <p>
+ * Schema 初始化（ES 索引、Milvus collection）由 {@link DatabaseSchemaInitializer} 统一管理，
+ * 通过 @DependsOn 确保在检索器 Bean 之前完成。
  */
 @Slf4j
 @Configuration
 @ConditionalOnProperty(name = "rag.type", havingValue = "hybrid")
 public class HybridRetrievalConfig {
 
-    /**
-     * 创建 Milvus 检索器。
-     * init() 中会连接 Milvus 并确保 collection 存在。
-     */
     @Bean
+    @DependsOn("databaseSchemaInitializer")
     public MilvusVectorRetriever milvusVectorRetriever(
-            HybridRetrievalProperties props, @Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
+            MilvusClientV2 milvusClient,
+            HybridRetrievalProperties props,
+            @Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
         var m = props.getHybrid().getMilvus();
-        log.info("Initializing Milvus retriever: {}:{}", m.getHost(), m.getPort());
-        var retriever = new MilvusVectorRetriever(
-                m.getHost(), m.getPort(), m.getCollectionName(),
+        log.info("Creating MilvusVectorRetriever (collection={})", m.getCollectionName());
+        return new MilvusVectorRetriever(milvusClient, m.getCollectionName(),
                 m.getVectorDim(), embeddingModel);
-        retriever.init();
-        return retriever;
     }
 
-    /**
-     * 创建 ES 关键词检索器。
-     * init() 中会连接 ES 并创建 REST 客户端。
-     */
     @Bean
-    public ESKeywordRetriever esKeywordRetriever(HybridRetrievalProperties props) {
-        //这是先得到配置中的 ES 相关信息，然后创建 ESKeywordRetriever 实例，并调用 init() 方法进行初始化。
+    @DependsOn("databaseSchemaInitializer")
+    public ESKeywordRetriever esKeywordRetriever(
+            ElasticsearchClient esClient,
+            HybridRetrievalProperties props) {
         var es = props.getHybrid().getEs();
-        log.info("Initializing ES retriever: {}", es.getUris());
-        var retriever = new ESKeywordRetriever(es.getUris(), es.getIndex());//传入 ES 的 URI 和索引名称
-        retriever.init();
-        return retriever;
+        log.info("Creating ESKeywordRetriever (index={})", es.getIndex());
+        return new ESKeywordRetriever(esClient, es.getIndex());
     }
 
-    /**
-     * 创建 RRF 融合排序器。
-     * k 和 topK 参数从配置注入，可在运行时调整。
-     */
     @Bean
     public RRFFuser rrfFuser(HybridRetrievalProperties props) {
         var rrf = props.getHybrid().getRrf();
         return new RRFFuser(rrf.getK(), rrf.getTopK());
     }
 
-    /**
-     * 创建混合检索服务（统一入口）。
-     * 依赖三个 Bean：MilvusVectorRetriever + ESKeywordRetriever + RRFFuser。
-     */
     @Bean
     public HybridRetrievalService hybridRetrievalService(
             MilvusVectorRetriever milvusRetriever,

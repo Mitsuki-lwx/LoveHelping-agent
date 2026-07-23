@@ -81,7 +81,19 @@ public class BaiduImageSearchTool {
         conn.setReadTimeout(10000);
 
         try (InputStream in = conn.getInputStream()) {
-            JsonNode root = objectMapper.readTree(in);
+            byte[] bytes = in.readAllBytes();
+            String raw = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            if (raw.trim().startsWith("<")) {
+                log.warn("Baidu returned HTML, skipping page {}", offset / 30 + 1);
+                return urls;
+            }
+            JsonNode root;
+            try {
+                root = objectMapper.readTree(raw);
+            } catch (Exception e) {
+                log.warn("Baidu returned invalid JSON for keyword '{}': {}", keyword, e.getMessage());
+                return urls;
+            }
             JsonNode data = root.get("data");
 
             if (data != null && data.isArray()) {

@@ -11,13 +11,10 @@ import java.util.List;
 
 /**
  * ES 文档初始化器。
- * 仅在 {@code rag.type=hybrid} 时生效，首次启动时创建 IK 索引并导入文档。
+ * 仅在 {@code rag.type=hybrid} 时生效，检查索引中是否有数据，为空则导入。
  * <p>
- * 流程：
- * 1. 检查索引是否存在 → 不存在则创建（含 IK 中文分词）
- * 2. 检查索引中是否有数据 → 为空则从 .md 文件导入
- * <p>
- * 索引已存在且有数据 → 跳过（幂等，重启不重复导入）
+ * 索引创建由 {@link DatabaseSchemaInitializer} 统一管理，本类只负责数据导入。
+ * 幂等：重启不重复导入。
  */
 @Slf4j
 @Component
@@ -36,26 +33,24 @@ public class ESDocumentInitializer {
     @PostConstruct
     public void init() {
         if (!esRetriever.indexExists()) {
-            log.info("ES index '{}' doesn't exist, creating...", esRetriever.getIndexName());
-            esRetriever.createIndexWithIk();
-        } else {
-            boolean hasData = true;
-            try {
-                hasData = esRetriever.count() > 0;
-            } catch (Exception e) {
-                log.warn("Failed to check ES document count: {}", e.getMessage());
-            }
-            if (hasData) {
-                log.info("ES index '{}' already has data, skipping load", esRetriever.getIndexName());
-                return;
-            }
-            // 索引存在但无数据（上次导入失败），重建索引
-            log.info("ES index '{}' exists but empty, recreating...", esRetriever.getIndexName());
-            esRetriever.deleteIndex();
-            esRetriever.createIndexWithIk();
+            log.warn("ES index '{}' does not exist — expected to be created by DatabaseSchemaInitializer",
+                    esRetriever.getIndexName());
+            return;
         }
 
-        log.info("Loading documents into ES...");
+        boolean hasData;
+        try {
+            hasData = esRetriever.count() > 0;
+        } catch (Exception e) {
+            log.warn("Failed to check ES document count: {}", e.getMessage());
+            return;
+        }
+        if (hasData) {
+            log.info("ES index '{}' already has data, skipping load", esRetriever.getIndexName());
+            return;
+        }
+
+        log.info("Loading documents into ES index '{}'...", esRetriever.getIndexName());
         List<Document> docs = documentLoader.loadMarkdowns();
         int count = 0;
         for (Document doc : docs) {
@@ -66,7 +61,6 @@ public class ESDocumentInitializer {
                 log.warn("Failed to index document to ES: {}", e.getMessage());
             }
         }
-        log.info("Loaded {} documents into ES index '{}'",
-                count, esRetriever.getIndexName());
+        log.info("Loaded {} documents into ES index '{}'", count, esRetriever.getIndexName());
     }
 }

@@ -44,7 +44,14 @@ public class WebSearchTool {
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            JsonNode root = objectMapper.readTree(response.body());
+            String body = response.body();
+            if (body == null || body.trim().isEmpty()) {
+                return "Error searching Serper: empty response";
+            }
+            if (body.trim().startsWith("<")) {
+                return "Error searching Serper: API returned HTML (possibly invalid API key or expired)";
+            }
+            JsonNode root = objectMapper.readTree(body);
             JsonNode organic = root.get("organic");
             if (organic == null || !organic.isArray() || organic.isEmpty()) {
                 return "";

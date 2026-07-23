@@ -8,6 +8,10 @@ spring:
     url: jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: ${MYSQL_PASSWORD:}
+  sql:
+    init:
+      mode: always
+      continue-on-error: true
   ai:
     chat:
       memory:
@@ -19,6 +23,17 @@ spring:
       client:
         stdio:
           servers-configuration: classpath:mcp-servers.json
+    dashscope:
+      api-key: ${DASHSCOPE_API_KEY:}
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:}
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 3000ms
 
     # OpenAI 兼容接口（支持 OpenAI / 任何 OpenAI 格式 API）
 #    openai:
@@ -32,11 +47,6 @@ management:
     enabled: true
     sampling:
       probability: 1.0
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 3000ms
 
 # 自定义 PostgreSQL 配置（给 pgvector 用）
 # 默认聊天模型：deepseek（默认）| openai
@@ -51,8 +61,12 @@ app:
       username: postgres
       password: ${PGVECTOR_PASSWORD:}
   rate-limit:
-    enabled: true
+    enabled: false
     daily-quota: 5
+  memory:
+    window-size: 20
+    agent-window-size: 50
+    strategy: JDBC
 
 server:
   port: 8088
@@ -98,9 +112,11 @@ rag:
 
 evolution:
   enabled: true
-  idle-timeout-seconds: 300
+  idle-timeout-seconds: 7200
   quality-threshold: 5
-  extract-delay-seconds: 30
+  extract-delay-seconds: 1800
+  skill-top-k: 3
+  skill-min-score: 0.5
 
 search-api:
   api-key: ${SEARCH_API_KEY:}

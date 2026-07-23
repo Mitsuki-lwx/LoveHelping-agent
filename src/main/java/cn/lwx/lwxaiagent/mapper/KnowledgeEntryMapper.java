@@ -8,7 +8,13 @@ import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
+/**
+ * 旧知识条目 Mapper（已废弃，由 {@link EvolutionSkillMapper} 替代）。
+ * <p>
+ * 保留用于读取旧数据，新代码请使用 EvolutionSkillMapper。
+ */
 @Mapper
+@Deprecated
 public interface KnowledgeEntryMapper extends BaseMapper<KnowledgeEntry> {
 
     @Select("SELECT COUNT(*) FROM knowledge_entry WHERE source_session_id = #{sessionId}")

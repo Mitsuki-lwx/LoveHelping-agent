@@ -82,6 +82,10 @@ public abstract class BaseAgent {
             if (chatMemory != null && conversationId != null && messageList.isEmpty()) {
                 List<Message> history = chatMemory.get(conversationId);
                 if (history != null && !history.isEmpty()) {
+                    // 过滤掉系统内部提示（旧数据可能残留）
+                    history.removeIf(msg ->
+                        msg instanceof UserMessage &&
+                        ((UserMessage) msg).getText().contains("You have tools available"));
                     messageList.addAll(0, history);
                 }
             }
@@ -90,73 +94,59 @@ public abstract class BaseAgent {
             messageList.add(new UserMessage(userPrompt));
             //保存结果列表
             List<String> results = new ArrayList<>();
-            // 累积文件输出（仅在最终结果展示）
+            // 累积文件输出
             StringBuilder pendingFileOutput = new StringBuilder();
-            boolean fileOutputShown = false;
             Set<String> seenFileOutputs = new HashSet<>();
 
             //步骤执行循环，直到完成或出错
             try {
-                for (int i = 0; i < maxSteps&& this.state == AgentState.RUNNING; i++) {
+                for (int i = 0; i < maxSteps && this.state == AgentState.RUNNING; i++) {
                     int stepNumber = i + 1;
-                    //执行单步骤并记录结果
-                    String stepResult = step();
+                    boolean toolsCalled;
+                    String stepResult;
+
+                    // --- 流式思考：用 .stream() 实时输出 token，替代 step() 的阻塞 .call() ---
+                    if (this instanceof ToolCallAgent tca) {
+                        toolsCalled = tca.streamThink(emitter);
+                        if (!toolsCalled) {
+                            // 最终答案已由 streamThink 流式发送，清空已累积的文件输出避免重复
+                            pendingFileOutput.setLength(0);
+                            this.state = AgentState.FINISHED;
+                            break;
+                        }
+                        // 需要工具：执行 act
+                        stepResult = tca.act();
+                    } else {
+                        stepResult = step();
+                        toolsCalled = isToolsCalled();
+                    }
                     this.currentStep = stepNumber;
-                    // 从消息列表中提取最新的思考文本，并判断是否调用了工具
+                    // 以下仅处理工具调用步骤的展示（💭），最终答案已由 streamThink 流式发送
                     String thought = extractLastThought();
-                    // 清理 AI 输出中的转义字符（如 \n → 真实换行）
                     if (thought != null) {
                         thought = thought.replace("\\n", "\n").replace("\\t", "\t");
                     }
-                    boolean toolsCalled = isToolsCalled();
 
                     // 累积文件输出（仅用于最终结果展示）
                     String fileOutput = extractFileOutput(stepResult, seenFileOutputs);
-                    if (toolsCalled && fileOutput != null) {
+                    if (fileOutput != null) {
                         if (pendingFileOutput.length() > 0) pendingFileOutput.append("\n");
                         pendingFileOutput.append(fileOutput);
                     }
 
-                    // 跳过无思考内容的工具执行步骤（空要点）
-                    if (toolsCalled && (thought == null || thought.trim().isEmpty())) {
+                    // 跳过无思考内容的工具执行步骤
+                    if (thought == null || thought.trim().isEmpty()) {
                         continue;
                     }
 
-                    String displayText;
-                    if (toolsCalled) {
-                        // 中间思考步骤：只展示思考内容，过滤掉 URL 列表等噪音，文件链接统一在最终结果展示
-                        String text = thought != null ? removeUrlLines(thought) : "";
-                        displayText = text.isEmpty() ? "" : "💭 " + text;
-                    } else {
-                        // 最终答案：用模型可视文本（而非 reasoning），追加累积的文件输出
-                        String answerText = extractLastText();
-                        StringBuilder sb = new StringBuilder("✨ ");
-                        sb.append(answerText != null ? answerText : stepResult);
-                        if (pendingFileOutput.length() > 0 && !sb.toString().contains("/api/")) {
-                            String files = pendingFileOutput.toString()
-                                .replaceAll("/api/files/downloads/[^\\s)\"]+\\.(png|jpg|jpeg|gif|webp)\\b", "![]($0)");
-                            sb.append("\n\n").append(files);
-                        }
-                        fileOutputShown = true;
-                        pendingFileOutput.setLength(0);
-                        displayText = sb.toString();
-                    }
-                    // 清理输出：移除本地文件系统路径，折叠多余换行
-                    displayText = removeLocalPaths(displayText);
-                    displayText = displayText.replaceAll("\\n{3,}", "\n\n");
-                    results.add("Step " + stepNumber + " result: " + stepResult);
-                    log.info("Agent {} SSE send total ({} chars)", this.name, displayText.length());
-                    //输出思考过程给sseEmitter，而不是原始工具数据
-                    emitter.send(displayText);
-
-                    // 未调工具 = 回答完毕，结束本轮
-                    if (!toolsCalled) {
-                        this.state = AgentState.FINISHED;
+                    String text = thought != null ? removeUrlLines(thought) : "";
+                    if (!text.isEmpty()) {
+                        emitter.send("💭 " + text);
                     }
 
                 }
                 // 循环结束：如果还有未展示的文件输出（如调用了 terminate 工具结束），补发
-                if (pendingFileOutput.length() > 0 && !fileOutputShown) {
+                if (pendingFileOutput.length() > 0) {
                     String files = pendingFileOutput.toString()
                         .replaceAll("/api/files/downloads/[^\\s)\"]+\\.(png|jpg|jpeg|gif|webp)\\b", "![]($0)");
                     emitter.send("\n✨ " + files);
@@ -184,7 +174,19 @@ public abstract class BaseAgent {
                 if (chatMemory != null && conversationId != null && !messageList.isEmpty()) {
                     try {
                         chatMemory.clear(conversationId);
-                        chatMemory.add(conversationId, messageList);
+                        // 过滤：只保留用户消息和非空助手回复，不保存工具调用等内部消息
+                        List<Message> persistentMessages = messageList.stream()
+                                .filter(m -> {
+                                    if (m instanceof UserMessage) return true;
+                                    if (m instanceof AssistantMessage) {
+                                        return m.getText() != null && !m.getText().isBlank();
+                                    }
+                                    return false;
+                                })
+                                .collect(java.util.stream.Collectors.toList());
+                        if (!persistentMessages.isEmpty()) {
+                            chatMemory.add(conversationId, persistentMessages);
+                        }
                     } catch (Exception e) {
                         log.warn("Failed to persist chat memory: {}", e.getMessage());
                     }
@@ -228,20 +230,47 @@ public abstract class BaseAgent {
     /**
      * 从消息列表中提取最新的 AssistantMessage 推理内容（DeepSeek 的 actual reasoning）
      * 优先取 DeepSeekAssistantMessage.getReasoningContent()，fallback 到 getText()
+     * <p>
+     * 如果 reasoning 主要为英文（DeepSeek V4 的 CoT 用英文），则不展示，返回简短中文标签。
      */
     private String extractLastThought() {
         for (int i = messageList.size() - 1; i >= 0; i--) {
             Message msg = messageList.get(i);
             if (msg instanceof DeepSeekAssistantMessage) {
                 String r = ((DeepSeekAssistantMessage) msg).getReasoningContent();
-                if (r != null && !r.isBlank()) return r;
+                if (r != null && !r.isBlank()) {
+                    if (isMostlyEnglish(r)) {
+                        return null; // 英文 CoT 不展示，跳过
+                    }
+                    return r;
+                }
                 return ((AssistantMessage) msg).getText();
             }
             if (msg instanceof AssistantMessage) {
-                return ((AssistantMessage) msg).getText();
+                String text = ((AssistantMessage) msg).getText();
+                if (text != null && isMostlyEnglish(text)) {
+                    return null;
+                }
+                return text;
             }
         }
         return null;
+    }
+
+    /** 判断文本是否主要是英文（非中文内容占比 &gt; 80%） */
+    private boolean isMostlyEnglish(String text) {
+        if (text == null || text.isBlank()) return false;
+        int total = 0, chinese = 0;
+        for (char c : text.toCharArray()) {
+            if (Character.isWhitespace(c)) continue;
+            total++;
+            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || Character.UnicodeBlock.of(c) == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION) {
+                chinese++;
+            }
+        }
+        return total > 0 && (double) chinese / total < 0.2;
     }
 
     /**

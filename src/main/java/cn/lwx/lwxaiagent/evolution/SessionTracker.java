@@ -1,44 +1,32 @@
 package cn.lwx.lwxaiagent.evolution;
 
-import jakarta.annotation.Resource;
+import cn.lwx.lwxaiagent.evolution.config.EvolutionProperties;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
-
+/**
+ * 会话追踪器 —— 记录会话活跃状态。
+ * <p>
+ * 反思触发已迁移至 {@link ReflectionScheduler}（DB 轮询模式），
+ * 此类保留用于活跃会话的统计和日志。
+ */
 @Slf4j
 @Component
 public class SessionTracker {
 
-    private final ConcurrentHashMap<String, ScheduledFuture<?>> pendingExtractions = new ConcurrentHashMap<>();
-    private final TaskScheduler taskScheduler;
+    private final EvolutionProperties props;
 
-    @Resource
-    private ConversationExtractor conversationExtractor;
-
-    public SessionTracker(TaskScheduler evolutionTaskScheduler) {
-        this.taskScheduler = evolutionTaskScheduler;
+    public SessionTracker(EvolutionProperties props) {
+        this.props = props;
     }
 
+    /**
+     * 标记会话有新消息。
+     * <p>
+     * 反思触发由 {@link ReflectionScheduler#scanAndReflect} 通过
+     * DB 轮询独立处理，此处仅记录日志。
+     */
     public void onMessageSent(String chatId, String tenantId) {
-        ScheduledFuture<?> existing = pendingExtractions.remove(chatId);
-        if (existing != null && !existing.isDone()) {
-            existing.cancel(false);
-            log.debug("Cancelled pending extraction for session {}", chatId);
-        }
-
-        ScheduledFuture<?> future = taskScheduler.schedule(
-                () -> {
-                    log.info("Triggering extraction for session {}", chatId);
-                    conversationExtractor.extractSession(chatId, tenantId);
-                    pendingExtractions.remove(chatId);
-                },
-                Instant.now().plusSeconds(30));
-
-        pendingExtractions.put(chatId, future);
-        log.debug("Scheduled extraction for session {} in 30s", chatId);
+        log.debug("Session activity: chatId={}, tenant={}", chatId, tenantId);
     }
 }

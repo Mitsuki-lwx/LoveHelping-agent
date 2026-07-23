@@ -1,7 +1,6 @@
 package cn.lwx.lwxaiagent.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 /**
  * 这是pgvector数据库连接属性
@@ -9,7 +8,6 @@ import org.springframework.stereotype.Component;
  *
  */
 @Data
-@Component
 @ConfigurationProperties(prefix = "app.pgvector.datasource")
 public class PgvectorProperties {
     private String driverClassName;

@@ -20,12 +20,20 @@ public class TenantInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String authHeader = request.getHeader("Authorization");
+        String token = null;
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return true;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring(7);
         }
 
-        String token = authHeader.substring(7);
+        // 兼容 SSE（EventSource 不支持自定义请求头，通过 query param 传递）
+        if (token == null) {
+            token = request.getParameter("token");
+        }
+
+        if (token == null) {
+            return true;
+        }
 
         try {
             Claims claims = jwtTokenProvider.parseToken(token);

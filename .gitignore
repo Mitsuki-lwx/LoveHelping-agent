@@ -55,4 +55,14 @@ build/
 .vscode/
 
 .txt
-/front
+### Node.js ###
+node_modules/
+front/dist/
+
+/.agents
+/.mvn
+
+### Generated artifacts ###
+META-INF/
+org/
+skills-lock.json
