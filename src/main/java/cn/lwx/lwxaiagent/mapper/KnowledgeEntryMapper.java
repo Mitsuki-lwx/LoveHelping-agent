@@ -9,9 +9,9 @@ import org.apache.ibatis.annotations.Select;
 import java.util.List;
 
 /**
- * 旧知识条目 Mapper（已废弃，由 {@link EvolutionSkillMapper} 替代）。
+ * Old knowledge entry Mapper (deprecated, replaced by {@link cn.lwx.lwxaiagent.mapper.EvolutionSkillMapper}).
  * <p>
- * 保留用于读取旧数据，新代码请使用 EvolutionSkillMapper。
+ * Retained for reading legacy data; new code should use EvolutionSkillMapper.
  */
 @Mapper
 @Deprecated

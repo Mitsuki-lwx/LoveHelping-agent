@@ -82,7 +82,7 @@ import { getUser } from '../utils/auth.js'
 const router = useRouter()
 const route = useRoute()
 
-// 如果 URL 有 sessionId 则继续该对话，否则新建
+// If URL has sessionId, continue that conversation, otherwise create new
 const chatId = ref(route.query.sessionId || generateChatId())
 
 function newChat() {
@@ -105,7 +105,7 @@ function renderMarkdown(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-  // Style emoji prefixes: 仅第一个 💭 带标签，后续仅保留徽标
+  // Style emoji prefixes: only the first 💭 gets a label, subsequent ones keep only the badge
   html = html.replace(/^💭 /gm, '%%THINK%%')
   html = html.replace('%%THINK%%', '<span class="step-badge step-think">思考</span> ')
   html = html.replace(/%%THINK%%/g, '<span class="step-bullet">&#8226;</span> ')
@@ -135,7 +135,7 @@ function renderMarkdown(text) {
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
-/** RAG 检索开关（新增，第一期）。点亮后走 /sse/rag 端点，带 PGvector 知识库检索 */
+/** RAG toggle (added Phase 1). When enabled, uses /sse/rag endpoint with PGvector knowledge base retrieval */
 const useRag = ref(false)
 const messagesRef = ref(null)
 const voteStates = ref({})
@@ -147,7 +147,7 @@ function goHome() {
   router.push('/')
 }
 
-/** 加载已有对话消息 */
+/** Load existing conversation messages */
 async function loadExistingMessages() {
   const sessionId = route.query.sessionId
   if (!sessionId) return
@@ -156,7 +156,7 @@ async function loadExistingMessages() {
     const msgs = res.data?.data
     if (Array.isArray(msgs) && msgs.length > 0) {
       for (const msg of msgs) {
-        // 只显示用户消息和助手回复，跳过工具调用/系统提示
+        // Only show user messages and assistant replies, skip tool calls / system prompts
         if (msg.messageType !== 'USER' && msg.messageType !== 'ASSISTANT') continue
         const text = (msg.text || '').trim()
         if (!text) continue
@@ -198,14 +198,14 @@ function sendMessage() {
   inputText.value = ''
   loading.value = true
   saveLocalConversation(chatId.value, text)
-  // 首次发送时注册对话归属
+  // Register conversation ownership on first send
   registerConversation(chatId.value, text.substring(0, 50), 'love').catch(() => {})
   scrollToBottom()
 
   messages.value.push({ role: 'ai', content: '' })
   const aiMsgIdx = messages.value.length - 1
 
-  // 根据 RAG 开关选择普通 SSE 或 RAG SSE（第一期新增）
+  // Choose normal SSE or RAG SSE based on RAG toggle (added Phase 1)
   const sseFn = useRag.value ? createLoveChatRagSSE : createLoveChatSSE
   cancelSSE = sseFn(text, chatId.value, {
     onMessage(data) {

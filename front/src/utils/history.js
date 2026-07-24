@@ -11,7 +11,7 @@ export function getLocalConversations() {
 export function saveLocalConversation(id, firstMessage) {
   const list = getLocalConversations().filter(c => c.id !== id)
   list.unshift({ id, firstMessage: firstMessage.substring(0, 50), createdAt: new Date().toISOString() })
-  // 只保留最近 50 条
+  // Keep only the most recent 50 entries
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, 50)))
 }
 

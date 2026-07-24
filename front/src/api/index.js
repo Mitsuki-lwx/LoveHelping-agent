@@ -6,7 +6,7 @@ const apiClient = axios.create({
   timeout: 30000
 })
 
-// 请求拦截器：自动携带 token
+// Request interceptor: automatically attach token
 apiClient.interceptors.request.use(config => {
   const token = getToken()
   if (token) {
@@ -15,7 +15,7 @@ apiClient.interceptors.request.use(config => {
   return config
 })
 
-// 响应拦截器：401 自动清除 token
+// Response interceptor: 401 auto-clear token
 apiClient.interceptors.response.use(
   res => res,
   err => {
@@ -31,10 +31,10 @@ function generateChatId() {
   return crypto.randomUUID()
 }
 
-/** SSE 连接（用于 EventSource，token 通过 query param 传递） */
+/** SSE connection (for EventSource, token passed via query param) */
 function sseUrl(path) {
   const token = getToken()
-  // 加 /api 前缀，生产环境 Spring Boot context-path=/api，dev 下 vite proxy 透传
+  // Prepend /api prefix; in production Spring Boot context-path=/api, in dev vite proxy passes through
   const fullPath = '/api' + path
   const sep = fullPath.includes('?') ? '&' : '?'
   return `${fullPath}${token ? sep + 'token=' + encodeURIComponent(token) : ''}`

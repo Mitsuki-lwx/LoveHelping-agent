@@ -6,16 +6,16 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Data
 @ConfigurationProperties(prefix = "evolution")
 public class EvolutionProperties {
-    /** 是否启用自我进化机制 */
+    /** Whether to enable the self-evolution mechanism */
     private boolean enabled = true;
-    /** 会话总时长超过此值（秒）强制触发反思，作为 extractDelaySeconds 的兜底。默认 2 小时 */
+    /** Force trigger reflection when session total duration exceeds this value (seconds), as safety net for extractDelaySeconds. Default 2 hours */
     private int idleTimeoutSeconds = 7200;
-    /** skill 最低质量分，低于此分不存储 */
+    /** Minimum skill quality score, skills below this threshold are not stored */
     private int qualityThreshold = 5;
-    /** 最后一次消息后延迟多久触发反思（秒） */
+    /** Delay after last message before triggering reflection (seconds) */
     private int extractDelaySeconds = 1800;
-    /** 检索时返回 top-K 条 skill */
+    /** Return top-K skills when retrieving */
     private int skillTopK = 3;
-    /** RAG 检索时最低相似度分数 */
+    /** Minimum similarity score for RAG retrieval */
     private double skillMinScore = 0.5;
 }

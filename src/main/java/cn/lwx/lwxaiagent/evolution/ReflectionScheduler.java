@@ -10,15 +10,15 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 反思调度器 —— 企业级 DB 轮询模式。
+ * Reflection Scheduler -- enterprise-grade DB polling mode.
  * <p>
- * 不依赖内存定时器，每 5 分钟扫描 {@code SPRING_AI_CHAT_MEMORY} 表，
- * 找出满足以下任一条件的会话并触发技能反思：
+ * Does not rely on in-memory timers. Scans the {@code SPRING_AI_CHAT_MEMORY} table every 5 minutes,
+ * identifies sessions meeting any of the following conditions and triggers skill reflection:
  * <ul>
- *   <li>最后一条消息距今超过 {@code extractDelaySeconds} 秒（会话空闲超时）</li>
- *   <li>会话总时长超过 {@code idleTimeoutSeconds} 秒（兜底，防止长会话永远不触发）</li>
+ *   <li>Last message is older than {@code extractDelaySeconds} seconds (session idle timeout)</li>
+ *   <li>Session total duration exceeds {@code idleTimeoutSeconds} seconds (safety net, prevents long sessions from never triggering)</li>
  * </ul>
- * 已反思过的会话（{@code evolution_skill.source_session_id} 有记录）自动跳过。
+ * Already reflected sessions (recorded in {@code evolution_skill.source_session_id}) are automatically skipped.
  */
 @Slf4j
 @Component
@@ -37,8 +37,8 @@ public class ReflectionScheduler {
     }
 
     /**
-     * 每 5 分钟扫描一次，找出可反思的会话。
-     * 首次延迟 60 秒等待应用完全就绪。
+     * Scan every 5 minutes to find sessions ready for reflection.
+     * Initial delay of 60 seconds to wait for the application to fully start.
      */
     @Scheduled(fixedDelay = 300_000, initialDelay = 60_000)
     public void scanAndReflect() {
@@ -64,18 +64,18 @@ public class ReflectionScheduler {
     }
 
     /**
-     * 查询满足反思条件的会话 ID。
+     * Query session IDs that satisfy reflection conditions.
      * <p>
-     * 条件：
+     * Conditions:
      * <ol>
-     *   <li>未在 {@code evolution_skill} 中记录过（去重）</li>
-     *   <li>最后一条消息距今 &gt; {@code extractDelaySeconds} 秒
-     *       —— 或 —— 会话总时长 &gt; {@code idleTimeoutSeconds} 秒</li>
+     *   <li>Not yet recorded in {@code evolution_skill} (deduplication)</li>
+     *   <li>Last message age > {@code extractDelaySeconds} seconds
+     *       -- OR -- total session duration > {@code idleTimeoutSeconds} seconds</li>
      * </ol>
      */
     private List<String> findReadySessions() {
-        // 会话总时长用 MAX(timestamp) - MIN(timestamp)
-        // 空闲时间用 NOW() - MAX(timestamp)
+        // Total session duration uses MAX(timestamp) - MIN(timestamp)
+        // Idle time uses NOW() - MAX(timestamp)
         String sql = """
                 SELECT m.conversation_id
                 FROM SPRING_AI_CHAT_MEMORY m

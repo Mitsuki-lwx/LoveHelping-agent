@@ -9,10 +9,10 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 进化技能实体 —— 从对话反思中提取的可复用经验。
+ * Evolution skill entity -- reusable experience extracted from conversation reflection.
  * <p>
- * 存入 MySQL 做持久化，同时 description 作为 embedding 文本写入向量库
- * （Milvus + ES），供下次对话时语义检索注入。
+ * Stored in MySQL for persistence, while description is used as embedding text written to vector stores
+ * (Milvus + ES), for semantic retrieval in subsequent conversations.
  */
 @Data
 @TableName("evolution_skill")
@@ -27,10 +27,10 @@ public class EvolutionSkill {
     @TableField("skill_name")
     private String skillName;
 
-    /** 什么情况下使用此技能 —— 作为向量检索的 embedding 文本 */
+    /** When to use this skill -- used as embedding text for vector retrieval */
     private String description;
 
-    /** 具体经验内容 —— 检索命中后注入 prompt */
+    /** Specific experience content -- injected into prompt when retrieved */
     private String content;
 
     @TableField("source_session_id")

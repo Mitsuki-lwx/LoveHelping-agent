@@ -11,10 +11,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 记忆管理服务。
+ * Memory management service.
  * <p>
- * 对外提供对话记忆的查询、清空、计数能力。
- * 不关心底层是 JDBC、Redis 还是文件，统一通过 ChatMemoryRepository 操作。
+ * Provides conversation memory query, clear, and counting capabilities externally.
+ * Does not care whether the underlying storage is JDBC, Redis, or file; operates uniformly via ChatMemoryRepository.
  */
 @Slf4j
 @Service
@@ -28,17 +28,17 @@ public class MemoryService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /** 获取对话的全部消息 */
+    /** Get all messages in a conversation */
     public List<Message> getHistory(String conversationId) {
         return chatMemoryRepository.findByConversationId(conversationId);
     }
 
-    /** 获取对话消息条数 */
+    /** Get message count in a conversation */
     public int getMessageCount(String conversationId) {
         return chatMemoryRepository.findByConversationId(conversationId).size();
     }
 
-    /** 注册对话归属（用户 + 对话ID 映射） */
+    /** Register conversation ownership (user + conversation ID mapping) */
     public void registerConversation(String userId, String conversationId, String title, String chatType) {
         try {
             jdbcTemplate.update("""
@@ -50,7 +50,7 @@ public class MemoryService {
         }
     }
 
-    /** 列出当前用户的对话记录（含消息数） */
+    /** List the current user's conversation records (with message count) */
     public List<Map<String, Object>> listUserConversations(String userId, String chatType) {
         try {
             String sql = """
@@ -73,7 +73,7 @@ public class MemoryService {
         }
     }
 
-    /** 列出所有对话记录（管理员用） */
+    /** List all conversation records (for admin use) */
     public List<Map<String, Object>> listAllConversations() {
         try {
             String sql = """
@@ -91,7 +91,7 @@ public class MemoryService {
         }
     }
 
-    /** 清空指定对话的全部记忆，并删除映射关系 */
+    /** Clear all memory for a specified conversation and delete the mapping relationship */
     @Transactional
     public void clearHistory(String conversationId) {
         chatMemoryRepository.deleteByConversationId(conversationId);

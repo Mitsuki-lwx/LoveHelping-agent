@@ -69,14 +69,14 @@ let cancelSSE = null
 let userScrolledAway = false
 let autoScrolling = false
 
-// 如果 URL 有 sessionId 则继续该对话，否则新建
+// If URL has sessionId, continue that conversation, otherwise create new
 const currentSessionId = ref(route.query.sessionId || crypto.randomUUID())
 
 function newChat() {
   router.push('/manus-chat')
 }
 
-/** 加载已有对话消息 */
+/** Load existing conversation messages */
 async function loadExistingMessages() {
   const sessionId = route.query.sessionId
   if (!sessionId) return
@@ -85,7 +85,7 @@ async function loadExistingMessages() {
     const msgs = res.data?.data
     if (Array.isArray(msgs) && msgs.length > 0) {
       for (const msg of msgs) {
-        // 只显示用户消息和助手回复，跳过工具调用/系统提示/空内容
+        // Only show user messages and assistant replies, skip tool calls / system prompts / empty content
         if (msg.messageType !== 'USER' && msg.messageType !== 'ASSISTANT') continue
         const text = (msg.text || '').trim()
         if (!text) continue
@@ -116,7 +116,7 @@ function renderMarkdown(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-  // Style emoji prefixes: 仅第一个 💭 带标签，后续仅保留徽标
+  // Style emoji prefixes: only the first 💭 gets a label, subsequent ones keep only the badge
   html = html.replace(/^💭 /gm, '%%THINK%%')
   html = html.replace('%%THINK%%', '<span class="step-badge step-think">思考</span> ')
   html = html.replace(/%%THINK%%/g, '<span class="step-bullet">&#8226;</span> ')

@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * @description: 基础Agent类，所有具体Agent类型的父类
+ * @description: Base Agent class, parent of all concrete Agent types
  *
  */
 @Slf4j
@@ -48,15 +48,15 @@ public abstract class BaseAgent {
     //上下文记忆用springai的List
     private List<Message> messageList = new ArrayList<>();
 
-    // MySQL 持久化记忆（可选，通过 AiController 注入）
+    // MySQL persistent memory (optional, injected via AiController)
     private ChatMemory chatMemory;
     private String conversationId;
 
     public SseEmitter runStream(String userPrompt) {
-        SseEmitter emitter = new SseEmitter(600000L); //设置超时时间为10分钟
+        SseEmitter emitter = new SseEmitter(600000L); // Set timeout to 10 minutes
 
-        CompletableFuture.runAsync(()->{//使用CompletableFuture异步执行，避免阻塞主线程
-            //检查状态和提示词，基础校验
+        CompletableFuture.runAsync(()->{// Use CompletableFuture for async execution to avoid blocking the main thread
+            // Check state and prompt, basic validation
             if (this.state!= AgentState.IDIE) {
                 try {
                     if (this.state!= AgentState.IDIE) {
@@ -75,14 +75,14 @@ public abstract class BaseAgent {
                 emitter.complete();
                 return;
             }
-            //设置状态为运行中
+            // Set state to running
             this.state = AgentState.RUNNING;
 
-            // 从 MySQL 加载历史记忆（仅 messageList 为空时，避免复用 Agent 重复加载）
+            // Load history from MySQL (only when messageList is empty, to avoid duplicate loading when reusing Agent)
             if (chatMemory != null && conversationId != null && messageList.isEmpty()) {
                 List<Message> history = chatMemory.get(conversationId);
                 if (history != null && !history.isEmpty()) {
-                    // 过滤掉系统内部提示（旧数据可能残留）
+                    // Filter out system internal prompts (old data may remain)
                     history.removeIf(msg ->
                         msg instanceof UserMessage &&
                         ((UserMessage) msg).getText().contains("You have tools available"));
@@ -90,51 +90,51 @@ public abstract class BaseAgent {
                 }
             }
 
-            //记录信息上下文
+            // Record prompt context
             messageList.add(new UserMessage(userPrompt));
-            //保存结果列表
+            // Save results list
             List<String> results = new ArrayList<>();
-            // 累积文件输出
+            // Accumulate file output
             StringBuilder pendingFileOutput = new StringBuilder();
             Set<String> seenFileOutputs = new HashSet<>();
 
-            //步骤执行循环，直到完成或出错
+            // Step execution loop, until completion or error
             try {
                 for (int i = 0; i < maxSteps && this.state == AgentState.RUNNING; i++) {
                     int stepNumber = i + 1;
                     boolean toolsCalled;
                     String stepResult;
 
-                    // --- 流式思考：用 .stream() 实时输出 token，替代 step() 的阻塞 .call() ---
+                    // --- Streaming think: use .stream() to output tokens in real time, replacing step()'s blocking .call() ---
                     if (this instanceof ToolCallAgent tca) {
                         toolsCalled = tca.streamThink(emitter);
                         if (!toolsCalled) {
-                            // 最终答案已由 streamThink 流式发送，清空已累积的文件输出避免重复
+                            // Final answer already streamed by streamThink, clear accumulated file output to avoid duplication
                             pendingFileOutput.setLength(0);
                             this.state = AgentState.FINISHED;
                             break;
                         }
-                        // 需要工具：执行 act
+                        // Tools need to be called: execute act
                         stepResult = tca.act();
                     } else {
                         stepResult = step();
                         toolsCalled = isToolsCalled();
                     }
                     this.currentStep = stepNumber;
-                    // 以下仅处理工具调用步骤的展示（💭），最终答案已由 streamThink 流式发送
+                    // The following only handles display of tool call steps (💭), final answer already streamed by streamThink
                     String thought = extractLastThought();
                     if (thought != null) {
                         thought = thought.replace("\\n", "\n").replace("\\t", "\t");
                     }
 
-                    // 累积文件输出（仅用于最终结果展示）
+                    // Accumulate file output (for final result display only)
                     String fileOutput = extractFileOutput(stepResult, seenFileOutputs);
                     if (fileOutput != null) {
                         if (pendingFileOutput.length() > 0) pendingFileOutput.append("\n");
                         pendingFileOutput.append(fileOutput);
                     }
 
-                    // 跳过无思考内容的工具执行步骤
+                    // Skip tool execution steps without thought content
                     if (thought == null || thought.trim().isEmpty()) {
                         continue;
                     }
@@ -145,7 +145,7 @@ public abstract class BaseAgent {
                     }
 
                 }
-                // 循环结束：如果还有未展示的文件输出（如调用了 terminate 工具结束），补发
+                // Loop end: if there is unshown file output (e.g., terminate tool was called), send it
                 if (pendingFileOutput.length() > 0) {
                     String files = pendingFileOutput.toString()
                         .replaceAll("/api/files/downloads/[^\\s)\"]+\\.(png|jpg|jpeg|gif|webp)\\b", "![]($0)");
@@ -156,7 +156,7 @@ public abstract class BaseAgent {
                     results.add("Agent reached max steps:" + maxSteps);
                     emitter.send("Agent reached max steps:" + maxSteps);
                 }
-                //完成后发送完成状态
+                // Send completion state after finish
                 emitter.complete();
             } catch (Exception e) {
                 this.state = AgentState.ERROR;
@@ -170,11 +170,11 @@ public abstract class BaseAgent {
                 //emitter.complete();
             }
             finally {
-                // 持久化对话历史到 MySQL
+                // Persist conversation history to MySQL
                 if (chatMemory != null && conversationId != null && !messageList.isEmpty()) {
                     try {
                         chatMemory.clear(conversationId);
-                        // 过滤：只保留用户消息和非空助手回复，不保存工具调用等内部消息
+                        // Filter: only keep user messages and non-empty assistant replies, do not save internal messages like tool calls
                         List<Message> persistentMessages = messageList.stream()
                                 .filter(m -> {
                                     if (m instanceof UserMessage) return true;
@@ -194,7 +194,7 @@ public abstract class BaseAgent {
                 this.cleanup();
             }
         });
-        //设置超时回调
+        // Set timeout callback
         emitter.onTimeout(() -> {
             this.state = AgentState.ERROR;
             this.cleanup();
@@ -212,15 +212,15 @@ public abstract class BaseAgent {
     public void cleanup(){};
 
     /**
-     * 外部停止 Agent 执行：设置状态为 FINISHED，循环会在当前 step 结束后退出
+     * External stop for Agent execution: sets state to FINISHED, loop exits after current step ends
      */
     public void stop() {
         this.state = AgentState.FINISHED;
     }
 
     /**
-     * 重置状态以支持多轮对话：清空步骤计数，状态恢复 IDLE，但保留 messageList（对话历史）
-     * 调用前需确保前一轮已结束（state == FINISHED）
+     * Reset state for multi-turn conversation: clear step count, restore state to IDLE, but keep messageList (conversation history).
+     * Ensure the previous turn has ended (state == FINISHED) before calling.
      */
     public void resetForNextTurn() {
         this.state = AgentState.IDIE;
@@ -228,10 +228,10 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 从消息列表中提取最新的 AssistantMessage 推理内容（DeepSeek 的 actual reasoning）
-     * 优先取 DeepSeekAssistantMessage.getReasoningContent()，fallback 到 getText()
+     * Extract the latest AssistantMessage reasoning content from the message list (DeepSeek's actual reasoning).
+     * Priority: DeepSeekAssistantMessage.getReasoningContent(), fallback to getText().
      * <p>
-     * 如果 reasoning 主要为英文（DeepSeek V4 的 CoT 用英文），则不展示，返回简短中文标签。
+     * If reasoning is mostly English (DeepSeek V4's CoT is in English), do not display, return null.
      */
     private String extractLastThought() {
         for (int i = messageList.size() - 1; i >= 0; i--) {
@@ -240,7 +240,7 @@ public abstract class BaseAgent {
                 String r = ((DeepSeekAssistantMessage) msg).getReasoningContent();
                 if (r != null && !r.isBlank()) {
                     if (isMostlyEnglish(r)) {
-                        return null; // 英文 CoT 不展示，跳过
+                        return null; // English CoT not displayed, skip
                     }
                     return r;
                 }
@@ -257,7 +257,7 @@ public abstract class BaseAgent {
         return null;
     }
 
-    /** 判断文本是否主要是英文（非中文内容占比 &gt; 80%） */
+    /** Check if text is mostly English (non-Chinese content ratio > 80%) */
     private boolean isMostlyEnglish(String text) {
         if (text == null || text.isBlank()) return false;
         int total = 0, chinese = 0;
@@ -274,7 +274,7 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 提取最新 AssistantMessage 的可视文本内容（getText），与 reasoningContent 区分
+     * Extract the latest AssistantMessage visible text content (getText), distinct from reasoningContent
      */
     private String extractLastText() {
         for (int i = messageList.size() - 1; i >= 0; i--) {
@@ -287,14 +287,14 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 判断当前步骤是否调用了工具（messageList 末尾有 ToolResponseMessage）
+     * Check if the current step called a tool (messageList has ToolResponseMessage at the end)
      */
     private boolean isToolsCalled() {
         for (int i = messageList.size() - 1; i >= 0; i--) {
             if (messageList.get(i) instanceof ToolResponseMessage) {
                 return true;
             }
-            // 如果遇到 AssistantMessage（说明刚思考完还没执行工具），停止向上查找
+            // If encountering AssistantMessage (just finished thinking, hasn't executed tool yet), stop searching upward
             if (messageList.get(i) instanceof AssistantMessage) {
                 return false;
             }
@@ -303,26 +303,26 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 从 stepResult 中提取可访问的文件 URL（包含 /api/ 的链接），已包含的路径跳过
+     * Extract accessible file URLs from stepResult (links containing /api/), skip already included paths
      */
     private String extractFileOutput(String stepResult, Set<String> seenOutputs) {
         if (stepResult == null || stepResult.isEmpty()) return null;
         StringBuilder sb = new StringBuilder();
-        // JSON 序列化会将 \n 转义为 literal \\n，先还原
+        // JSON serialization escapes \n to literal \\n, restore first
         stepResult = stepResult.replace("\\n", "\n");
         for (String line : stepResult.split("\n")) {
             String trimmed = line.trim();
             if (trimmed.isEmpty() || trimmed.equals("\"")) {
                 continue;
             }
-            // 只捕获包含可访问文件 URL 的行
+            // Only capture lines containing accessible file URLs
             if (trimmed.contains("/api/")) {
-                // 去掉 "toolsXXXresult:" 前缀
+                // Remove "toolsXXXresult:" prefix
                 int idx = trimmed.indexOf("result:");
                 String info = (idx >= 0) ? trimmed.substring(idx + 7).trim() : trimmed;
-                // 去掉行首的冗余 📄 前缀
+                // Remove redundant 📄 prefix at line start
                 info = info.replaceAll("^📄\\s*", "");
-                // 去重：如果这个路径已经展示过，跳过
+                // Deduplication: skip if this path has already been shown
                 if (!seenOutputs.add(info)) {
                     continue;
                 }
@@ -334,7 +334,7 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 将本地文件路径（如 D:\path\to\downloads\file.png）转为可访问的 HTTP URL（/api/files/downloads/file.png）
+     * Convert local file path (e.g. D:\path\to\downloads\file.png) to accessible HTTP URL (/api/files/downloads/file.png)
      */
     private String removeLocalPaths(String text) {
         if (text == null || text.isEmpty()) return text;
@@ -347,7 +347,7 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 移除思考内容中的 URL 行和工具执行状态行（对用户无意义）
+     * Remove URL lines and tool execution status lines from thought content (meaningless to users)
      */
     private String removeUrlLines(String text) {
         if (text == null || text.isEmpty()) return text;
@@ -358,7 +358,7 @@ public abstract class BaseAgent {
             if (trimmed.contains("http://") || trimmed.contains("https://")) continue;
             if (trimmed.matches(".*\\d+\\s*张.*(?:成功|失败).*")) continue;
             if (trimmed.matches(".*[A-Za-z]:[/\\\\].*")) continue;
-            // 跳过错误分析和自我修正（对用户无意义）
+            // Skip error analysis and self-correction (meaningless to users)
             if (trimmed.startsWith("The error")) continue;
             if (trimmed.startsWith("Let me remove")) continue;
             if (trimmed.startsWith("I should avoid")) continue;

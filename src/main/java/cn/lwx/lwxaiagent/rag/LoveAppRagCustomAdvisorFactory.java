@@ -12,23 +12,23 @@ public class LoveAppRagCustomAdvisorFactory {
 
 
     public static Advisor createLoveAppRagCustomAdvisor(VectorStore vectorStore, String status) {
-        //创建一个过滤器
+        // Create a filter expression
         Filter.Expression expression = new FilterExpressionBuilder()
                 .eq("status", status)
                 .build();
 
-        //创建一个向量存储检索器
+        // Create a vector store retriever
         VectorStoreDocumentRetriever vectorStoreDocumentRetriever = VectorStoreDocumentRetriever.builder()
-                .vectorStore(vectorStore)//设置向量存储
-                .filterExpression(expression)//设置过滤器
-                .similarityThreshold(0.5)//设置相似度阈值
-                .topK(3)//设置返回的文档数量
+                .vectorStore(vectorStore)// Set vector store
+                .filterExpression(expression)// Set filter expression
+                .similarityThreshold(0.5)// Set similarity threshold
+                .topK(3)// Set number of returned documents
                 .build();
 
 
         return RetrievalAugmentationAdvisor.builder()
                 .documentRetriever(vectorStoreDocumentRetriever)
-                .queryAugmenter(LoveAppContextualQueryAugmenterFactory.createQueryAugmenter())//添加查询增强器
+                .queryAugmenter(LoveAppContextualQueryAugmenterFactory.createQueryAugmenter())// Add query augmenter
                 .build();
     }
 }

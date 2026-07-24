@@ -123,7 +123,7 @@ public class ToolCallAgent extends ReActAgent {
                     })
                     .blockLast();
 
-            // 用流式最后一条 response（含聚合完成的 tool calls）作为 act 依据
+            // Use the last streaming response (with aggregated tool calls) as the basis for act
             ChatResponse lastResp = null;
             for (int ri = responses.size() - 1; ri >= 0; ri--) {
                 AssistantMessage m = responses.get(ri).getResult().getOutput();

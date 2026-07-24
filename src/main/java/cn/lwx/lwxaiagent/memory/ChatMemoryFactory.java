@@ -7,10 +7,10 @@ import org.springframework.ai.chat.memory.repository.jdbc.JdbcChatMemoryReposito
 import org.springframework.stereotype.Component;
 
 /**
- * ChatMemory 统一工厂。
+ * ChatMemory unified factory.
  * <p>
- * 之前 LoveApp 和 ChatService 各自硬编码 MessageWindowChatMemory（一个 10、一个 50），
- * 配置散落、窗口大小不一致。现在统一走工厂，配置集中在 MemoryProperties。
+ * Previously LoveApp and ChatService each hardcoded MessageWindowChatMemory (one with 10, one with 50),
+ * configurations were scattered and window sizes inconsistent. Now unified through the factory, with configuration centralized in MemoryProperties.
  */
 @Component
 public class ChatMemoryFactory {
@@ -23,17 +23,17 @@ public class ChatMemoryFactory {
         this.props = props;
     }
 
-    /** 创建普通对话记忆（窗口 = windowSize） */
+    /** Create normal conversation memory (window = windowSize) */
     public ChatMemory create() {
         return create(props.getWindowSize());
     }
 
-    /** 创建 Agent 对话记忆（窗口 = agentWindowSize） */
+    /** Create Agent conversation memory (window = agentWindowSize) */
     public ChatMemory createForAgent() {
         return create(props.getAgentWindowSize());
     }
 
-    /** 按指定窗口大小创建 */
+    /** Create with specified window size */
     public ChatMemory create(int windowSize) {
         return MessageWindowChatMemory.builder()
                 .chatMemoryRepository(repository)

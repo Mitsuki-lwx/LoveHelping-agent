@@ -13,16 +13,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * LoveAppDocumentLoader 是一个用于加载 Markdown 文档的组件类。
- * 它使用 Spring 的 ResourcePatternResolver 来扫描项目中的指定目录（classpath:document
- * ）下的所有 Markdown 文件，并将其内容读取为 Document 对象列表。
- * 该类还支持为每个文档添加额外的元数据，如文件
- * 名和状态信息。加载过程中，如果遇到任何 IO 异常，会记录错误日志。
+ * LoveAppDocumentLoader is a component class for loading Markdown documents.
+ * It uses Spring's ResourcePatternResolver to scan the specified directory (classpath:document
+ * ) in the project for all Markdown files and reads their content as Document object lists.
+ * This class also supports adding extra metadata to each document, such as file
+ * name and status information. If any IO exceptions occur during loading, error logs are recorded.
  */
 @Component
 @Slf4j
 public class LoveAppDocumentLoader {
-    //注入资源解析器，这个可以获取到项目中的资源
+    // Inject resource resolver, used to access project resources
     private final ResourcePatternResolver resourcePatternResolver;
 
 
@@ -33,27 +33,27 @@ public class LoveAppDocumentLoader {
     public List<Document> loadMarkdowns(){
         List< Document> allDocuments = new ArrayList<>();
         try {
-            // 获取项目下的所有md文件，目录是在当前项目下的document目录下
+            // Get all md files in the project, directory is under the current project's document folder
             Resource[] resources = resourcePatternResolver.getResources("classpath:document/*.md");
             for (Resource resource : resources) {
                 String fileName = resource.getFilename();
-                MarkdownDocumentReaderConfig config = MarkdownDocumentReaderConfig.builder()//创建配置
-                        .withHorizontalRuleCreateDocument(true)//添加水平分割线
-                        .withIncludeCodeBlock(false)//添加代码块
-                        .withIncludeBlockquote(false)//添加引号
-                        .withAdditionalMetadata("filename", fileName)//添加元数据，元数据是一个键值对，键是filename，值是文件名
+                MarkdownDocumentReaderConfig config = MarkdownDocumentReaderConfig.builder()// Create configuration
+                        .withHorizontalRuleCreateDocument(true)// Add horizontal rule
+                        .withIncludeCodeBlock(false)// Add code block
+                        .withIncludeBlockquote(false)// Add blockquote
+                        .withAdditionalMetadata("filename", fileName)// Add metadata, key-value pair where key is filename, value is file name
                         .withAdditionalMetadata("status",fileName.substring(fileName.length()-6,fileName.length()-4))
                         .build();
                 MarkdownDocumentReader reader = new MarkdownDocumentReader(resource, config);
                 List<Document> docs = reader.get();
-                // 给所有文档加上 tenantId 元数据（默认 "default"，多租户时由数据隔离使用）
+                // Add tenantId metadata to all documents (default "default", used for data isolation in multi-tenant scenarios)
                 for (Document doc : docs) {
                     doc.getMetadata().putIfAbsent("tenantId", "default");
                 }
                 allDocuments.addAll(docs);
             }
         } catch (IOException e) {
-            log.error("Markdown 文档加载失败", e);
+            log.error("Failed to load Markdown documents", e);
         }
         return allDocuments;
     }

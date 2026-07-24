@@ -3,7 +3,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 这是pgvector数据库连接属性
+ * pgvector database connection properties
  * @author lwx
  *
  */

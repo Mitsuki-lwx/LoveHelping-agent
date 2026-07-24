@@ -13,13 +13,13 @@ import org.springframework.context.annotation.Configuration;
 import java.util.List;
 
 /**
- * 配置向量存储
- *基于内存的
- * 是自带的实现
+ * Configure vector store
+ * In-memory based
+ * Uses Spring AI's built-in implementation
  */
 @Configuration
 public class LoveAppVectorStoreConfig {
-    @Resource//注入LoveAppDocumentLoader对象
+    @Resource// Inject LoveAppDocumentLoader object
     private LoveAppDocumentLoader loveAppDocumentLoader;
 
 
@@ -29,13 +29,13 @@ public class LoveAppVectorStoreConfig {
     @Resource
     private MyKeywordEnricher myKeywordEnricher;
 
-    @Bean//创建一个向量存储对象
-    VectorStore LoveAppVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {//创建一个向量存储对象.注入嵌入模型对象
-        SimpleVectorStore vectorStore = SimpleVectorStore.builder(embeddingModel).build();//创建一个向量存储对象
-        List<Document> documents = loveAppDocumentLoader.loadMarkdowns();//加载Markdown文档
-        //List<Document> splitDocuments = mytokenTextSplitter.splitDocuments(documents);//分割文档
-        List<Document> enrichedDocuments = myKeywordEnricher.enrichDocuments(documents);//添加关键词
-        vectorStore.add(enrichedDocuments);//添加文档
+    @Bean// Create a vector store object
+    VectorStore LoveAppVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {// Create vector store, inject embedding model object
+        SimpleVectorStore vectorStore = SimpleVectorStore.builder(embeddingModel).build();// Create vector store object
+        List<Document> documents = loveAppDocumentLoader.loadMarkdowns();// Load Markdown documents
+        //List<Document> splitDocuments = mytokenTextSplitter.splitDocuments(documents);// Split documents
+        List<Document> enrichedDocuments = myKeywordEnricher.enrichDocuments(documents);// Add keywords
+        vectorStore.add(enrichedDocuments);// Add documents
         return vectorStore;
     }
 }

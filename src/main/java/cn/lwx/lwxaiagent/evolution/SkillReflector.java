@@ -16,10 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * 技能反思器 —— 替代 ConversationExtractor。
+ * Skill Reflector -- replaces ConversationExtractor.
  * <p>
- * 在会话空闲超时后触发，读取完整对话 + 用户赞踩数据，
- * 调用 LLM 提炼可复用的技能经验，存入 MySQL 和向量库。
+ * Triggered after conversation idle timeout, reads the full conversation + user like/dislike data,
+ * calls LLM to extract reusable skill experience, stores in MySQL and vector store.
  */
 @Slf4j
 public class SkillReflector {
@@ -132,10 +132,10 @@ public class SkillReflector {
         return sb.toString();
     }
 
-    /** LLM 返回的 JSON 结构 */
+    /** JSON structure returned by LLM */
     public record SkillReflectionOutput(List<SkillReflectionResult> skills) {}
 
-    /** 单条反思结果 */
+    /** Single reflection result */
     public record SkillReflectionResult(
             String skillName,
             String description,

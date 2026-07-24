@@ -15,7 +15,7 @@ class MyTokenTextSplitter {
     }
 
     public List<Document> splitCustomized(List<Document> documents) {
-        // 自定义分词器，参数分别是最大长度，最小长度，最大分词数，最大分词数，是否保留标点符号，保留的标点符号
+        // Custom tokenizer with parameters: max length, min length, max tokens, max tokens, keep punctuation, punctuation to keep
         TokenTextSplitter splitter = new TokenTextSplitter(1000, 400, 10, 5000, true, List.of('.', '?', '!', '\n'));
         return splitter.apply(documents);
     }

@@ -15,10 +15,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 技能入库器 —— 替代 KnowledgeIngestor。
+ * Skill Ingestor -- replaces KnowledgeIngestor.
  * <p>
- * 将所有反思提取的 skill 同时写入 MySQL 和向量库（Milvus + ES）。
- * 向量库中 text=description（用于语义检索），metadata 携带 skillName 和 content。
+ * Writes all extracted skills to both MySQL and vector stores (Milvus + ES).
+ * In vector stores, text=description (for semantic search), metadata carries skillName and content.
  */
 @Slf4j
 @Component
@@ -46,14 +46,14 @@ public class SkillIngestor {
                     r.content(), sessionId, r.qualityScore());
             skillMapper.insert(skill);
 
-            // 所有 skill 都入向量库，用 description 做 embedding
+            // All skills go to vector store, using description for embedding
             ingestToVectorStore(skill);
         }
         log.info("Ingested {} skills from session {}", results.size(), sessionId);
     }
 
     private void ingestToVectorStore(EvolutionSkill skill) {
-        // text=description 做 embedding，语义检索时匹配"何时使用"
+        // text=description for embedding, semantic search matches "when to use"
         Document doc = new Document(skill.getDescription(), Map.of(
                 "skillName", skill.getSkillName() != null ? skill.getSkillName() : "",
                 "content", skill.getContent() != null ? skill.getContent() : "",

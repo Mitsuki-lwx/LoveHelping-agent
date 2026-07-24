@@ -32,16 +32,16 @@ public class PgVectorVectorStoreConfig {
 
     @Bean
     public VectorStore PgVectorVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
-        // 创建一个 PostgreSQL 数据源 用来存储向量数据
+        // Create a PostgreSQL data source for storing vector data
         DataSource pgDataSource = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())
                 .username(pgvectorProperties.getUsername())
                 .password(pgvectorProperties.getPassword())
                 .driverClassName(pgvectorProperties.getDriverClassName())
                 .build();
-        // 创建一个 PostgreSQL JdbcTemplate，用来执行数据库操作
+        // Create a PostgreSQL JdbcTemplate for executing database operations
         JdbcTemplate pgJdbcTemplate = new JdbcTemplate(pgDataSource);
-        // 创建一个 PgVectorStore，用来存储向量数据
+        // Create a PgVectorStore for storing vector data
         PgVectorStore vectorStore = PgVectorStore.builder(pgJdbcTemplate, embeddingModel)
                 .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
                 .indexType(PgVectorStore.PgIndexType.HNSW)
@@ -57,7 +57,7 @@ public class PgVectorVectorStoreConfig {
         if (count != null && count == 0) {
             List<Document> documents = loveAppDocumentLoader.loadMarkdowns();
 
-            // 根据内容去重
+            // Deduplicate by content
             Set<String> seen = new HashSet<>();
             List<Document> uniqueDocs = new ArrayList<>();
             for (Document doc : documents) {
@@ -66,18 +66,19 @@ public class PgVectorVectorStoreConfig {
                 }
             }
 
-            log.info("原始文档数: {}, 去重后: {}", documents.size(), uniqueDocs.size());
+            log.info("Original documents: {}, after dedup: {}", documents.size(), uniqueDocs.size());
 
-            // DashScope API限制：每批最多10条
-            //这是一个工具类，用于将一个列表分割成多个子列表，每个子列表的大小不超过指定的最大值。在这里，它被用来将去重后的文档列表分割成每批最多10条的子列表，以便批量添加到向量存储中。
+            // DashScope API limit: max 10 documents per batch
+            // This utility splits a list into multiple sub-lists, each no larger than the specified max size.
+            // Here it is used to partition the deduplicated document list into batches of up to 10 for batch adding to the vector store.
             List<List<Document>> batches = ListUtil.partition(uniqueDocs, 10);
             for (List<Document> batch : batches) {
                 vectorStore.add(batch);
             }
 
-            log.info("成功加载 {} 个文档到向量库", uniqueDocs.size());
+            log.info("Successfully loaded {} documents into vector store", uniqueDocs.size());
         } else {
-            log.info("向量库已有 {} 条记录，跳过初始化", count);
+            log.info("Vector store already has {} records, skipping initialization", count);
         }
 
         return vectorStore;

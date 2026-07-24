@@ -12,14 +12,14 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 技能检索器 —— 对话前语义检索相关 skill 并格式化为 prompt 上下文。
+ * Skill Retriever -- semantically retrieves relevant skills before conversation and formats them as prompt context.
  * <p>
- * 检索逻辑：
+ * Retrieval logic:
  * <ol>
- *   <li>用当前用户消息在向量库中语义搜索</li>
- *   <li>优先使用 HybridRetrievalService（Milvus + ES + RRF），
- *       不可用时降级为 Milvus only</li>
- *   <li>将命中文档中的 skill 信息格式化为 prompt 片段</li>
+ *   <li>Semantically search the current user message in the vector store</li>
+ *   <li>Prefer HybridRetrievalService (Milvus + ES + RRF),
+ *       fallback to Milvus only if unavailable</li>
+ *   <li>Format skill info from matched documents as prompt fragment</li>
  * </ol>
  */
 @Slf4j
@@ -42,17 +42,17 @@ public class SkillRetriever {
     }
 
     /**
-     * 检索相关 skill 并格式化为可注入 prompt 的文本。
+     * Retrieve relevant skills and format as injectable prompt text.
      *
-     * @param userMessage 用户当前消息
-     * @param tenantId    租户 ID
-     * @return 格式化的 skill 上下文，无结果时返回空字符串
+     * @param userMessage Current user message
+     * @param tenantId    Tenant ID
+     * @return Formatted skill context, empty string if no results
      */
     public String retrieveAsContext(String userMessage, String tenantId) {
         if (!props.isEnabled()) return "";
         if (tenantId == null || tenantId.isBlank()) tenantId = "default";
 
-        // 多检索一些候选（与知识库混在一起可能被挤），从候选里挑 skill
+        // Search more candidates (may be mixed with knowledge base), pick skill from candidates
         int searchTopK = props.getSkillTopK() * 5;
         List<Document> docs = search(userMessage, searchTopK, tenantId);
         if (docs.isEmpty()) return "";
@@ -64,11 +64,11 @@ public class SkillRetriever {
             String content = (String) doc.getMetadata().getOrDefault("content", "");
 
             if (!skillName.isBlank() && !content.isBlank()) {
-                // evolution skill 文档
+                // evolution skill documents
                 sb.append("- ").append(skillName).append(": ").append(content).append("\n");
                 count++;
             }
-            // 跳过非 skill 文档（普通 RAG 知识库文档由 QuestionAnswerAdvisor 处理）
+            // Skip non-skill documents (ordinary RAG knowledge base docs handled by QuestionAnswerAdvisor)
         }
 
         if (count == 0) {

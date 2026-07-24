@@ -2,7 +2,7 @@ package cn.lwx.lwxaiagent.tools;
 
 import org.springframework.ai.tool.annotation.Tool;
 /**
- * @description: TerminateTool是一个工具类，用于结束程序的运行。
+ * @description: TerminateTool is a tool class for ending program execution.
  *
  */
 public class TerminateTool {

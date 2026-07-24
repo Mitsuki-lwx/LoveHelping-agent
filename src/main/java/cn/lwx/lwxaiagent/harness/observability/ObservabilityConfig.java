@@ -6,13 +6,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 可观测性配置类。
- * 负责在应用启动时检查 OTLP（OpenTelemetry Protocol）导出端点的配置状态。
+ * Observability configuration class.
+ * Checks OTLP (OpenTelemetry Protocol) export endpoint configuration status at application startup.
  * <p>
- * 工作原理：Spring Boot Actuator + Micrometer Tracing 自动检测到 classpath 上的
- * opentelemetry-exporter-otlp，自动创建 OTLP 导出器。这个类只做配置校验和启动日志。
+ * How it works: Spring Boot Actuator + Micrometer Tracing auto-detects opentelemetry-exporter-otlp on the classpath,
+ * and automatically creates an OTLP exporter. This class only performs configuration validation and startup logging.
  * <p>
- * 配置方式（3 行环境变量）：
+ * Configuration (3 environment variables):
  * OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.langsmith.ai/v1/traces
  * OTEL_EXPORTER_OTLP_HEADERS=x-api-key=${LANGSMITH_API_KEY}
  * OTEL_SERVICE_NAME=lwx-ai-agent
@@ -21,11 +21,11 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ObservabilityConfig {
 
-    /** OTLP 导出端点地址，从 application-local.yml 注入 */
+    /** OTLP export endpoint address, injected from application-local.yml */
     @Value("${management.otlp.tracing.endpoint:}")
     private String otlpEndpoint;
 
-    /** 启动时检查 OTLP 配置是否就绪 */
+    /** Check OTLP configuration readiness at startup */
     @PostConstruct
     public void init() {
         if (otlpEndpoint.isBlank()) {

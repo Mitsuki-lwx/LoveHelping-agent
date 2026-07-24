@@ -19,7 +19,7 @@ public class MemoryController {
         this.memoryService = memoryService;
     }
 
-    /** 注册对话归属 */
+    /** Register conversation ownership */
     @PostMapping("/register")
     public Result<String> registerConversation(@RequestBody Map<String, String> body) {
         String userId = TenantContext.getUserId();
@@ -34,7 +34,7 @@ public class MemoryController {
         return Result.ok("ok");
     }
 
-    /** 列出当前用户的对话记录（按类型筛选） */
+    /** List current user's conversation records (filtered by type) */
     @GetMapping("/conversations")
     public Result<List<Map<String, Object>>> listConversations(
             @RequestParam(defaultValue = "love") String chatType) {
@@ -45,25 +45,25 @@ public class MemoryController {
         return Result.ok(memoryService.listUserConversations(userId, chatType));
     }
 
-    /** 管理员：列出所有对话 */
+    /** Admin: list all conversations */
     @GetMapping("/admin/conversations")
     public Result<List<Map<String, Object>>> listAllConversations() {
         return Result.ok(memoryService.listAllConversations());
     }
 
-    /** 查看对话历史 */
+    /** View conversation history */
     @GetMapping("/{conversationId}")
     public Result<List<Message>> getHistory(@PathVariable String conversationId) {
         return Result.ok(memoryService.getHistory(conversationId));
     }
 
-    /** 对话消息数 */
+    /** Conversation message count */
     @GetMapping("/{conversationId}/count")
     public Result<Map<String, Integer>> getCount(@PathVariable String conversationId) {
         return Result.ok(Map.of("count", memoryService.getMessageCount(conversationId)));
     }
 
-    /** 删除对话 */
+    /** Delete conversation */
     @DeleteMapping("/{conversationId}")
     public Result<String> clearHistory(@PathVariable String conversationId) {
         memoryService.clearHistory(conversationId);
