@@ -66,3 +66,6 @@ front/dist/
 META-INF/
 org/
 skills-lock.json
+### Local tooling & runtime data ###
+/.zcode
+/uploads/

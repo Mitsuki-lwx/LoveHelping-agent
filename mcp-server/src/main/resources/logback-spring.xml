@@ -1,13 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+============================================================================
+  MCP Server Logback 日志配置
+============================================================================
+  关键设计：所有日志输出到 STDERR（System.err）而非 STDOUT（System.out）。
+
+  原因：MCP Server 在 stdio 传输模式下，stdout 用于 MCP 协议通信
+  （JSON-RPC 消息通过 stdout 发送给 MCP Client），如果日志也输出到 stdout，
+  会污染协议消息，导致 MCP Client 解析失败。
+
+  因此日志统一输出到 stderr，与 MCP 协议消息（stdout）分离。
+============================================================================
+-->
 <configuration>
+
+    <!-- 控制台输出（输出到 stderr） -->
+    <!--
+        target="System.err" 是关键配置：
+        - 在 IDE 中，stderr 输出通常是红色文字
+        - 在 stdio 模式下，stderr 不会干扰 MCP 协议通信（stdout）
+    -->
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.err</target>
+        <target>System.err</target>  <!-- 输出到 stderr 而非默认的 stdout -->
         <encoder>
+            <!-- 日志格式：时间 级别 [线程] 类名 - 消息 -->
             <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- 根日志级别设为 INFO（过滤掉 DEBUG/TRACE 日志） -->
     <root level="INFO">
         <appender-ref ref="STDERR"/>
     </root>
+
 </configuration>

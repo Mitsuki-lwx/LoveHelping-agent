@@ -1,0 +1,77 @@
+# ============================================================
+# Prometheus alert rules for lwx-ai-agent
+# 放置到 Prometheus rules/ 目录并 referenced by alertmanager。
+# SLO（见 docs/08 §2.2）：聊天成功率 99.5%；降级触发率 < 5%；P95 首 token < 1.5s
+# ============================================================
+groups:
+  - name: lwx-ai-agent
+    rules:
+      # 聊天成功率：5 分钟窗口 chat.request 总 error 占比 > 5% 告警
+      - alert: ChatErrorRateTooHigh
+        expr: |
+          sum(rate(chat.request_total{status="error"}[5m])) /
+          sum(rate(chat.request_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "聊天错误率超过 5%（SLO 99.5%）"
+          description: "聊天请求错误率 {{ $value | humanizePercentage }}，超过 5% 阈值。"
+
+      # 降级触发率：llm.call outcome=fallback 占比 > 10% 告警
+      - alert: LLMForcedFallbackRateHigh
+        expr: |
+          sum(rate(llm_call_total{outcome="fallback"}[15m])) /
+          (sum(rate(llm_call_total[15m])) > 0) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM 降级触发率超过 10%（回滚条件）"
+          description: "主供应商持续失败，fallback 占比 {{ $value | humanizePercentage }}。"
+
+      # 降级链全失败：llm.call outcome=fail 出现即告警
+      - alert: LLMAllProvidersDown
+        expr: rate(llm_call_total{outcome="fail"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LLM 全供应商不可用（E5000）"
+          description: "主备供应商均失败，$value 次/秒。"
+
+      # 首 token 延迟：P95 > 1.5s（Prometheus 需 histogram_quantile，此处用 apdex 简化直接阈值）
+      - alert: HighFirstTokenLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(chat_first_token_latency_seconds_bucket[5m])) by (le))
+          > 1.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 首 token 延迟超过 1.5s（SLO）"
+          description: "P95 首 token 延迟 {{ $value }}s。"
+
+      # 护栏命中率异常：L3 自伤命中持续上升（误报监控信号）
+      - alert: GuardrailL3BlockSpike
+        expr: |
+          sum(rate(guardrail_trigger_total{level="3"}[15m])) by (rule_id) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "护栏 L3 阻断激增（{{ $labels.rule_id }}）"
+          description: "L3 阻断频率 {{ $value }} 次/秒，需关注误报或真实风险上升。"
+
+      # Agent 任务失败率
+      - alert: AgentTaskFailureHigh
+        expr: |
+          sum(rate(agent_task_total{status="FAILED"}[15m])) /
+          (sum(rate(agent_task_total[15m])) > 0) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 任务失败率超过 10%"
+          description: "Agent 失败率 {{ $value | humanizePercentage }}。"

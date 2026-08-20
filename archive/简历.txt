@@ -1,0 +1,62 @@
+个 人 简 历
+
+个人信息
+姓名：林文熙
+电话：13427004362
+邮箱：2961053856@qq.com
+求职意向：AI Agent 开发工程师
+
+教育背景
+华南师范大学  |  软件工程  |  本科	2024.09 – 至今
+
+专业技能
+
+编程语言
+•	熟练掌握 Java SE，深入理解集合框架、多线程并发编程、JVM 内存模型与调优、反射机制、动态代理等高级特性，具备扎实的面向对象设计与工程实践能力
+•	熟练掌握 Python，具备 AI 应用开发与脚本自动化实战经验，能够独立运用 LangChain、Spring AI 等框架进行 Agent 应用开发
+•	熟悉 C / C++ 基础语法，用于底层逻辑理解与算法实现
+
+后端与框架
+•	熟练运用 Spring Boot 进行企业级应用开发，具备 RESTful API 设计、统一异常处理、参数校验、配置管理等工程化能力
+•	熟练使用 MyBatis & MyBatis-Plus 进行数据持久层开发，掌握动态 SQL、分页插件、代码生成器等高级用法
+•	掌握 Spring Cloud 核心组件（服务注册发现、配置中心、网关、负载均衡），具备微服务架构基础认知
+
+AI / Agent 开发
+•	具备 Spring AI 框架实战经验，熟练运用 Advisor 链式编排、DocumentLoader、TokenTextSplitter 等组件构建 RAG 知识库流水线
+•	深入理解 Agent 架构设计，掌握 ReAct 推理-行动模式、工具调用（Tool Calling）、多智能体编排，能够独立设计和实现多 Agent 协作系统
+•	熟悉 LangChain 框架，掌握 Prompt Engineering、SSE 流式推流、RRF 融合排序等 AI 应用工程化技术
+•	掌握 RAG 混合检索架构设计，能够整合向量检索与关键词检索实现高精度知识召回
+•	了解 MCP（Model Context Protocol）协议，具备多服务集成与模型上下文管理经验
+
+数据存储与检索
+•	熟练使用 MySQL 进行关系型数据建模与查询优化，具备复杂业务数据设计能力
+•	熟练运用 Redis 进行缓存设计、分布式锁、会话管理等高并发场景开发
+•	具备 Elasticsearch 实战经验，掌握 BM25 算法与全文索引优化策略
+•	掌握 PostgreSQL + pgvector 向量数据存储方案，具备 Milvus 向量数据库的部署与应用经验，能够独立设计混合检索架构
+
+工程化与运维
+•	掌握 OpenTelemetry 全链路可观测性方案，能够运用 Langfuse 实现 LLM 应用的链路追踪与性能分析
+•	熟悉 Docker 容器化基础，具备应用容器化部署经验
+•	熟悉 Linux 基础操作，能够进行服务部署与环境配置
+•	熟悉企业级安全方案，包括 JWT 多租户隔离、DB 限流、Guardrail 安全治理（提示注入检测）等
+
+项目经验
+
+LoveHelping — AI 情感咨询服务平台	个人项目
+技术栈：Spring Boot 3.4 / Spring AI / DeepSeek V4 / DashScope / Vue 3 / MySQL / PostgreSQL+pgvector / Milvus / Elasticsearch / Redis / MCP / OpenTelemetry
+
+项目描述：基于 Manus 智能体架构思想与 Spring AI 框架，构建覆盖 Harness 框架核心层次（工具接口、上下文管理、智能体编排、可观测性、安全治理）的多智能体协作系统。集成 ReAct 模式工具调用 Agent、混合检索 RAG、自我进化机制，提供具备记忆能力、反思能力与持续进化能力的 AI 情感咨询服务。
+
+核心职责与技术亮点：
+
+▸	智能体核心架构设计：参考 Manus 智能体思想，设计并实现 LoveManus 工具调用 Agent，基于 ReAct 模式编排任务流程，支持网页搜索、图片搜索下载、PDF 生成、知识库检索、终端命令等自定义工具灵活扩展。实现 Agent 状态机（IDLE→RUNNING→FINISHED/ERROR），覆盖从初始化、工具选择、执行到结果回写的完整生命周期管理。
+
+▸	流式执行引擎改造：将智能体执行循环从 .call() 阻塞调用重构为 .stream() + SSE 实时推流架构，对话响应体验从整块等待（平均 8-12s）优化为逐 token 流式渲染（首 token 延迟降至 200ms 以内），用户感知响应速度提升约 95%。
+
+▸	混合检索系统构建：整合 Milvus 向量语义检索与 Elasticsearch BM25 关键词检索，通过 RRF 融合排序算法实现双路召回加权。实现查询重写与关键词增强策略，自定义分片策略与上下文增强器，检索 Top-5 命中率提升至 85%+，相比单一向量检索提升约 30%。
+
+▸	自我进化闭环设计：采用 DB 轮询（@Scheduled 5min）替代内存定时器，构建企业级空闲/超时对话反思调度方案。对空闲或超时对话触发 LLM 反思萃取，形成结构化 skill 经验（名称 + 触发条件 + 具体做法），持久化至 MySQL + 向量库。下次对话时自动检索注入 system prompt，实现 Agent 能力的持续迭代进化。
+
+▸	全链路工程化落地：统一响应格式与全局异常处理，通过 MCP 协议实现多服务标准化集成（高德地图、百度搜索）。基于 Spring AI Advisor 链式编排构建请求处理管线，自定义 DocumentLoader + TokenTextSplitter 实现知识库文档流水线加载。集成 OpenTelemetry 全链路追踪（Langfuse），实现 LLM 调用链路可视化与性能瓶颈定位。落地 JWT 多租户隔离、DB 限流、Guardrail 安全治理（提示注入检测），保障系统安全与稳定性。
+
+▸	前端全栈开发：基于 Vue 3 + Vite 构建前端项目，通过 EventSource 实现 SSE 实时消息接收。配置 SPA 路由统一 fallback，实现单页应用在 Spring Boot 容器下的无缝部署。前后端分离架构，Vite 构建自动输出至 Spring Boot 静态资源目录，集成 Knife4j 接口文档自动生成。

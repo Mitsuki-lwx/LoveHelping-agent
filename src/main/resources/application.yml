@@ -1,132 +1,237 @@
+# ============================================================================
+# LWX AI Agent 主配置文件
+# ============================================================================
+# 本文件定义了整个 Spring Boot 应用的全局配置，包括：
+#   - 数据库连接（MySQL + PostgreSQL/pgvector）
+#   - AI 模型（DeepSeek、DashScope、OpenAI）
+#   - Redis 缓存
+#   - RAG 检索系统（Elasticsearch + Milvus 混合检索）
+#   - 进化系统（技能自动演化）
+#   - JWT 认证
+#   - API 文档（Knife4j/Swagger）
+# ============================================================================
+
 spring:
   application:
-    name: lwx-ai-agent
+    name: lwx-ai-agent  # 应用名称（注册到服务发现/监控时使用）
+
+  # 激活的配置 profile —— 指向 application-local.yml（本地开发环境配置）
   profiles:
     active: local
+
+  # ======================== MySQL 主数据源 ========================
+  # 存储用户、知识条目、投票记录、技能等业务数据
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    driver-class-name: com.mysql.cj.jdbc.Driver  # MySQL JDBC 驱动（cj 版本支持 MySQL 8.x）
     url: jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    # URL 参数说明：
+    #   useUnicode=true            —— 启用 Unicode 字符集
+    #   characterEncoding=utf-8    —— 使用 UTF-8 编码（支持中文）
+    #   useSSL=false               —— 本地开发关闭 SSL（生产环境应开启）
+    #   serverTimezone=Asia/Shanghai —— 时区设为东八区（北京时间）
+    #   allowPublicKeyRetrieval=true —— 允许客户端从服务器获取公钥以进行加密连接
     username: root
-    password: ${MYSQL_PASSWORD:}
+    password: ${MYSQL_PASSWORD:}  # 从环境变量读取密码，未设置则默认为空
+
+  # Flyway 接管 DDL（docs/04 §5：禁止再改 schema.sql，新变更一律加 V{n}__*.sql）
+  # baseline-on-migrate：已存在表的历史库自动打基线（跳过 V1），空库则执行全部迁移
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+
   sql:
     init:
-      mode: always
-      continue-on-error: true
+      mode: never             # schema.sql 机制停用，DDL 只经 Flyway
+      continue-on-error: true # 初始化出错时不中断启动（如表已存在时报错忽略）
+
+  # ======================== Spring AI 配置 ========================
   ai:
-    chat:
-      memory:
-        repository:
-          jdbc:
-            initialize-schema: always
-            schema: classpath:org/springframework/ai/chat/memory/repository/jdbc/schema-mysql.sql
+    # 对话记忆（Phase 2 消息落库后）已迁移至自建 message 表（MessageChatMemory），
+    # 不再使用 Spring AI JDBC ChatMemory（SPRING_AI_CHAT_MEMORY 已废弃）。
+
+    # MCP（Model Context Protocol）客户端配置
+    # Streamable HTTP 连接：mcp-server 独立进程（端口 8125），主应用经 HTTP 调用。
+    # 说明：MCP 规范中 SSE 传输已弃用（2025-03 规范，官方以 Streamable HTTP 取代），
+    # Spring AI 1.1.7 的 mcp-server 同时暴露 /sse 与 /mcp，本端使用标准 /mcp。
+    # 独立部署收益：mcp-server 独立进程，不随主应用拉起（密钥/生命周期/扩缩容独立）。
     mcp:
       client:
-        stdio:
-          servers-configuration: classpath:mcp-servers.json
+        http:
+          connections:
+            # 自研 MCP Server（独立进程，Streamable HTTP）：搜索/天气/图片/网页抓取/约会方案
+            lwx-agent-mcp:
+              url: http://localhost:8125/mcp
+        # amap-maps（高德地图）暂停：npx stdio 模式无法独立部署（会随主应用拉起并可能拖死启动），
+        # 待确认其 SSE 支持后恢复（ADR-2 原则：工具面故障不放大为应用故障）。
+        # stdio:
+        #   connections:
+        #     amap-maps:
+        #       command: npx.cmd
+        #       args:
+        #         - "-y"
+        #         - "@amap/amap-maps-mcp-server@latest"
+        #       env:
+        #         AMAP_MAPS_API_KEY: "${amap.api-key}"
+
+    # 阿里云 DashScope API（通义千问等模型的 SDK 封装）
     dashscope:
-      api-key: ${DASHSCOPE_API_KEY:}
+      api-key: ${DASHSCOPE_API_KEY:}  # 从环境变量读取 API Key
+
+    # DeepSeek API —— 项目的主聊天模型
     deepseek:
-      api-key: ${DEEPSEEK_API_KEY:}
+      api-key: ${DEEPSEEK_API_KEY:}   # 从环境变量读取 API Key
+
+    # OpenAI 兼容接口（LlmGateway 主供应商，ADR-7）
+    # 默认指向 DeepSeek 官方（同为 OpenAI 兼容）；配置 GOPLAN_BASE_URL/GOPLAN_API_KEY 后主供应商切换为 GoPlan
     openai:
-      api-key: ${OPENAI_API_KEY:}
+      base-url: ${GOPLAN_BASE_URL:https://api.deepseek.com}
+      api-key: ${GOPLAN_API_KEY:${DEEPSEEK_API_KEY:}}
+      chat:
+        options:
+          model: ${GOPLAN_MODEL:deepseek-v4-flash}
+      # 禁用 OpenAI embedding/多模态自动配置：嵌入仍用 DashScope（待调研后替换），
+      # 避免 openAiEmbeddingModel 与 dashscopeEmbeddingModel 的 @Primary 冲突
+      embedding:
+        enabled: false
+      image:
+        enabled: false
+      audio:
+        enabled: false
+
+  # ======================== Redis 配置 ========================
+  # 用于缓存、会话管理、限流计数等
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      timeout: 3000ms
+      host: ${REDIS_HOST:localhost}   # Redis 服务器地址
+      port: ${REDIS_PORT:6379}        # Redis 端口
+      timeout: 3000ms                 # 连接超时时间（3秒）
 
-    # OpenAI 兼容接口（支持 OpenAI / 任何 OpenAI 格式 API）
-#    openai:
-#      api-key: ${OPENAI_API_KEY:}
-#      chat:
-#        options:
-#          model: gpt-4o
-
+# ======================== 监控与链路追踪 ========================
+# Spring Boot Actuator + Micrometer Tracing
 management:
   tracing:
-    enabled: true
+    enabled: true                # 启用链路追踪
     sampling:
-      probability: 1.0
+      probability: 1.0           # 采样率 100%（全部请求都追踪，方便调试）
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus   # 暴露 Prometheus 指标端点（llm.tokens 等，08 §2.2）
+  prometheus:
+    metrics:
+      export:
+        enabled: true
 
-# 自定义 PostgreSQL 配置（给 pgvector 用）
-# 默认聊天模型：deepseek（默认）| openai
-# 想切换 OpenAI 时改成 openai，并设置 spring.ai.openai.api-key
+# ======================== 应用自定义配置 ========================
 app:
   chat:
-    provider: deepseek
+    provider: deepseek           # 默认聊天模型提供商（历史配置，主备结构见 app.llm）
+
+  # LlmGateway 配置（ADR-7）：主备降级链
+  # 主 = GoPlan（OpenAI 兼容端点，见 spring.ai.openai）；备 = DeepSeek 官方
+  llm:
+    retry:
+      max-attempts: 3            # 主模型最多尝试次数（含首次）
+      backoff-ms: 1000           # 指数退避初始间隔（毫秒），按 2 倍递增
+    fallback-enabled: true       # 主模型全败后是否切换备用供应商
+    # 视觉模型（ADR-11）：基于 GoPlan 端点换 model 即多模态；未配置则图片聊天不可用
+    vision-model: mimo-v2.5
+
+  # RAG 查询改写开关（ADR-15）：开启时检索前用 LLM 改写用户查询（每轮多一次 LLM 调用）
+  rag:
+    query-rewrite:
+      enabled: true
+
+  # pgvector 向量数据库配置（用于 RAG 的向量存储和相似度检索）
   pgvector:
     datasource:
-      driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://localhost:5432/postgres
+      driver-class-name: org.postgresql.Driver        # PostgreSQL JDBC 驱动
+      url: jdbc:postgresql://localhost:5432/postgres   # PostgreSQL 连接地址
       username: postgres
-      password: ${PGVECTOR_PASSWORD:}
+      password: ${PGVECTOR_PASSWORD:}                  # 从环境变量读取
+
+  # 速率限制配置（防止用户频繁调用 API）
   rate-limit:
-    enabled: false
-    daily-quota: 5
+    enabled: false               # 限流暂不启用（登录直接用，2026-08-19 决定）；代码保留，未来收费/防刷时开启
+    daily-quota: 5               # 每日每人最多调用次数
+
+  # 对话记忆配置
   memory:
-    window-size: 20
-    agent-window-size: 50
-    strategy: JDBC
+    window-size: 20              # 每次加载的历史消息数量（用于 LLM 上下文窗口控制）
+    agent-window-size: 50        # Agent 执行时保留的最大消息数
+    strategy: MESSAGE            # 持久化策略：MESSAGE（自建 message 表，Phase 2 真源）
+    prompt-version: v1           # System Prompt 版本（随消息落库归因，08 §2.4）
 
+# ======================== Web 服务器配置 ========================
 server:
-  port: 8088
+  port: 8088                     # 应用监听端口
   servlet:
-    context-path: /api
+    context-path: /api           # 所有 API 的统一前缀（例如 /api/user/login）
 
+# ======================== API 文档配置（Knife4j + SpringDoc） ========================
 springdoc:
   swagger-ui:
-    path: /swagger-ui.html
-    tags-sorter: alpha
-    operations-sorter: alpha
+    path: /swagger-ui.html       # Swagger UI 的访问路径
+    tags-sorter: alpha           # 按字母顺序排列 API 分组
+    operations-sorter: alpha     # 按字母顺序排列 API 操作
   api-docs:
-    path: /v3/api-docs
+    path: /v3/api-docs           # OpenAPI 文档 JSON 的访问路径
   group-configs:
     - group: 'default'
-      paths-to-match: '/**'
-      packages-to-scan: cn.lwx.lwxaiagent.controller
+      paths-to-match: '/**'      # 生成所有路径的文档
+      packages-to-scan: cn.lwx.lwxaiagent.controller  # 只扫描 Controller 包
 
 knife4j:
-  enable: true
+  enable: true                   # 启用 Knife4j 增强 Swagger UI
   setting:
-    language: zh_cn
+    language: zh_cn              # Knife4j UI 显示语言为简体中文
 
+# ======================== 日志配置 ========================
 logging:
   level:
+    # Spring AI 的 SimpleLoggerAdvisor 输出 DEBUG 级别日志
+    # 可以看到每次 LLM 调用的请求和响应内容
     org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: debug
 
-# 检索模式切换：pgvector（默认）| hybrid
+# ======================== RAG 检索系统配置 ========================
+# 检索模式：pgvector（ADR-1 收敛后唯一路径；Milvus + ES 混合检索已移除）
 rag:
-  type: hybrid
-  hybrid:
-    es:
-      uris: http://172.28.23.117:9200
-      index: love_knowledge
-    milvus:
-      host: 172.28.23.117
-      port: 19530
-      collection-name: love_knowledge
-      vector-dim: 1024
-    rrf:
-      k: 60
-      topK: 10
+  type: pgvector
 
+# ======================== 进化系统配置 ========================
+# 技能自动演化：从对话中提取优质经验，沉淀为可复用的技能
 evolution:
-  enabled: true
-  idle-timeout-seconds: 7200
-  quality-threshold: 5
-  extract-delay-seconds: 1800
-  skill-top-k: 3
-  skill-min-score: 0.5
+  enabled: true                  # 是否启用进化系统
+  idle-timeout-seconds: 7200     # 会话空闲超时时间（2小时），超时后触发反思
+  quality-threshold: 5           # 质量阈值：用户评分 >= 此值才会被进化为技能
+  extract-delay-seconds: 1800    # 技能提取延迟（30分钟），保证对话内容足够丰富
+  skill-top-k: 3                 # 每次检索返回的 Top-K 个最相关技能
+  skill-min-score: 0.5           # 技能检索的最低相似度阈值
 
+# ======================== 搜索 API 配置 ========================
+# 通用搜索 API Key（如百度搜索、Google Search 等）
 search-api:
   api-key: ${SEARCH_API_KEY:}
 
-# MyBatis-Plus 配置（使用已有 MySQL 数据源）
+# 高德地图 API Key（经 MCP 客户端注入给 amap-maps-server）
+amap:
+  api-key: ${AMAP_MAPS_API_KEY:}
+
+# ======================== MyBatis-Plus 配置 ========================
 mybatis-plus:
   configuration:
+    # 日志输出使用 SLF4J（会将 SQL 语句打印到日志中，方便调试）
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
-# JWT 配置（第二期：多租户）
+# ======================== JWT 配置（多租户认证） ========================
 jwt:
-  secret: ${JWT_SECRET:}
-  expiration-ms: 86400000  # 24 小时
+  secret: ${JWT_SECRET:}         # JWT 签名密钥（从环境变量读取，必须保密）
+  expiration-ms: 86400000        # Token 过期时间：24 小时（24 * 60 * 60 * 1000）
+
+# ======================== 管理端凭证 ========================
+# 用于保护管理类接口（/tenant/token 签发、/memory/admin/**）。
+# 未配置时管理接口直接拒绝访问（fail-closed），生产环境必须通过 ADMIN_API_KEY 注入。
+admin:
+  api-key: ${ADMIN_API_KEY:}

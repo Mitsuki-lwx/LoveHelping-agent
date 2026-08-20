@@ -1,0 +1,85 @@
+{
+  "title": "lwx-ai-agent 核心指标",
+  "uid": "lwx-ai-agent-main",
+  "version": 1,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "tags": ["lwx-ai-agent", "llm", "chat"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "聊天请求 QPS（chat.request_total by mode）",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(chat_request_total[1m])) by (mode)",
+          "legendFormat": "{{mode}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "聊天错误率（SLO 99.5%）",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(chat_request_total{status=\"error\"}[5m])) / sum(rate(chat_request_total[5m]))",
+          "legendFormat": "error_rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.05 } ] } }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "LLM Token 消耗（llm.tokens_total by type）",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "sum(rate(llm_tokens_total[1m])) by (type)", "legendFormat": "{{type}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "LLM 调用分布 provider×outcome（llm.call_total）",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "targets": [
+        { "expr": "sum(rate(llm_call_total[1m])) by (provider, outcome)", "legendFormat": "{{provider}}/{{outcome}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "降级触发率（fallback 占比，回滚阈值 10%）",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        { "expr": "sum(rate(llm_call_total{outcome=\"fallback\"}[15m])) / sum(rate(llm_call_total[15m]))", "legendFormat": "fallback_rate" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.10 } ] } } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "护栏触发 by level（guardrail.trigger_total）",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "sum(rate(guardrail_trigger_total[1m])) by (level)", "legendFormat": "L{{level}}" }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Agent 任务分布 by status（agent.task_total）",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        { "expr": "sum(rate(agent_task_total[1m])) by (status)", "legendFormat": "{{status}}" }
+      ]
+    }
+  ]
+}

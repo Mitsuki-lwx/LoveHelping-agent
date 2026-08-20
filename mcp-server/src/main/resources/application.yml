@@ -1,7 +1,24 @@
+# ============================================================================
+# MCP Server（模型上下文协议服务端）主配置文件
+# ============================================================================
+# 本模块是一个独立的 Spring Boot 应用，为主项目提供外部工具服务。
+# 传输协议：Streamable HTTP（MCP 2025-03 规范标准传输，SSE 已弃用）
+#   - 独立进程部署（端口 8125），主项目通过 HTTP 调用
+#   - 需 mcp-spring-webmvc 依赖（pom 中显式引入）以注册 /mcp 路由
+
 spring:
   application:
-    name: lwx-agent-mcp
+    name: lwx-agent-mcp     # MCP Server 的应用名称
+
   profiles:
-    active: sse
+    active: sse             # 保留 profile 标识（历史遗留，不影响传输）
+
+  ai:
+    mcp:
+      server:
+        # 传输协议：STREAMABLE（Streamable HTTP，暴露 POST /mcp 端点）
+        protocol: STREAMABLE
+
+# HTTP 服务器配置
 server:
-  port: 8125
+  port: 8125                # MCP Server 的 HTTP 端口（与主项目 8088 端口区分开）

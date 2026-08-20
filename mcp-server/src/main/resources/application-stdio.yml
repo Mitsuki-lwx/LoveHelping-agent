@@ -1,14 +1,29 @@
+# ============================================================================
+# MCP Server stdio 传输模式配置
+# ============================================================================
+# 此配置文件在 stdio 模式下激活（spring.profiles.active=stdio）。
+# stdio 模式下 MCP Server 不启动 HTTP 服务器，而是通过标准输入输出（stdin/stdout）
+# 与 MCP Client 进程通信。
+#
+# 主项目通过 mcp-servers.json 配置 stdio 命令行启动本 MCP Server JAR，
+# 然后通过 stdio 协议调用此 Server 暴露的工具。
+#
+# 优点：部署简单，无额外网络配置
+# 缺点：每个 MCP Server 独立进程，资源开销稍大
+
 spring:
   ai:
     mcp:
       server:
-        name: lwx-agent-mcp
-        version: 0.0.1
-        type: SYNC
-        stdio: true
-  main:
-    web-application-type: none
-    banner-mode: off
+        name: lwx-agent-mcp        # MCP Server 名称
+        version: 0.0.1             # 版本号
+        type: SYNC                 # 同步通信模式（每次工具调用同步等待结果）
+        stdio: true                # 启用 stdio 传输（通过标准输入输出通信）
 
+  main:
+    web-application-type: none     # 不启动 Web 服务器（stdio 模式不需要 HTTP）
+    banner-mode: off               # 关闭 Spring Boot 启动横幅（stdio 模式下输出到 stdout 会干扰协议）
+
+# 搜索 API Key（从环境变量读取）
 search-api:
   api-key: ${SEARCH_API_KEY:}

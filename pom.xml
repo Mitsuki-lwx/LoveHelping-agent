@@ -1,18 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+============================================================================
+  LWX AI Agent（恋爱帮帮帮）—— 项目 POM 文件
+============================================================================
+  本文件定义了整个 Maven 项目的：
+  - 项目坐标（groupId、artifactId、version）
+  - 父 POM（Spring Boot 3.4.4）
+  - 所有依赖（AI、数据库、检索、安全、监控等）
+  - 构建插件配置（Spring Boot Maven Plugin、Lombok 注解处理器）
+
+  核心依赖架构概览：
+  ┌─────────────────────────────────────────────────────┐
+  │  AI 模型层：DeepSeek + DashScope + OpenAI（兼容）    │
+  │  Agent 层：Spring AI Alibaba Agent Framework        │
+  │  工具层：MCP Client（外部工具服务）                   │
+  │  记忆层：JDBC ChatMemory（MySQL 持久化对话历史）     │
+  │  RAG 层：pgvector + Elasticsearch + Milvus          │
+  │  安全层：Spring Security + JWT                       │
+  │  监控层：Actuator + OpenTelemetry → Langfuse         │
+  └─────────────────────────────────────────────────────┘
+============================================================================
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
+    <!-- ======================== 父 POM ======================== -->
+    <!-- Spring Boot 3.4.4 作为父项目，统一管理 Spring 生态组件的版本 -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.4.4</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/> <!-- 从 Maven 中央仓库查找父 POM，不使用本地相对路径 -->
     </parent>
+
+    <!-- ======================== 项目坐标 ======================== -->
     <groupId>cn.lwx</groupId>
     <artifactId>lwx-ai-agent</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.1-SNAPSHOT</version>  <!-- SNAPSHOT 表示开发中的快照版本 -->
     <name>lwx-ai-agent</name>
-    <description>lwx-ai-agent</description>
+    <description>lwx-ai-agent —— 恋爱帮帮帮 AI 助手</description>
     <url/>
     <licenses>
         <license/>
@@ -26,123 +53,158 @@
         <tag/>
         <url/>
     </scm>
+
+    <!-- ======================== 全局属性 ======================== -->
     <properties>
+        <!-- 使用 Java 21（支持虚拟线程、Record、模式匹配等新特性） -->
         <java.version>21</java.version>
     </properties>
+
+    <!-- ======================== 依赖版本管理 ======================== -->
+    <!-- Spring AI BOM（Bill of Materials）：统一管理所有 Spring AI 组件的版本 -->
     <dependencyManagement>
         <dependencies>
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
-                <version>1.1.7</version>
+                <version>1.1.8</version>
                 <type>pom</type>
-                <scope>import</scope>
+                <scope>import</scope>  <!-- import 表示导入该 BOM 中的依赖管理 -->
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <!-- ======================== 项目依赖 ======================== -->
     <dependencies>
+
+        <!-- ========== Spring Boot 基础 Starter ========== -->
+
+        <!-- Spring MVC + 内嵌 Tomcat，提供 REST API 能力 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Lombok：自动生成 getter/setter/构造器等样板代码，减少代码量 -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <optional>true</optional>     <!-- 依赖不会传递给引用此项目的其他项目 -->
             <version>1.18.36</version>
         </dependency>
+
+        <!-- Spring Boot 测试框架（JUnit 5 + Mockito + Spring Test） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
+            <scope>test</scope>           <!-- 只在测试 classpath 中可用 -->
         </dependency>
+
+        <!-- Hutool：国产 Java 工具类库，提供字符串、集合、文件、加密等常用工具方法 -->
         <dependency>
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-all</artifactId>
             <version>5.8.38</version>
         </dependency>
 
+        <!-- ========== API 文档 ========== -->
+
+        <!-- Knife4j：Swagger/OpenAPI 3 的增强 UI，自动生成 API 文档页面 -->
         <dependency>
             <groupId>com.github.xiaoymin</groupId>
             <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
             <version>4.4.0</version>
         </dependency>
-        <!--阿里云百炼，灵积大模型服务-->
+
+        <!-- ========== AI 模型 & Agent 框架 ========== -->
+
+        <!-- 阿里云百炼/灵积大模型服务 SDK（DashScope） -->
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>dashscope-sdk-java</artifactId>
             <version>2.19.1</version>
         </dependency>
-        <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
-            <version>1.1.2.0</version>
-        </dependency>
 
+        <!-- MCP（Model Context Protocol）客户端：连接外部 MCP Server 工具服务 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
-        <!-- DashScope ChatModel 支持（如果使用其他模型，请跳转 Spring AI 文档选择对应的 starter） -->
+
+        <!-- DashScope ChatModel 支持：将 DashScope 模型集成到 Spring AI 的 ChatModel 接口 -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
-            <version>1.1.2.0</version>
+            <version>1.1.2.2</version>
             <exclusions>
+                <!-- 排除 slf4j-simple（使用 Spring Boot 默认的 Logback 做日志实现） -->
                 <exclusion>
                     <groupId>org.slf4j</groupId>
                     <artifactId>slf4j-simple</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
-        <!--支持结构化输出-->
+
+        <!-- JSON Schema Generator：支持 LLM 结构化输出（Structured Output） -->
         <dependency>
             <groupId>com.github.victools</groupId>
             <artifactId>jsonschema-generator</artifactId>
             <version>4.38.0</version>
         </dependency>
 
+        <!-- Flyway：数据库版本化迁移（DDL 唯一入口，docs/04 §5） -->
         <dependency>
-            <groupId>com.esotericsoftware</groupId>
-            <artifactId>kryo</artifactId>
-            <version>5.6.2</version>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
         </dependency>
-        <!-- 基于jdbc实现持久化记忆-->
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-chat-memory-repository-jdbc</artifactId>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
 
+        <!-- ========== 数据库 ========== -->
+
+        <!-- MySQL JDBC 驱动（8.3.0 版本兼容 MySQL 8.x） -->
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <version>8.3.0</version>
         </dependency>
 
+        <!-- PostgreSQL JDBC 驱动（用于 pgvector 向量数据库） -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- ========== RAG（检索增强生成）相关 ========== -->
+
+        <!-- Markdown 文档读取器：将 Markdown 文件解析为 Spring AI Document -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-markdown-document-reader</artifactId>
         </dependency>
 
+        <!-- 向量存储 Advisor：在 LLM 调用前自动进行向量检索并注入上下文 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-advisors-vector-store</artifactId>
         </dependency>
 
+        <!-- pgvector 向量存储 Starter：将 PostgreSQL+pgvector 作为向量存储后端 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-vector-store-pgvector</artifactId>
         </dependency>
 
-<!--        集成 jsoup html 解析库-->
+        <!-- Jsoup：HTML 解析库，用于网页抓取和内容提取 -->
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
             <version>1.19.1</version>
         </dependency>
 
-<!--        引入itext库生成pdf的依赖-->
+        <!-- iText Core：Java PDF 生成库（用于将对话内容导出为 PDF） -->
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>itext-core</artifactId>
@@ -150,53 +212,42 @@
             <type>pom</type>
         </dependency>
 
-<!--        引入itext的中文库-->
+        <!-- iText 亚洲字体库（支持中文 PDF 生成） -->
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>font-asian</artifactId>
             <version>9.1.0</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>        <!-- 只在运行时需要，编译时不需要 -->
         </dependency>
 
+        <!-- Bean Validation（@Valid、@NotBlank 等参数校验注解） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- 官方 DeepSeek 专用启动器 [citation:8][citation:11] -->
+        <!-- DeepSeek ChatModel 专用启动器 —— 项目的主 LLM 引擎 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-deepseek</artifactId>
         </dependency>
 
-<!--        &lt;!&ndash; OpenAI 通用接口（兼容任何 OpenAI 格式的 API） &ndash;&gt;-->
-<!--        <dependency>-->
-<!--            <groupId>org.springframework.ai</groupId>-->
-<!--            <artifactId>spring-ai-starter-model-openai</artifactId>-->
-<!--        </dependency>-->
-
-        <!-- Elasticsearch BM25 检索 SDK -->
+        <!-- OpenAI 兼容接口（LlmGateway 主供应商 GoPlan，见 docs/03 ADR-7）
+             任何兼容 OpenAI API 格式的服务（GoPlan/DeepSeek/小米等）均可通过此依赖接入 -->
         <dependency>
-            <groupId>co.elastic.clients</groupId>
-            <artifactId>elasticsearch-java</artifactId>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
 
-        <!-- Milvus 向量数据库 SDK -->
-        <dependency>
-            <groupId>io.milvus</groupId>
-            <artifactId>milvus-sdk-java</artifactId>
-            <version>2.5.5</version>
-        </dependency>
+        <!-- ========== 安全认证 ========== -->
 
-        <!-- Spring Security + JWT（多租户隔离） -->
+        <!-- Spring Security：提供认证和授权框架 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+
+        <!-- JJWT（Java JWT）：JWT Token 的创建、解析、验证 -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-api</artifactId>
@@ -206,37 +257,51 @@
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-impl</artifactId>
             <version>0.12.6</version>
-            <scope>runtime</scope>
+            <scope>runtime</scope>        <!-- API 编译时需要，具体实现在运行时提供 -->
         </dependency>
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
             <artifactId>jjwt-jackson</artifactId>
             <version>0.12.6</version>
-            <scope>runtime</scope>
+            <scope>runtime</scope>        <!-- Jackson 序列化支持 JSON Web Token -->
         </dependency>
 
-        <!-- Actuator + Micrometer Tracing → OpenTelemetry OTLP → 任何 OTLP 后端（LangSmith 等） -->
+        <!-- ========== 监控与可观测性 ========== -->
+
+        <!-- Spring Boot Actuator：应用健康检查、metrics、info 等端点 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+
+        <!-- Prometheus 指标注册表：暴露 /actuator/prometheus（llm.tokens 等指标，08 §2.2） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Micrometer Tracing Bridge → OpenTelemetry：将 Spring 的追踪数据桥接到 OTel 标准 -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-otel</artifactId>
         </dependency>
+
+        <!-- OpenTelemetry OTLP Exporter：将追踪数据通过 OTLP 协议发送到可观测平台（如 Langfuse） -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
 
-        <!-- MyBatis-Plus（用户管理） -->
+        <!-- ========== ORM & 缓存 ========== -->
+
+        <!-- MyBatis-Plus：MyBatis 的增强工具，提供通用 CRUD、分页、条件构造器等功能 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>3.5.9</version>
         </dependency>
 
-        <!-- Redis（限流 + 缓存） -->
+        <!-- Spring Data Redis：Redis 客户端抽象层（用于限流计数、缓存、会话管理等） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
@@ -244,13 +309,16 @@
 
     </dependencies>
 
+    <!-- ======================== 构建配置 ======================== -->
     <build>
         <plugins>
+            <!-- Spring Boot Maven Plugin：打包为可执行 JAR，提供 spring-boot:run 命令 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <excludes>
+                        <!-- 打包时排除 Lombok（Lombok 只在编译期需要，运行时不需要） -->
                         <exclude>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
@@ -258,10 +326,14 @@
                     </excludes>
                 </configuration>
             </plugin>
+
+            <!-- Maven Compiler Plugin：配置 Lombok 注解处理器 -->
+            <!-- Lombok 通过 APT（Annotation Processing Tool）在编译期生成 getter/setter 等代码 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <executions>
+                    <!-- 主源码编译时启用 Lombok 注解处理器 -->
                     <execution>
                         <id>default-compile</id>
                         <phase>compile</phase>
@@ -277,6 +349,7 @@
                             </annotationProcessorPaths>
                         </configuration>
                     </execution>
+                    <!-- 测试源码编译时启用 Lombok 注解处理器 -->
                     <execution>
                         <id>default-testCompile</id>
                         <phase>test-compile</phase>

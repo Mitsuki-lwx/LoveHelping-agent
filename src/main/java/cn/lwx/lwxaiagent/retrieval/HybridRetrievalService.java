@@ -2,62 +2,62 @@ package cn.lwx.lwxaiagent.retrieval;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 混合检索统一入口服务。
- * 协调 Milvus（向量语义）和 ES（BM25 关键词）两个检索器，
- * 对结果做 RRF 融合排序后返回。
- * <p>
- * 调用链路：KnowledgeSearchTool → HybridRetrievalService → Milvus + ES → RRF → Top K
- * <p>
- * 每个通道多取一倍结果（userTopK * 2），给 RRF 提供更多候选文档。
+ * <h2>统一检索门面服务（ADR-1 收敛后：后端为 pgvector）</h2>
+ *
+ * <p>检索栈收敛后（原 Milvus+ES+RRF 混合检索已移除），本类保持对外签名不变，
+ * 内部改为单一 pgvector 向量检索。调用方（KnowledgeSearchTool / SkillRetriever）
+ * 无需感知实现差异。</p>
+ *
+ * <h3>调用链路</h3>
+ * <pre>
+ * KnowledgeSearchTool / SkillRetriever
+ *   |
+ *   v
+ * HybridRetrievalService.search(query, topK, tenantId)   ← 本类
+ *   |
+ *   v
+ * PgVectorVectorStore.similaritySearch(query, topK)      ← pgvector 余弦相似度
+ * </pre>
+ *
+ * <h3>租户过滤说明</h3>
+ * <p>单租户期（ADR-13）知识库为全站共享，{@code tenantId} 参数保留以兼容旧签名，
+ * 但不参与过滤；多租户重启后在此处追加 {@code tenantId} 元数据过滤。</p>
+ *
+ * @author lwx
+ * @since 1.0
+ * @see org.springframework.ai.vectorstore.pgvector.PgVectorStore
  */
 @Slf4j
+@Component
 public class HybridRetrievalService {
 
-    private final MilvusVectorRetriever milvusRetriever;
-    private final ESKeywordRetriever esRetriever;
-    private final RRFFuser rrfFuser;
+    /**
+     * pgvector 向量存储（构造器注入）。
+     * 显式按 Bean 名 {@code PgVectorVectorStore} 注入，与内存兜底 {@code LoveAppVectorStore} 区分。
+     */
+    private final VectorStore vectorStore;
 
-    public HybridRetrievalService(MilvusVectorRetriever milvusRetriever,
-                                   ESKeywordRetriever esRetriever,
-                                   RRFFuser rrfFuser) {
-        this.milvusRetriever = milvusRetriever;
-        this.esRetriever = esRetriever;
-        this.rrfFuser = rrfFuser;
+    public HybridRetrievalService(@Qualifier("PgVectorVectorStore") VectorStore vectorStore) {
+        this.vectorStore = vectorStore;
     }
 
     /**
-     * 混合搜索入口，支持按 tenantId 过滤。
+     * <h3>检索入口</h3>
      *
-     * @param query    用户查询文本
-     * @param userTopK 用户期望返回的结果数
-     * @param tenantId 租户 ID（null 时不过滤）
+     * @param query    用户输入的查询文本
+     * @param userTopK 返回结果数量上限
+     * @param tenantId 租户 ID（单租户期不使用，保留签名兼容，ADR-13）
+     * @return 按相似度降序的文档列表，无结果时返回空列表
      */
     public List<Document> search(String query, int userTopK, String tenantId) {
-        int channelN = userTopK * 2;
-
-        List<Document> milvusDocs = milvusRetriever.search(query, channelN, tenantId);
-        List<ScoredDocument> milvusResults = new ArrayList<>();
-        //这里将 Milvus 返回的 Document 列表转换为 ScoredDocument 列表，解析 metadata 中的 milvus_id 和 score。
-        for (Document doc : milvusDocs) {
-            // 解析 metadata 中的 milvus_id 和 score，就是从 metadata 中取出 milvus_id 和 score 字段，构造 ScoredDocument。
-            String id = (String) doc.getMetadata().getOrDefault("milvus_id", "");// milvus_id 是 Milvus 自动生成的唯一 ID
-            String scoreStr = (String) doc.getMetadata().getOrDefault("score", "0");// score 是 Milvus 返回的相似度分数，字符串形式
-            double score = 0;
-            try { score = Double.parseDouble(scoreStr); } catch (Exception ignored) {}
-            milvusResults.add(new ScoredDocument(id, doc, score));
-        }
-
-        // ES: 直接返回 ScoredDocument[]
-        List<ScoredDocument> esResults = esRetriever.search(query, channelN, tenantId);
-
-        log.debug("Hybrid search: milvus={}, es={}, rrfTopK={}",
-                milvusResults.size(), esResults.size(), userTopK);
-
-        return rrfFuser.fuse(milvusResults, esResults);
+        return vectorStore.similaritySearch(SearchRequest.builder().query(query).topK(userTopK).build());
     }
 }

@@ -1,0 +1,185 @@
+package cn.lwx.lwxaiagent.infrastructure.ai;
+
+import cn.lwx.lwxaiagent.common.BizException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
+
+/**
+ * <h2>LlmGateway —— 多供应商 LLM 网关（ADR-7）</h2>
+ *
+ * <p>以 {@link ChatModel} 装饰器（FallbackChatModel）形式提供，包装主备两个模型：</p>
+ * <ul>
+ *   <li><b>主</b>：GoPlan（OpenAI 兼容端点，deepseek-v4-flash）</li>
+ *   <li><b>备</b>：DeepSeek 官方（同模型，双供应商容灾——降级时语义不变）</li>
+ * </ul>
+ *
+ * <p>职责：</p>
+ * <ol>
+ *   <li><b>重试</b>：主模型调用失败按指数退避重试（1s/2s/4s，仅首 token 前）</li>
+ *   <li><b>降级</b>：主全败 → 切备模型；全失败抛 {@link BizException}（E5000 诚实报错）</li>
+ *   <li><b>计量</b>：每次成功调用上报 token 用量（Micrometer counter {@code llm.tokens}）</li>
+ * </ol>
+ *
+ * <p>作为 {@code @Primary ChatModel} 注册（见 {@code ChatModelConfig}），
+ * 主聊天管道（LoveApp/MemoryExtractor）自动获得网关能力，消费者零改动；
+ * 显式 {@code @Qualifier("deepSeekChatModel")} 的后台任务保持直连，失败不致命无需降级。</p>
+ *
+ * <p><b>约束（ADR-7）</b>：无 LLM 响应缓存、无本地语料兜底；流式连接建立后中断不重试主模型
+ * （避免重复输出），仅做故障转移切备。</p>
+ */
+@Slf4j
+@Component
+public class LlmGateway implements ChatModel {
+
+    /** 主供应商（GoPlan） */
+    private final ChatModel primary;
+    /** 备用供应商（DeepSeek 官方） */
+    private final ChatModel fallback;
+    private final LlmGatewayProperties props;
+    private final MeterRegistry meterRegistry;
+    /** token 计量 counter：标签 provider / type(prompt|completion) */
+    private final Counter promptTokensCounter;
+    private final Counter completionTokensCounter;
+
+    public LlmGateway(@Qualifier("openAiChatModel") ChatModel primary,
+                      @Qualifier("deepSeekChatModel") ChatModel fallback,
+                      LlmGatewayProperties props,
+                      MeterRegistry meterRegistry) {
+        this.primary = primary;
+        this.fallback = fallback;
+        this.props = props;
+        this.meterRegistry = meterRegistry;
+        this.promptTokensCounter = Counter.builder("llm.tokens")
+                .tag("type", "prompt")
+                .description("LLM prompt tokens consumed")
+                .register(meterRegistry);
+        this.completionTokensCounter = Counter.builder("llm.tokens")
+                .tag("type", "completion")
+                .description("LLM completion tokens consumed")
+                .register(meterRegistry);
+    }
+
+    // ==================== call（同步） ====================
+
+    @Override
+    public ChatResponse call(Prompt prompt) {
+        try {
+            ChatResponse response = callWithRetry(primary, prompt, "primary(GoPlan)");
+            recordUsage(response, "goplan");
+            recordCall("success", "goplan");
+            return response;
+        } catch (RuntimeException primaryEx) {
+            recordCall("fallback", "goplan");
+            if (!props.isFallbackEnabled()) {
+                recordCall("fail", "goplan");
+                throw primaryEx;
+            }
+            log.warn("LLM primary provider failed after retries, switching to fallback: {}",
+                    primaryEx.getMessage());
+            try {
+                ChatResponse response = fallback.call(prompt);
+                recordUsage(response, "deepseek");
+                recordCall("success", "deepseek");
+                return response;
+            } catch (RuntimeException fallbackEx) {
+                recordCall("fail", "deepseek");
+                log.error("LLM all providers failed: primary={}, fallback={}",
+                        primaryEx.getMessage(), fallbackEx.getMessage());
+                throw new BizException(5000, "AI 服务暂时不可用，请稍后再试");
+            }
+        }
+    }
+
+    private ChatResponse callWithRetry(ChatModel model, Prompt prompt, String name) {
+        int max = Math.max(1, props.getRetry().getMaxAttempts());
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= max; attempt++) {
+            try {
+                return model.call(prompt);
+            } catch (RuntimeException e) {
+                last = e;
+                log.warn("LLM {} call attempt {}/{} failed: {}", name, attempt, max, e.getMessage());
+                if (attempt < max) {
+                    sleepQuietly(props.getRetry().getBackoffMs() * (1L << (attempt - 1)));
+                }
+            }
+        }
+        throw last;
+    }
+
+    // ==================== stream（流式） ====================
+
+    @Override
+    public Flux<ChatResponse> stream(Prompt prompt) {
+        // Flux.defer 延迟订阅：使建立阶段的同步错误可在订阅时被捕获（可重试/切备）
+        Flux<ChatResponse> primaryStream = Flux.defer(() -> primary.stream(prompt));
+        if (!props.isFallbackEnabled()) {
+            return primaryStream
+                    .doOnNext(r -> recordUsage(r, "goplan"))
+                    .doOnComplete(() -> recordCall("success", "goplan"));
+        }
+        return primaryStream
+                .doOnNext(r -> recordUsage(r, "goplan"))
+                .doOnComplete(() -> recordCall("success", "goplan"))
+                .onErrorResume(e -> {
+                    log.warn("LLM primary stream failed, switching to fallback: {}", e.getMessage());
+                    return Flux.defer(() -> fallback.stream(prompt))
+                            .doOnNext(r -> recordUsage(r, "deepseek"))
+                            .doOnComplete(() -> recordCall("fallback", "goplan"));
+                });
+    }
+
+    // ==================== 默认选项 ====================
+
+    @Override
+    public ChatOptions getDefaultOptions() {
+        return primary.getDefaultOptions();
+    }
+
+    // ==================== 计量 ====================
+
+    private void recordUsage(ChatResponse response, String provider) {
+        try {
+            if (response != null && response.getMetadata() != null && response.getMetadata().getUsage() != null) {
+                var usage = response.getMetadata().getUsage();
+                if (usage.getPromptTokens() != null) {
+                    promptTokensCounter.increment(usage.getPromptTokens());
+                }
+                if (usage.getCompletionTokens() != null) {
+                    completionTokensCounter.increment(usage.getCompletionTokens());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Failed to record LLM usage: {}", e.getMessage());
+        }
+    }
+
+    /** 上报调用计数（08 §2.2 llm.call：provider × outcome）。 */
+    private void recordCall(String outcome, String provider) {
+        try {
+            Counter.builder("llm.call")
+                    .tag("provider", provider)
+                    .tag("outcome", outcome)
+                    .register(meterRegistry)
+                    .increment();
+        } catch (Exception e) {
+            log.debug("Failed to record LLM call metric: {}", e.getMessage());
+        }
+    }
+
+    private void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

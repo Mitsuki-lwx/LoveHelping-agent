@@ -1,24 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+============================================================================
+  MCP Server（模型上下文协议服务端）—— 项目 POM 文件
+============================================================================
+  这是一个独立的子模块，为主项目（lwx-ai-agent）提供外部工具服务。
+
+  MCP（Model Context Protocol）是一种标准化的 AI 工具调用协议：
+  - MCP Client（主项目）：通过 MCP Client 连接到 MCP Server，调用 Server 暴露的工具
+  - MCP Server（本模块）：暴露工具（Tool）给 Client 调用，如网页搜索、图片搜索、
+    天气查询、网页抓取等。采用 stdio（标准输入输出）或 HTTP 传输。
+
+  主项目通过配置文件 mcp-servers.json 配置 MCP Server 的连接信息。
+============================================================================
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
+
+    <!-- Spring Boot 3.4.4 作为父项目 -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.4.4</version>
         <relativePath/>
     </parent>
+
+    <!-- 项目坐标 -->
     <groupId>cn.lwx</groupId>
     <artifactId>mcp-server</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>mcp-server</name>
-    <description>mcp-server</description>
+    <description>MCP Server —— 为 AI Agent 提供外部工具服务（搜索、天气、网页抓取等）</description>
+
+    <!-- 全局属性（集中管理版本号） -->
     <properties>
-        <java.version>17</java.version>
-        <spring-ai.version>1.1.7</spring-ai.version>
-        <hutool.version>5.8.38</hutool.version>
-        <jsoup.version>1.19.1</jsoup.version>
+        <java.version>17</java.version>            <!-- MCP Server 使用 Java 17（兼容性更好） -->
+        <spring-ai.version>1.1.7</spring-ai.version>  <!-- Spring AI 版本 -->
+        <hutool.version>5.8.38</hutool.version>       <!-- Hutool 工具库版本 -->
+        <jsoup.version>1.19.1</jsoup.version>          <!-- Jsoup HTML 解析库版本 -->
     </properties>
+
+    <!-- Spring AI BOM 管理 Spring AI 组件版本 -->
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -30,32 +52,52 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
     <dependencies>
+        <!-- Spring Boot 基础 Starter（不包含 Web，因为 MCP Server 可以用 stdio 模式，不启动 HTTP 服务器） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
+
+        <!-- Spring AI MCP Server WebMVC Starter：
+             提供 MCP 服务端能力，将 @Tool 注解的方法自动暴露为 MCP Tool -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
         </dependency>
 
+        <!-- MCP Spring WebMVC 传输（Streamable HTTP 端点 /mcp）：
+             spring-ai 将其标为 optional，需显式引入才能注册 streamable-http 路由。
+             标准传输（MCP 2025-03 规范：SSE 已弃用，以 Streamable HTTP 取代）。 -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-spring-webmvc</artifactId>
+            <version>0.18.2</version>
+        </dependency>
+
+        <!-- Hutool：工具类库（用于 HTTP 请求等） -->
         <dependency>
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-all</artifactId>
             <version>${hutool.version}</version>
         </dependency>
+
+        <!-- Jsoup：HTML 解析库（用于网页抓取工具） -->
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
             <version>${jsoup.version}</version>
         </dependency>
 
+        <!-- Lombok：减少样板代码 -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- 测试框架 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -65,11 +107,13 @@
 
     <build>
         <plugins>
+            <!-- Spring Boot Maven 插件：打包为可执行 JAR -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <excludes>
+                        <!-- 排除 Lombok（运行时不需要） -->
                         <exclude>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>

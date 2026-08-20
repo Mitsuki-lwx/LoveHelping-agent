@@ -1,0 +1,19 @@
+# 安全门禁：gitleaks 密钥扫描（Phase 0）
+# 任一提交引入疑似密钥即挂断流水线。误报可在 .gitleaks.toml 中加 allowlist。
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全历史扫描，覆盖历史提交中的密钥
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
