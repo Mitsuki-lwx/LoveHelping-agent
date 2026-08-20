@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.ai;
 
+import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor;
 import cn.lwx.lwxaiagent.memory.ChatMemoryFactory;
 import com.alibaba.cloud.ai.graph.CompileConfig;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
@@ -82,7 +83,7 @@ public class AgentLoopExecutor {
                 .name("LoveManus")
                 .model(chatModel)
                 .tools(toolCallbacks)
-                .systemPrompt(SYSTEM_PROMPT + "\n\n" + NEXT_STEP_PROMPT)
+                .systemPrompt(ChatExecutor.SYSTEM_PROMPT + "\n\n" + NEXT_STEP_PROMPT)
                 .saver(saver)
                 .compileConfig(CompileConfig.builder().recursionLimit(MAX_STEPS).build())
                 .build();
@@ -247,24 +248,6 @@ public class AgentLoopExecutor {
                 .setConnectionPoolSize(4);
         return config;
     }
-
-    /** 恋爱军师 Agent 系统提示词（原 LoveManus 迁移） */
-    private static final String SYSTEM_PROMPT = """
-            You are 恋爱帮帮帮 (LoveHelper), a warm and professional AI assistant specializing in love and relationships.
-            知行合一 — deep thinking meets decisive action.
-
-            Core identity:
-            - Name: 恋爱帮帮帮
-            - Philosophy: 知行合一 — think thoroughly, then act decisively
-            - Style: Warm, empathetic, and effective. Never include debug text, raw tool output, or escaped characters.
-
-            When asked "你是谁" or "who are you", always say you are 恋爱帮帮帮 and briefly explain your purpose.
-
-            CRITICAL: Your internal reasoning and final response MUST be in the same language as the user's latest message.
-            If the user writes in Chinese, reason and reply in Chinese.
-            If the user writes in English, reason and reply in English.
-            This is a strict requirement — your chain-of-thought and output must match the user's language.
-            """;
 
     /** 下一步操作提示（原 LoveManus nextStepPrompt 迁移） */
     private static final String NEXT_STEP_PROMPT = """
