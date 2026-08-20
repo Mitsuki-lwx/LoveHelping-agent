@@ -31,12 +31,10 @@ import java.util.List;
 public class AiController {
 
     private final ChatEntry chatEntry;
-    private final cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor chatExecutor;
     private final ChatService chatService;
 
-    public AiController(ChatEntry chatEntry, cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor chatExecutor, ChatService chatService) {
+    public AiController(ChatEntry chatEntry, ChatService chatService) {
         this.chatEntry = chatEntry;
-        this.chatExecutor = chatExecutor;
         this.chatService = chatService;
     }
 
@@ -122,11 +120,17 @@ public class AiController {
      */
     @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatSseWithRAG(@RequestParam String prompt, @RequestParam String chatId) {
-        // 强制 RAG：跳过路由器，直接注入 RAG 能力
-        cn.lwx.lwxaiagent.infrastructure.orchestration.CapabilitySet caps =
-                new cn.lwx.lwxaiagent.infrastructure.orchestration.CapabilitySet(
-                        true, List.of(), false, false, false);
-        return chatExecutor.execute(prompt, chatId, caps).flux();
+        // forceAgent=true → Agent 有 KnowledgeSearchTool 可用，可自行决定是否检索知识库
+        AgentResult result = chatEntry.chat(prompt, chatId, List.of(), true, null);
+        if (result instanceof AgentResult.DeepResult dr) {
+            SseEmitter emitter = dr.emitter();
+            return Flux.<String>create(sink -> {
+                emitter.onTimeout(() -> sink.complete());
+                emitter.onError(sink::error);
+                emitter.onCompletion(() -> sink.complete());
+            });
+        }
+        return Flux.empty();
     }
 
     // ==================== Agent 任务端点（走 ChatEntry 自动升级 DEEP）====================
