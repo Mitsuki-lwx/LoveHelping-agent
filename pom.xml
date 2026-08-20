@@ -62,6 +62,7 @@
 
     <!-- ======================== 依赖版本管理 ======================== -->
     <!-- Spring AI BOM（Bill of Materials）：统一管理所有 Spring AI 组件的版本 -->
+    <!-- spring-ai-alibaba BOM：统一管理 agent-framework/graph-core 等编排模块版本（ADR-8） -->
     <dependencyManagement>
         <dependencies>
             <dependency>
@@ -70,6 +71,27 @@
                 <version>1.1.8</version>
                 <type>pom</type>
                 <scope>import</scope>  <!-- import 表示导入该 BOM 中的依赖管理 -->
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-bom</artifactId>
+                <version>1.1.2.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Redisson 3.24 传递依赖对齐本地可用版本（离线环境）：
+                 netty 统一 4.1.132.Final、rxjava3 3.1.12 -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>4.1.132.Final</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.reactivex.rxjava3</groupId>
+                <artifactId>rxjava</artifactId>
+                <version>3.1.12</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -143,6 +165,21 @@
                     <artifactId>slf4j-simple</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+
+        <!-- spring-ai-alibaba Agent 编排框架（ADR-8 落地）：ReactAgent/StateGraph/checkpoint，
+             用于替换手写 ReAct 循环；版本由 spring-ai-alibaba-bom:1.1.2.0 管理（2026-08-20 引入） -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
+        </dependency>
+
+        <!-- Redisson 客户端：graph-core 的 RedisSaver 依赖 RedissonClient（非 Spring Data Redis）。
+             用核心库手动构建 Client，不引入 starter 以免接管 Spring Data Redis 自动配置 -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson</artifactId>
+            <version>3.24.0</version>
         </dependency>
 
         <!-- JSON Schema Generator：支持 LLM 结构化输出（Structured Output） -->

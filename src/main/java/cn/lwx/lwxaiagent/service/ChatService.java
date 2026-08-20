@@ -1,6 +1,5 @@
 package cn.lwx.lwxaiagent.service;
 
-import cn.lwx.lwxaiagent.agent.LoveManus;
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.constant.FileConstant;
 import cn.lwx.lwxaiagent.entity.AgentTask;
@@ -244,17 +243,22 @@ public class ChatService {
     private final MemoryStore memoryStore;
 
     /**
-     * 活跃的 Agent 会话映射表，键为会话 ID（sessionId），值为对应的 LoveManus Agent 实例。
-     * 使用 {@link ConcurrentHashMap} 保证高并发场景下的线程安全。
+     * 活跃的 Agent 会话映射表，键为会话 ID（sessionId），值为该会话的 SseEmitter。
      * <p>
      * 作用：
      * <ul>
-     *   <li>维持 Agent 的多轮对话状态</li>
-     *   <li>支持通过 sessionId 查找并停止正在运行的 Agent</li>
+     *   <li>支持通过 sessionId 查找并停止正在运行的 Agent（ADR-8：ReactAgent 执行核心）</li>
      *   <li>在会话超时或异常时自动清理</li>
      * </ul>
      */
-    private final ConcurrentHashMap<String, LoveManus> activeSessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SseEmitter> activeSessions = new ConcurrentHashMap<>();
+
+    /**
+     * Agent 多步任务执行核心（ADR-8，2026-08-20）：spring-ai-alibaba ReactAgent，
+     * 取代手写 LoveManus 循环。任务状态流转由 run() 的完成回调驱动。
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private cn.lwx.lwxaiagent.infrastructure.ai.AgentLoopExecutor agentLoopExecutor;
 
     /**
      * <h3>构造函数 - 依赖注入</h3>
@@ -622,14 +626,12 @@ public class ChatService {
      * 支持多轮对话，并且可以在对话过程中主动"思考"和"行动"。
      * </p>
      *
-     * <h4>会话生命周期管理</h4>
+     * <h4>会话生命周期管理（ADR-8：ReactAgent 执行核心）</h4>
      * <ol>
-     *   <li><b>创建</b>：当 sessionId 为空或不存在于 activeSessions 中时，
-     *       创建新的 {@link LoveManus} Agent 实例，配置其对话记忆和会话 ID</li>
-     *   <li><b>复用</b>：当 sessionId 已存在时，复用现有 Agent 实例，
-     *       但调用 {@link LoveManus#resetForNextTurn()} 重置为下一轮对话状态</li>
-     *   <li><b>销毁</b>：在 SSE 超时或发生错误时，从 activeSessions 中移除 Agent 实例，
-     *       并记录会话跟踪信息</li>
+     *   <li><b>执行</b>：sessionId（即 checkpoint threadId + message 表归属）提交给
+     *       {@link cn.lwx.lwxaiagent.infrastructure.ai.AgentLoopExecutor}，内部 ReactAgent 循环执行</li>
+     *   <li><b>收尾</b>：流完成 → 完成回调驱动 agent_task 流转（SUCCESS/FAILED）；SSE 超时/错误 → FAILED</li>
+     *   <li><b>销毁</b>：在 SSE 超时/错误/完成时从 activeSessions 中移除，并记录会话跟踪信息</li>
      * </ol>
      *
      * <h4>SSE vs WebSocket 的选择</h4>
@@ -659,29 +661,22 @@ public class ChatService {
         String tenantId = TenantContext.getTenantId();
         String tid = (tenantId != null) ? tenantId : "default";
 
-        LoveManus loveManus = activeSessions.get(finalSessionId);
-        if (loveManus == null) {
-            loveManus = new LoveManus(toolCallbacks, chatModel);
-            ChatMemory agentMemory = chatMemoryFactory.createForAgent();
-            loveManus.setChatMemory(agentMemory);
-            loveManus.setConversationId(finalSessionId);
-            recordChatRequest("agent");
-            // ADR-3：任务完成回调（SseEmitter 的 onCompletion 在异步线程下不触发，用此钩子收尾）
-            loveManus.setCompletionCallback((ok, err) -> {
-                if (Boolean.TRUE.equals(ok)) {
-                    agentTaskService.succeed(taskId, null, 0L);
-                } else {
-                    agentTaskService.fail(taskId, "ERROR", err);
-                }
-            });
-            activeSessions.put(finalSessionId, loveManus);
-        } else {
-            loveManus.resetForNextTurn();
-        }
+        // 护栏（ADR-6）：Agent 入口与聊天入口同级别 L3 阻断
+        guardrailCheck(message);
+        recordChatRequest("agent");
 
-        agentTaskService.start(taskId); // PENDING → RUNNING
+        agentTaskService.start(taskId); // PENDING → RUNNING（含心跳）
 
-        SseEmitter emitter = loveManus.runStream(message);
+        // ADR-8（2026-08-20）：ReactAgent 执行核心——完成回调驱动任务状态流转
+        SseEmitter emitter = agentLoopExecutor.run(message, finalSessionId, (ok, err) -> {
+            if (Boolean.TRUE.equals(ok)) {
+                agentTaskService.succeed(taskId, null, 0L);
+            } else {
+                agentTaskService.fail(taskId, "ERROR", err);
+            }
+            sessionTracker.onMessageSent(finalSessionId, tid);
+        });
+        activeSessions.put(finalSessionId, emitter);
         emitter.onTimeout(() -> {
             log.info("AgentTask[{}] emitter onTimeout", taskId);
             agentTaskService.fail(taskId, "TIMEOUT", "Agent 执行超时");
@@ -696,9 +691,7 @@ public class ChatService {
         });
         emitter.onCompletion(() -> {
             log.info("AgentTask[{}] emitter onCompletion", taskId);
-            agentTaskService.succeed(taskId, null, 0L);
             activeSessions.remove(finalSessionId);
-            sessionTracker.onMessageSent(finalSessionId, tid);
         });
 
         return emitter;
@@ -707,8 +700,9 @@ public class ChatService {
     /**
      * <h3>停止正在运行的 Agent 会话</h3>
      * <p>
-     * 主动停止指定会话的 Agent 执行。适用于用户点击"停止生成"按钮等场景。
-     * 调用后该会话的 Agent 将从活跃会话映射表中移除。
+     * 主动停止指定会话的 Agent 执行。取消 ReactAgent 流式订阅（后台不再继续跑）。
+     * 任务状态：订阅取消后由 agent_task 心跳补偿扫描（10 分钟）兜底标记 FAILED，
+     * 可重提——比旧实现"停止后标记 SUCCESS"更诚实（用户中止 ≠ 成功）。
      * </p>
      *
      * @param sessionId 要停止的会话 ID
@@ -716,10 +710,13 @@ public class ChatService {
      *         {@code "no_active_session"} 表示该会话 ID 不存在或已结束
      */
     public String stopAgent(String sessionId) {
-        LoveManus agent = activeSessions.get(sessionId);
-        if (agent != null) {
-            agent.stop();
-            activeSessions.remove(sessionId);
+        SseEmitter emitter = activeSessions.remove(sessionId);
+        if (emitter != null) {
+            agentLoopExecutor.stop(sessionId);
+            try {
+                emitter.complete();
+            } catch (Exception ignored) {
+            }
             return "stopped";
         }
         return "no_active_session";
