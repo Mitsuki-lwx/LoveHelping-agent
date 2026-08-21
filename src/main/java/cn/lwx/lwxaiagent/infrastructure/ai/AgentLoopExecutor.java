@@ -73,6 +73,8 @@ public class AgentLoopExecutor {
     public AgentLoopExecutor(ChatModel chatModel,
                              ToolCallback[] toolCallbacks,
                              ChatMemoryFactory chatMemoryFactory,
+                             AgentMetricsInterceptor metricsInterceptor,
+                             AgentGuardrailInterceptor guardrailInterceptor,
                              @Value("${spring.data.redis.host:localhost}") String redisHost,
                              @Value("${spring.data.redis.port:6379}") int redisPort,
                              @Value("${spring.data.redis.password:}") String redisPassword) {
@@ -86,8 +88,10 @@ public class AgentLoopExecutor {
                 .systemPrompt(ChatExecutor.SYSTEM_PROMPT + "\n\n" + NEXT_STEP_PROMPT)
                 .saver(saver)
                 .compileConfig(CompileConfig.builder().recursionLimit(MAX_STEPS).build())
+                .interceptors(metricsInterceptor, guardrailInterceptor)
                 .build();
-        log.info("AgentLoopExecutor ready: ReactAgent(LoveManus), saver=RedisSaver, maxSteps={}", MAX_STEPS);
+        log.info("AgentLoopExecutor ready: ReactAgent(LoveManus), saver=RedisSaver, maxSteps={}, interceptors={}",
+                MAX_STEPS, 2);
     }
 
     /**
