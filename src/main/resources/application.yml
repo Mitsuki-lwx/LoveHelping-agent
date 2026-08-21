@@ -144,6 +144,10 @@ app:
     query-rewrite:
       enabled: true
 
+  # 消息加密（ADR-4，Phase 3）：AES-256-GCM 透明加密，主密钥由 APP_MESSAGE_KEY 注入
+  encryption:
+    enabled: true
+
   # pgvector 向量数据库配置（用于 RAG 的向量存储和相似度检索）
   pgvector:
     datasource:

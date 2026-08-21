@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.memory;
 
+import cn.lwx.lwxaiagent.infrastructure.EncryptionService;
 import cn.lwx.lwxaiagent.mapper.MessageMapper;
 import cn.lwx.lwxaiagent.memory.config.MemoryProperties;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -39,6 +40,9 @@ public class ChatMemoryFactory {
     /** System Prompt 版本（随消息落库归因，08 §2.4）。 */
     private final String promptVersion;
 
+    /** 消息加密服务（ADR-4，Phase 3）。 */
+    private final EncryptionService encryptionService;
+
     /**
      * @param messageMapper  消息 Mapper
      * @param props          记忆配置
@@ -46,10 +50,12 @@ public class ChatMemoryFactory {
      */
     public ChatMemoryFactory(MessageMapper messageMapper,
                              MemoryProperties props,
-                             @Value("${app.memory.prompt-version:v1}") String promptVersion) {
+                             @Value("${app.memory.prompt-version:v1}") String promptVersion,
+                             EncryptionService encryptionService) {
         this.messageMapper = messageMapper;
         this.props = props;
         this.promptVersion = promptVersion;
+        this.encryptionService = encryptionService;
     }
 
     /**
@@ -88,6 +94,6 @@ public class ChatMemoryFactory {
      * @return 基于 message 表的 ChatMemory 实例
      */
     public ChatMemory create(int windowSize) {
-        return new MessageChatMemory(messageMapper, windowSize, promptVersion);
+        return new MessageChatMemory(messageMapper, windowSize, promptVersion, encryptionService);
     }
 }
