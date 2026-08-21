@@ -4,7 +4,11 @@ import cn.lwx.lwxaiagent.tenant.JwtTokenProvider;
 import cn.lwx.lwxaiagent.tenant.UserService;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import io.jsonwebtoken.Claims;
+import cn.lwx.lwxaiagent.common.BizException;
+import cn.lwx.lwxaiagent.tenant.AdminGuard;
+import cn.lwx.lwxaiagent.service.DeleteService;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
@@ -66,6 +70,12 @@ public class AuthController {
      */
     @Resource
     private JwtTokenProvider jwtTokenProvider;
+
+    @Resource
+    private DeleteService deleteService;
+
+    @Resource
+    private AdminGuard adminGuard;
 
     /**
      * <h3>用户注册接口</h3>
@@ -239,5 +249,32 @@ public class AuthController {
             return Map.of("success", false, "message", "未登录");
         }
         return Map.of("success", true, "username", userId, "role", role != null ? role : "USER");
+    }
+
+    /**
+     * <h3>用户自行注销（ADR-5）</h3>
+     * <p>级联删除当前用户的所有数据（会话、消息、记忆、Skill、任务等），并禁用账号。</p>
+     */
+    @DeleteMapping("/account")
+    public Map<String, Object> deleteAccount() {
+        String userId = TenantContext.getUserId();
+        if (userId == null) {
+            throw new BizException(401, "未登录");
+        }
+        deleteService.deleteUserData(userId);
+        log.info("User {} deleted own account", userId);
+        return Map.of("success", true, "message", "账号已注销");
+    }
+
+    /**
+     * <h3>管理员强制注销用户（ADR-5）</h3>
+     */
+    @DeleteMapping("/admin/account/{userId}")
+    public Map<String, Object> deleteAccountByAdmin(@PathVariable String userId,
+                                                     HttpServletRequest request) {
+        adminGuard.check(request);
+        deleteService.deleteUserData(userId);
+        log.info("Admin deleted user {}", userId);
+        return Map.of("success", true, "message", "用户已注销");
     }
 }
