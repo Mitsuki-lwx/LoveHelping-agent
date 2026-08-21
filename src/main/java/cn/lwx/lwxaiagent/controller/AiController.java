@@ -119,18 +119,12 @@ public class AiController {
      * 保留为向后兼容端点（smoke 7.3 / 前端历史代码）。
      */
     @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatSseWithRAG(@RequestParam String prompt, @RequestParam String chatId) {
-        // forceAgent=true → Agent 有 KnowledgeSearchTool 可用，可自行决定是否检索知识库
+    public SseEmitter chatSseWithRAG(@RequestParam String prompt, @RequestParam String chatId) {
         AgentResult result = chatEntry.chat(prompt, chatId, List.of(), true, null);
         if (result instanceof AgentResult.DeepResult dr) {
-            SseEmitter emitter = dr.emitter();
-            return Flux.<String>create(sink -> {
-                emitter.onTimeout(() -> sink.complete());
-                emitter.onError(sink::error);
-                emitter.onCompletion(() -> sink.complete());
-            });
+            return dr.emitter();
         }
-        return Flux.empty();
+        throw new IllegalStateException("RAG should be deep mode");
     }
 
     // ==================== Agent 任务端点（走 ChatEntry 自动升级 DEEP）====================
