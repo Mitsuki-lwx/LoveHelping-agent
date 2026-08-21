@@ -1,6 +1,8 @@
 package cn.lwx.lwxaiagent.evolution;
 
+import cn.lwx.lwxaiagent.entity.EvolutionSkill;
 import cn.lwx.lwxaiagent.evolution.config.EvolutionProperties;
+import cn.lwx.lwxaiagent.mapper.EvolutionSkillMapper;
 import cn.lwx.lwxaiagent.retrieval.HybridRetrievalService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
@@ -45,6 +47,9 @@ public class SkillRetriever {
      */
     @Autowired(required = false)
     private HybridRetrievalService hybridService;
+
+    @Autowired(required = false)
+    private EvolutionSkillMapper skillMapper;
 
     /**
      * 进化系统配置属性，提供技能检索的 Top-K 数量等参数
@@ -102,13 +107,19 @@ public class SkillRetriever {
         for (Document doc : docs) {
             String skillName = (String) doc.getMetadata().getOrDefault("skillName", "");
             String content = (String) doc.getMetadata().getOrDefault("content", "");
+            String skillId = (String) doc.getMetadata().getOrDefault("skillId", "");
 
-            if (!skillName.isBlank() && !content.isBlank()) {
-                // 进化技能文档 —— 有 skillName 和 content 元数据
+            if (!skillName.isBlank() && !content.isBlank() && !skillId.isBlank()) {
+                // 审核状态过滤：只返回 APPROVED 的技能
+                if (skillMapper != null) {
+                    EvolutionSkill skill = skillMapper.selectById(Long.parseLong(skillId));
+                    if (skill == null || !"APPROVED".equals(skill.getAuditStatus())) {
+                        continue;
+                    }
+                }
                 sb.append("- ").append(skillName).append(": ").append(content).append("\n");
                 count++;
             }
-            // 跳过非技能文档（普通 RAG 知识库文档由 QuestionAnswerAdvisor 处理）
         }
 
         if (count == 0) {

@@ -100,6 +100,13 @@ public class EvolutionSkill {
     private Integer qualityScore;
 
     /**
+     * 审核状态：PENDING（默认）/ APPROVED / REJECTED。
+     * 萃取后设 PENDING，审核通过后设 APPROVED 才可被检索和向量化。
+     */
+    @TableField("audit_status")
+    private String auditStatus;
+
+    /**
      * 是否启用（活跃状态），对应数据库列 {@code is_active}。
      * <p>{@code true} 表示该技能处于活跃状态，可以被检索和使用；
      * {@code false} 表示该技能已停用（如质量过低或过期），不会被检索到。
@@ -149,5 +156,6 @@ public class EvolutionSkill {
         this.sourceSessionId = sourceSessionId;
         this.qualityScore = qualityScore;
         this.isActive = true;
+        this.auditStatus = "PENDING";
     }
 }
