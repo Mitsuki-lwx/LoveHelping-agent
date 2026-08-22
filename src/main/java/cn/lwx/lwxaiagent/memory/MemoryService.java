@@ -2,6 +2,7 @@ package cn.lwx.lwxaiagent.memory;
 
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.entity.Message;
+import cn.lwx.lwxaiagent.infrastructure.EncryptionService;
 import cn.lwx.lwxaiagent.mapper.MessageMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -45,13 +46,19 @@ public class MemoryService {
     /** Spring JDBC 模板，用于执行自定义 SQL（如操作用户-对话映射表）。 */
     private final JdbcTemplate jdbcTemplate;
 
+    /** 消息解密（ADR-4）。 */
+    private final EncryptionService encryptionService;
+
     /**
-     * @param messageMapper 消息 Mapper
+     * @param messageMapper  消息 Mapper
      * @param jdbcTemplate  Spring JDBC 模板
+     * @param encryptionService 加密服务（读取时解密）
      */
-    public MemoryService(MessageMapper messageMapper, JdbcTemplate jdbcTemplate) {
+    public MemoryService(MessageMapper messageMapper, JdbcTemplate jdbcTemplate,
+                         EncryptionService encryptionService) {
         this.messageMapper = messageMapper;
         this.jdbcTemplate = jdbcTemplate;
+        this.encryptionService = encryptionService;
     }
 
     /**
@@ -82,7 +89,7 @@ public class MemoryService {
                 .orderByAsc(Message::getId));
         List<org.springframework.ai.chat.messages.Message> result = new ArrayList<>(rows.size());
         for (Message row : rows) {
-            String content = row.getContent() == null ? "" : row.getContent();
+            String content = decryptContent(row.getContent(), row.getUserId());
             String role = row.getRole() == null ? "" : row.getRole().toUpperCase();
             switch (role) {
                 case "USER" -> result.add(new UserMessage(content));
@@ -91,6 +98,14 @@ public class MemoryService {
             }
         }
         return result;
+    }
+
+    private String decryptContent(String content, String userId) {
+        try {
+            return encryptionService.decrypt(content, userId);
+        } catch (Exception e) {
+            return content;
+        }
     }
 
     /**

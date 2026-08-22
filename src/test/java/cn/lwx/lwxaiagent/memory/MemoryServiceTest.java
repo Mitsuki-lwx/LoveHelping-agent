@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.memory;
 
 import cn.lwx.lwxaiagent.entity.Message;
+import cn.lwx.lwxaiagent.infrastructure.EncryptionService;
 import cn.lwx.lwxaiagent.mapper.MessageMapper;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import org.junit.jupiter.api.AfterEach;
@@ -40,12 +41,15 @@ class MemoryServiceTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
 
+    /** 加密服务（测试禁用，存明文） */
+    private final EncryptionService encryptionService = new EncryptionService("", false);
+
     /**
      * 测试注册会话：验证 INSERT 语句是否正确执行
      */
     @Test
     void registerConversation_insertsMapping() {
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         svc.registerConversation("user1", "conv1", "hello", "love");
         verify(jdbcTemplate).update(
             contains("INSERT IGNORE INTO user_conversations"),
@@ -58,7 +62,7 @@ class MemoryServiceTest {
      */
     @Test
     void clearHistory_deletesBoth() {
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         svc.clearHistory("conv1");
         verify(messageMapper).update(isNull(), any());   // 软删 message（deleted=1）
         verify(jdbcTemplate).update(contains("DELETE FROM user_conversations"), eq("conv1"));
@@ -70,7 +74,7 @@ class MemoryServiceTest {
     @Test
     void getHistory_delegates() {
         when(messageMapper.selectList(any())).thenReturn(List.of());
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         assertEquals(0, svc.getHistory("conv1").size());
         verify(messageMapper).selectList(any());
     }
@@ -88,7 +92,7 @@ class MemoryServiceTest {
         assistant.setContent("hi there");
         when(messageMapper.selectList(any())).thenReturn(List.of(user, assistant));
 
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         List<org.springframework.ai.chat.messages.Message> history = svc.getHistory("conv1");
         assertEquals(2, history.size());
         assertEquals("hello", history.get(0).getText());
@@ -102,7 +106,7 @@ class MemoryServiceTest {
     void listUserConversations_returnsList() {
         when(jdbcTemplate.queryForList(anyString(), eq("user1"), eq("love")))
             .thenReturn(List.of(Map.of("conversation_id", "c1")));
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         List<Map<String, Object>> result = svc.listUserConversations("user1", "love");
         assertEquals(1, result.size());
         assertEquals("c1", result.get(0).get("conversation_id"));
@@ -115,7 +119,7 @@ class MemoryServiceTest {
     void listAllConversations_returnsList() {
         when(jdbcTemplate.queryForList(anyString()))
             .thenReturn(List.of(Map.of("conversation_id", "c1")));
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         List<Map<String, Object>> result = svc.listAllConversations();
         assertEquals(1, result.size());
     }
@@ -127,7 +131,7 @@ class MemoryServiceTest {
     void registerConversation_jdbcError_logsOnly() {
         when(jdbcTemplate.update(anyString(), any(), any(), any(), any()))
             .thenThrow(new RuntimeException("DB error"));
-        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate);
+        MemoryService svc = new MemoryService(messageMapper, jdbcTemplate, encryptionService);
         assertDoesNotThrow(() -> svc.registerConversation("u1", "c1", "t", "love"));
     }
 

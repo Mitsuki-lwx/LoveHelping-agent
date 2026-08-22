@@ -80,7 +80,7 @@ public class ChatExecutor {
     }
 
     private String assembleContext(String message, String tid) {
-        String memoryContext = memoryStore.retrieveAsContext(TenantContext.getUserId());
+        String memoryContext = memoryStore.retrieveAsContext(TenantContext.getUserId(), message);
         String skillContext = skillRetriever.retrieveAsContext(message, tid);
         if (memoryContext.isEmpty()) return skillContext;
         return memoryContext + skillContext;

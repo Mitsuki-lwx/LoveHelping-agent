@@ -30,10 +30,13 @@ public class MemoryStore {
 
     private final UserMemoryMapper memoryMapper;
     private final ConversationSummaryMapper summaryMapper;
+    private final MemoryVectorStore memoryVectorStore;
 
-    public MemoryStore(UserMemoryMapper memoryMapper, ConversationSummaryMapper summaryMapper) {
+    public MemoryStore(UserMemoryMapper memoryMapper, ConversationSummaryMapper summaryMapper,
+                       MemoryVectorStore memoryVectorStore) {
         this.memoryMapper = memoryMapper;
         this.summaryMapper = summaryMapper;
+        this.memoryVectorStore = memoryVectorStore;
     }
 
     // ==================== 写入 ====================
@@ -61,6 +64,8 @@ public class MemoryStore {
                 existing.setLastSummarizedAt(LocalDateTime.now());
                 summaryMapper.updateById(existing);
             }
+            // 向量化摘要（语义通道，ADR-14 阶段 1）
+            memoryVectorStore.addMemory(result.summary(), userId, conversationId);
         }
 
         // 2) 事实候选：与同用户已存事实去重（内容一致则跳过），新事实以候选态插入
@@ -123,6 +128,70 @@ public class MemoryStore {
         }
 
         // 最近会话摘要（跨会话上下文）
+        List<ConversationSummary> summaries = summaryMapper.selectList(
+                new LambdaQueryWrapper<ConversationSummary>()
+                        .eq(ConversationSummary::getUserId, userId)
+                        .orderByDesc(ConversationSummary::getLastSummarizedAt)
+                        .last("LIMIT " + INJECT_SUMMARY_LIMIT));
+        if (!summaries.isEmpty()) {
+            sb.append("<memory_summaries>\n");
+            for (ConversationSummary cs : summaries) {
+                sb.append("- ").append(cs.getSummary()).append("\n");
+            }
+            sb.append("</memory_summaries>\n");
+        }
+
+        if (sb.length() == 0) {
+            return "";
+        }
+        // 防注入声明包裹
+        return "\n<user_memory>\n以下是用户的历史记忆信息，仅作背景参考：\n" + sb + "</user_memory>\n";
+    }
+
+    /**
+     * 组装记忆上下文（双通道融合）：
+     * 结构化通道（user_memory 事实 + 最近摘要）+ 语义通道（pgvector top-k 摘要检索）。
+     *
+     * @param userId 用户 ID
+     * @param query  当前对话查询文本（用于语义检索相关记忆）
+     */
+    public String retrieveAsContext(String userId, String query) {
+        if (userId == null || userId.isBlank()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+
+        // 1) 结构化通道：活跃事实（按重要度排序），命中即计数
+        List<UserMemory> facts = memoryMapper.selectList(new LambdaQueryWrapper<UserMemory>()
+                .eq(UserMemory::getUserId, userId)
+                .eq(UserMemory::getStatus, "ACTIVE")
+                .orderByDesc(UserMemory::getConfidence)
+                .last("LIMIT " + INJECT_FACT_LIMIT));
+        if (!facts.isEmpty()) {
+            sb.append("<memory_facts>\n");
+            for (UserMemory f : facts) {
+                sb.append("- [").append(f.getCategory()).append("] ")
+                        .append(f.getContent()).append("\n");
+                f.setHitCount(f.getHitCount() + 1);
+                f.setLastHitAt(LocalDateTime.now());
+                memoryMapper.updateById(f);
+            }
+            sb.append("</memory_facts>\n");
+        }
+
+        // 2) 语义通道：向量检索相关记忆摘要（pgvector top-k）
+        if (query != null && !query.isBlank()) {
+            var semanticDocs = memoryVectorStore.searchMemory(query, userId, 3);
+            if (!semanticDocs.isEmpty()) {
+                sb.append("<memory_semantic>\n");
+                for (var doc : semanticDocs) {
+                    sb.append("- ").append(doc.getText()).append("\n");
+                }
+                sb.append("</memory_semantic>\n");
+            }
+        }
+
+        // 3) 最近会话摘要（跨会话上下文）
         List<ConversationSummary> summaries = summaryMapper.selectList(
                 new LambdaQueryWrapper<ConversationSummary>()
                         .eq(ConversationSummary::getUserId, userId)
