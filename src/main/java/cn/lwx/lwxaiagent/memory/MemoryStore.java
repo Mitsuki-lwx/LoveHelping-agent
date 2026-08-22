@@ -1,8 +1,10 @@
 package cn.lwx.lwxaiagent.memory;
 
 import cn.lwx.lwxaiagent.entity.ConversationSummary;
+import cn.lwx.lwxaiagent.entity.RelationshipProfile;
 import cn.lwx.lwxaiagent.entity.UserMemory;
 import cn.lwx.lwxaiagent.mapper.ConversationSummaryMapper;
+import cn.lwx.lwxaiagent.mapper.RelationshipProfileMapper;
 import cn.lwx.lwxaiagent.mapper.UserMemoryMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -31,12 +33,14 @@ public class MemoryStore {
     private final UserMemoryMapper memoryMapper;
     private final ConversationSummaryMapper summaryMapper;
     private final MemoryVectorStore memoryVectorStore;
+    private final RelationshipProfileMapper profileMapper;
 
     public MemoryStore(UserMemoryMapper memoryMapper, ConversationSummaryMapper summaryMapper,
-                       MemoryVectorStore memoryVectorStore) {
+                       MemoryVectorStore memoryVectorStore, RelationshipProfileMapper profileMapper) {
         this.memoryMapper = memoryMapper;
         this.summaryMapper = summaryMapper;
         this.memoryVectorStore = memoryVectorStore;
+        this.profileMapper = profileMapper;
     }
 
     // ==================== 写入 ====================
@@ -141,6 +145,22 @@ public class MemoryStore {
             sb.append("</memory_summaries>\n");
         }
 
+        // 关系档案（阶段 2/3，诊断/沙盘数据就绪后自动填充）
+        RelationshipProfile profile = profileMapper.selectById(userId);
+        if (profile != null) {
+            sb.append("<memory_profile>\n");
+            if (profile.getStage() != null && !profile.getStage().isBlank()) {
+                sb.append("- 关系阶段：").append(profile.getStage()).append("\n");
+            }
+            if (profile.getKeyPeople() != null && !"null".equals(profile.getKeyPeople())) {
+                sb.append("- 关键人物：").append(profile.getKeyPeople()).append("\n");
+            }
+            if (profile.getAlerts() != null && !"null".equals(profile.getAlerts())) {
+                sb.append("- 预警事项：").append(profile.getAlerts()).append("\n");
+            }
+            sb.append("</memory_profile>\n");
+        }
+
         if (sb.length() == 0) {
             return "";
         }
@@ -203,6 +223,22 @@ public class MemoryStore {
                 sb.append("- ").append(cs.getSummary()).append("\n");
             }
             sb.append("</memory_summaries>\n");
+        }
+
+        // 关系档案（阶段 2/3，诊断/沙盘数据就绪后自动填充）
+        RelationshipProfile profile2 = profileMapper.selectById(userId);
+        if (profile2 != null) {
+            sb.append("<memory_profile>\n");
+            if (profile2.getStage() != null && !profile2.getStage().isBlank()) {
+                sb.append("- 关系阶段：").append(profile2.getStage()).append("\n");
+            }
+            if (profile2.getKeyPeople() != null && !"null".equals(profile2.getKeyPeople())) {
+                sb.append("- 关键人物：").append(profile2.getKeyPeople()).append("\n");
+            }
+            if (profile2.getAlerts() != null && !"null".equals(profile2.getAlerts())) {
+                sb.append("- 预警事项：").append(profile2.getAlerts()).append("\n");
+            }
+            sb.append("</memory_profile>\n");
         }
 
         if (sb.length() == 0) {
