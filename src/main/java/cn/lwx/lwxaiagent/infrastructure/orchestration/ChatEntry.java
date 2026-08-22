@@ -10,8 +10,10 @@ import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalTime;
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.regex.Pattern;
 
 /**
  * 聊天统一入口：路由 + 交叉关注点 + 执行分发。
@@ -79,6 +81,15 @@ public class ChatEntry {
     }
 
     private void guardrailCheck(String prompt) {
+        // ① 情绪刹车片（FR-CORE-02）：深夜+极端情绪→拦截+冷静提示
+        if (emotionBrakeCheck(prompt)) {
+            log.info("Emotion brake triggered: {}", prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
+            throw new BizException(4002,
+                    "我注意到你现在可能情绪比较激动。深呼吸，我们不着急。" +
+                    "如果你想换个更温和的方式表达，我可以帮你。");
+        }
+
+        // ② 标准护栏（ADR-6）
         var verdict = guardrailRuleService.check(prompt);
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked ({}): {}", verdict.ruleId(),
@@ -97,4 +108,24 @@ public class ChatEntry {
     private void recordChatRequest(String mode) {
         try { meterRegistry.counter("chat.request", "mode", mode).increment(); } catch (Exception ignored) {}
     }
+
+    /**
+     * 情绪刹车片（FR-CORE-02）：深夜时段(23:00-06:00) + 极端情绪关键词 → 触发冷静提示。
+     * 只对用户输出生效（拦截冲动发言），不改变 AI 回复基调。
+     */
+    private boolean emotionBrakeCheck(String prompt) {
+        if (prompt == null || prompt.isBlank()) return false;
+
+        // 深夜时段
+        LocalTime now = LocalTime.now();
+        boolean lateNight = now.getHour() >= 23 || now.getHour() < 6;
+        if (!lateNight) return false;
+
+        // 极端情绪关键词
+        return EMOTION_KEYWORDS.matcher(prompt).find();
+    }
+
+    /** 极端情绪关键词（深夜触发） */
+    private static final Pattern EMOTION_KEYWORDS = Pattern.compile(
+            "(?i)(分手|你从来|你永远|滚|去死|恨|受不了|崩溃|绝望|想死|自杀|完了|废物|傻逼|fuck|shit|hate)");
 }
