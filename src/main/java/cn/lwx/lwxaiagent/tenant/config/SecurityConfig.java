@@ -1,6 +1,9 @@
 package cn.lwx.lwxaiagent.tenant.config;
 
+import cn.lwx.lwxaiagent.canary.CanaryConfig;
+import cn.lwx.lwxaiagent.canary.CanaryInterceptor;
 import cn.lwx.lwxaiagent.tenant.interceptor.TenantInterceptor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
@@ -65,15 +68,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Slf4j
 @Configuration
+@EnableConfigurationProperties(CanaryConfig.class)
 public class SecurityConfig implements WebMvcConfigurer {
 
-    /**
-     * 租户拦截器，由 Spring 通过 {@link Resource @Resource} 注解注入。
-     * 负责从 HTTP 请求的 Authorization 头中提取 JWT、验证签名、解析用户信息、
-     * 并将租户上下文注入到 {@link cn.lwx.lwxaiagent.tenant.context.TenantContext}。
-     */
     @Resource
     private TenantInterceptor tenantInterceptor;
+
+    @Resource
+    private CanaryInterceptor canaryInterceptor;
 
     /**
      * <h3>注册拦截器 —— 配置哪些路径需要 JWT 认证</h3>
@@ -119,7 +121,10 @@ public class SecurityConfig implements WebMvcConfigurer {
                         "/auth/login",
                         "/auth/register"
                 );
-        log.info("TenantInterceptor registered for /Love_app/**, /memory/**, /evolution/**, /auth/me, /auth/account");
+        registry.addInterceptor(canaryInterceptor)
+                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/auth/me", "/auth/account")
+                .excludePathPatterns("/swagger-ui/**", "/v3/api-docs/**", "/actuator/**", "/auth/login", "/auth/register");
+        log.info("TenantInterceptor + CanaryInterceptor registered");
     }
 
     /**
