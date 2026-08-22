@@ -229,6 +229,16 @@ public class PgVectorVectorStoreConfig {
             log.info("Vector store already has {} records, skipping initialization", count);
         }
 
+        // ---- 步骤四：启用 pg_trgm 扩展（混合检索关键词通道） ----
+        try {
+            pgJdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm");
+            pgJdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_vector_store_content_trgm "
+                    + "ON vector_store USING GIN (content gin_trgm_ops)");
+            log.info("pg_trgm extension and GIN index ready");
+        } catch (Exception e) {
+            log.warn("pg_trgm setup failed (non-critical): {}", e.getMessage());
+        }
+
         return vectorStore;
     }
 }
