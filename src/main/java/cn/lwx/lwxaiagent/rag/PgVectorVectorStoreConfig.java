@@ -172,6 +172,12 @@ public class PgVectorVectorStoreConfig {
                 .build();
 
         // ---- 步骤三：数据初始化（幂等操作） ----
+        // 若 app.rag.reindex=true 则强制重建（用于新文档导入后）
+        if ("true".equalsIgnoreCase(System.getProperty("app.rag.reindex", "false"))) {
+            log.info("Reindex flag set, clearing vector store and reloading...");
+            pgJdbcTemplate.execute("DELETE FROM vector_store");
+        }
+
         // 查询表中已有记录数
         Integer count = pgJdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM vector_store", Integer.class);
