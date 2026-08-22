@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.memory;
 
+import cn.lwx.lwxaiagent.admin.PromptVersionService;
 import cn.lwx.lwxaiagent.infrastructure.EncryptionService;
 import cn.lwx.lwxaiagent.mapper.MessageMapper;
 import cn.lwx.lwxaiagent.memory.config.MemoryProperties;
@@ -37,7 +38,7 @@ public class ChatMemoryFactory {
     /** 记忆系统配置属性，提供窗口大小等配置参数。 */
     private final MemoryProperties props;
 
-    /** System Prompt 版本（随消息落库归因，08 §2.4）。 */
+    /** System Prompt 版本（随消息落库归因，08 §2.4，由 PromptVersionService 自动管理）。 */
     private final String promptVersion;
 
     /** 消息加密服务（ADR-4，Phase 3）。 */
@@ -46,15 +47,15 @@ public class ChatMemoryFactory {
     /**
      * @param messageMapper  消息 Mapper
      * @param props          记忆配置
-     * @param promptVersion  System Prompt 版本（app.memory.prompt-version）
+     * @param promptVersionService  Prompt 版本管理（自动检测并递增）
      */
     public ChatMemoryFactory(MessageMapper messageMapper,
                              MemoryProperties props,
-                             @Value("${app.memory.prompt-version:v1}") String promptVersion,
+                             PromptVersionService promptVersionService,
                              EncryptionService encryptionService) {
         this.messageMapper = messageMapper;
         this.props = props;
-        this.promptVersion = promptVersion;
+        this.promptVersion = promptVersionService.getCurrentVersion();
         this.encryptionService = encryptionService;
     }
 
