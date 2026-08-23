@@ -113,7 +113,7 @@ public class SecurityConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(tenantInterceptor)
-                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/auth/me", "/auth/account")
+                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/sandbox/**", "/auth/me", "/auth/account")
                 .excludePathPatterns(
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
@@ -122,7 +122,7 @@ public class SecurityConfig implements WebMvcConfigurer {
                         "/auth/register"
                 );
         registry.addInterceptor(canaryInterceptor)
-                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/auth/me", "/auth/account")
+                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/sandbox/**", "/auth/me", "/auth/account")
                 .excludePathPatterns("/swagger-ui/**", "/v3/api-docs/**", "/actuator/**", "/auth/login", "/auth/register");
         log.info("TenantInterceptor + CanaryInterceptor registered");
     }

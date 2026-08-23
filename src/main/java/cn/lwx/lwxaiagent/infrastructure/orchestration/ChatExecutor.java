@@ -79,12 +79,21 @@ public class ChatExecutor {
 
     /** 普通执行：一次 LLM 调用，无工具无 RAG */
     public AgentResult.ShallowResult execute(String message, String chatId, CapabilitySet caps) {
+        return execute(message, chatId, caps, null);
+    }
+
+    /**
+     * 执行 with 可选 system prompt 覆盖（用于沙盘等需要注入人格参数的场景）。
+     * @param customSystemPrompt 非 null 时覆盖默认 SYSTEM_PROMPT
+     */
+    public AgentResult.ShallowResult execute(String message, String chatId, CapabilitySet caps, String customSystemPrompt) {
         String tid = TenantContext.getTenantId() != null ? TenantContext.getTenantId() : "default";
         String context = assembleContext(message, tid);
+        String effectivePrompt = customSystemPrompt != null ? customSystemPrompt : SYSTEM_PROMPT;
         var req = chatClient.prompt()
                 .user(message)
                 .advisors(spec -> spec.param(org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID, chatId));
-        req.system(SYSTEM_PROMPT + context);
+        req.system(effectivePrompt + context);
         return new AgentResult.ShallowResult(req.stream().content());
     }
 
