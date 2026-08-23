@@ -22,13 +22,15 @@ public class DeleteService {
     private final KnowledgeVoteMapper knowledgeVoteMapper;
     private final MessageMapper messageMapper;
     private final MessageMediaMapper messageMediaMapper;
+    private final SandboxSessionMapper sandboxSessionMapper;
 
     public DeleteService(UserMapper userMapper, UserMemoryMapper userMemoryMapper,
                          ConversationSummaryMapper conversationSummaryMapper,
                          EvolutionSkillMapper evolutionSkillMapper,
                          AgentTaskMapper agentTaskMapper,
                          KnowledgeVoteMapper knowledgeVoteMapper,
-                         MessageMapper messageMapper, MessageMediaMapper messageMediaMapper) {
+                         MessageMapper messageMapper, MessageMediaMapper messageMediaMapper,
+                         SandboxSessionMapper sandboxSessionMapper) {
         this.userMapper = userMapper;
         this.userMemoryMapper = userMemoryMapper;
         this.conversationSummaryMapper = conversationSummaryMapper;
@@ -37,6 +39,7 @@ public class DeleteService {
         this.knowledgeVoteMapper = knowledgeVoteMapper;
         this.messageMapper = messageMapper;
         this.messageMediaMapper = messageMediaMapper;
+        this.sandboxSessionMapper = sandboxSessionMapper;
     }
 
     @Transactional
@@ -78,6 +81,10 @@ public class DeleteService {
             knowledgeVoteMapper.delete(new QueryWrapper<KnowledgeVote>()
                     .eq("tenant_id", "default").in("session_id", convIds));
         }
+
+        // 7.5 删除沙盘会话（Phase 4）
+        sandboxSessionMapper.delete(new QueryWrapper<SandboxSession>()
+                .eq("user_id", userId));
 
         // 8. 禁用用户账号
         userMapper.update(null, new UpdateWrapper<User>().eq("username", userId).set("enabled", false));
