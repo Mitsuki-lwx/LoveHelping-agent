@@ -143,6 +143,8 @@ app:
   rag:
     query-rewrite:
       enabled: true
+    hybrid-search:
+      enabled: false        # 混合检索（pg_trgm+RRF），数据量5000+时开启
 
   # 消息加密（ADR-4，Phase 3）：AES-256-GCM 透明加密，主密钥由 APP_MESSAGE_KEY 注入
   encryption:
