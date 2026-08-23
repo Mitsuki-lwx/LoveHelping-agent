@@ -24,7 +24,7 @@ public class GoldenSetRunner {
     private final ChatModel judgeModel; // LLM-as-judge（独立模型）
 
     public GoldenSetRunner(ChatExecutor chatExecutor,
-                           @org.springframework.beans.factory.annotation.Qualifier("deepSeekChatModel") ChatModel judgeModel) {
+                           @org.springframework.beans.factory.annotation.Qualifier("openAiChatModel") ChatModel judgeModel) {
         this.chatExecutor = chatExecutor;
         this.judgeModel = judgeModel;
     }

@@ -69,4 +69,27 @@ public class SkillIngestor {
             log.warn("Failed to store skill in vector store: {}", e.getMessage());
         }
     }
+
+    /**
+     * 批量向量化所有 APPROVED 且 is_active=true 的技能。
+     * 用于一次性补齐已审核但未向量化的技能（如直接在 DB 审核的场景）。
+     * @return 成功向量化的数量
+     */
+    public int vectorizeAllApproved() {
+        List<EvolutionSkill> approved = skillMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<EvolutionSkill>()
+                        .eq(EvolutionSkill::getAuditStatus, "APPROVED")
+                        .eq(EvolutionSkill::getIsActive, true));
+        int count = 0;
+        for (EvolutionSkill skill : approved) {
+            try {
+                vectorize(skill);
+                count++;
+            } catch (Exception e) {
+                log.warn("Failed to vectorize skill {}: {}", skill.getId(), e.getMessage());
+            }
+        }
+        log.info("Batch vectorized {} approved skills", count);
+        return count;
+    }
 }

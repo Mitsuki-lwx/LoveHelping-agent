@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.util.Optional;
+
 /**
  * <h2>LlmGateway —— 多供应商 LLM 网关（ADR-7）</h2>
  *
@@ -50,7 +52,7 @@ public class LlmGateway implements ChatModel {
     private final Counter completionTokensCounter;
 
     public LlmGateway(@Qualifier("openAiChatModel") ChatModel primary,
-                      @Qualifier("deepSeekChatModel") ChatModel fallback,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false) @Qualifier("deepSeekChatModel") ChatModel fallback,
                       LlmGatewayProperties props,
                       MeterRegistry meterRegistry) {
         this.primary = primary;
@@ -72,17 +74,18 @@ public class LlmGateway implements ChatModel {
     @Override
     public ChatResponse call(Prompt prompt) {
         try {
-            ChatResponse response = callWithRetry(primary, prompt, "primary(GoPlan)");
-            recordUsage(response, "goplan");
-            recordCall("success", "goplan");
+            ChatResponse response = callWithRetry(primary, prompt, "primary");
+            recordUsage(response, "sensenova");
+            recordCall("success", "sensenova");
             return response;
         } catch (RuntimeException primaryEx) {
-            recordCall("fallback", "goplan");
-            if (!props.isFallbackEnabled()) {
-                recordCall("fail", "goplan");
-                throw primaryEx;
+            recordCall("fallback", "sensenova");
+            if (!props.isFallbackEnabled() || fallback == null) {
+                recordCall("fail", "sensenova");
+                log.error("LLM primary failed, no fallback available: {}", primaryEx.getMessage());
+                throw new BizException(5000, "AI 服务暂时不可用，请稍后再试");
             }
-            log.warn("LLM primary provider failed after retries, switching to fallback: {}",
+            log.warn("LLM primary failed after retries, switching to fallback: {}",
                     primaryEx.getMessage());
             try {
                 ChatResponse response = fallback.call(prompt);
@@ -119,16 +122,15 @@ public class LlmGateway implements ChatModel {
 
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
-        // Flux.defer 延迟订阅：使建立阶段的同步错误可在订阅时被捕获（可重试/切备）
         Flux<ChatResponse> primaryStream = Flux.defer(() -> primary.stream(prompt));
-        if (!props.isFallbackEnabled()) {
+        if (!props.isFallbackEnabled() || fallback == null) {
             return primaryStream
-                    .doOnNext(r -> recordUsage(r, "goplan"))
-                    .doOnComplete(() -> recordCall("success", "goplan"));
+                    .doOnNext(r -> recordUsage(r, "sensenova"))
+                    .doOnComplete(() -> recordCall("success", "sensenova"));
         }
         return primaryStream
-                .doOnNext(r -> recordUsage(r, "goplan"))
-                .doOnComplete(() -> recordCall("success", "goplan"))
+                .doOnNext(r -> recordUsage(r, "sensenova"))
+                .doOnComplete(() -> recordCall("success", "sensenova"))
                 .onErrorResume(e -> {
                     log.warn("LLM primary stream failed, switching to fallback: {}", e.getMessage());
                     return Flux.defer(() -> fallback.stream(prompt))

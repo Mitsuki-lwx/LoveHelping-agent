@@ -104,7 +104,7 @@ public class EvolutionConfig {
      */
     @Bean
     public SkillReflector skillReflector(
-            @Qualifier("deepSeekChatModel") ChatModel chatModel,
+            @Qualifier("openAiChatModel") ChatModel chatModel,
             EvolutionProperties props) {
         return new SkillReflector(chatModel, props.getQualityThreshold());
     }
