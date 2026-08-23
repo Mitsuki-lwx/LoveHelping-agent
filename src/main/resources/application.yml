@@ -13,7 +13,11 @@
 
 spring:
   application:
-    name: lwx-ai-agent  # 应用名称（注册到服务发现/监控时使用）
+    name: lwx-ai-agent
+
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.deepseek.autoconfigure.DeepSeekChatAutoConfiguration  # 应用名称（注册到服务发现/监控时使用）
 
   # 激活的配置 profile —— 指向 application-local.yml（本地开发环境配置）
   profiles:
@@ -79,18 +83,19 @@ spring:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}  # 从环境变量读取 API Key
 
-    # DeepSeek API —— 项目的主聊天模型
+    # DeepSeek API（禁用：当前仅使用 sensenova OpenAI 兼容端点，非 DeepSeek）
     deepseek:
+      enabled: false
       api-key: ${DEEPSEEK_API_KEY:}   # 从环境变量读取 API Key
 
     # OpenAI 兼容接口（LlmGateway 主供应商，ADR-7）
-    # 默认指向 DeepSeek 官方（同为 OpenAI 兼容）；配置 GOPLAN_BASE_URL/GOPLAN_API_KEY 后主供应商切换为 GoPlan
+    # 当前使用 sensenova 通用 OpenAI 兼容端点
     openai:
-      base-url: ${GOPLAN_BASE_URL:https://api.deepseek.com}
-      api-key: ${GOPLAN_API_KEY:${DEEPSEEK_API_KEY:}}
+      base-url: ${OPENAI_BASE_URL:https://token.sensenova.cn/v1}
+      api-key: ${OPENAI_API_KEY:}
       chat:
         options:
-          model: ${GOPLAN_MODEL:deepseek-v4-flash}
+          model: ${OPENAI_MODEL:gpt-4o}
       # 禁用 OpenAI embedding/多模态自动配置：嵌入仍用 DashScope（待调研后替换），
       # 避免 openAiEmbeddingModel 与 dashscopeEmbeddingModel 的 @Primary 冲突
       embedding:
@@ -129,13 +134,12 @@ app:
   chat:
     provider: deepseek           # 默认聊天模型提供商（历史配置，主备结构见 app.llm）
 
-  # LlmGateway 配置（ADR-7）：主备降级链
-  # 主 = GoPlan（OpenAI 兼容端点，见 spring.ai.openai）；备 = DeepSeek 官方
+  # LlmGateway 配置（ADR-7）：当前仅使用 sensenova OpenAI 兼容端点
   llm:
     retry:
       max-attempts: 3            # 主模型最多尝试次数（含首次）
       backoff-ms: 1000           # 指数退避初始间隔（毫秒），按 2 倍递增
-    fallback-enabled: true       # 主模型全败后是否切换备用供应商
+    fallback-enabled: false      # 禁用备用供应商，仅使用主模型
     # 视觉模型（ADR-11）：基于 GoPlan 端点换 model 即多模态；未配置则图片聊天不可用
     vision-model: mimo-v2.5
 
