@@ -3,6 +3,7 @@ package cn.lwx.lwxaiagent.infrastructure.orchestration;
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
 import cn.lwx.lwxaiagent.infrastructure.ai.AgentLoopExecutor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import cn.lwx.lwxaiagent.service.ChatService;
 import cn.lwx.lwxaiagent.service.RateLimiter;
@@ -10,17 +11,12 @@ import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalTime;
 import java.util.List;
 import java.util.function.BiConsumer;
-import java.util.regex.Pattern;
 
 /**
- * 聊天统一入口：路由 + 交叉关注点 + 执行分发。
- *
- * 两条路：
- * - 普通：ChatClient 一次 LLM，无工具
- * - Agent：ReactAgent 多步循环，全量工具
+ * 聊天唯一入口：路由 + 交叉关注点 + 执行分发。
+ * 两条路径：不需要工具 → ChatExecutor；需要工具 → AgentLoopExecutor（ReactAgent 多步循环）。
  */
 @Slf4j
 @Component
@@ -34,10 +30,18 @@ public class ChatEntry {
     private final RateLimiter rateLimiter;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
+    /** 情绪刹车片配置（FR-CORE-02） */
+    private final boolean emotionBrakeEnabled;
+    private final int emotionBrakeStartHour;
+    private final int emotionBrakeEndHour;
+
     public ChatEntry(CapabilityRouter router, ChatExecutor chatExecutor,
                      AgentLoopExecutor agentExecutor, ChatService chatService,
                      GuardrailRuleService guardrailRuleService, RateLimiter rateLimiter,
-                     io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+                     io.micrometer.core.instrument.MeterRegistry meterRegistry,
+                     @Value("${app.emotion-brake.enabled:true}") boolean emotionBrakeEnabled,
+                     @Value("${app.emotion-brake.start-hour:23}") int emotionBrakeStartHour,
+                     @Value("${app.emotion-brake.end-hour:6}") int emotionBrakeEndHour) {
         this.router = router;
         this.chatExecutor = chatExecutor;
         this.agentExecutor = agentExecutor;
@@ -45,6 +49,9 @@ public class ChatEntry {
         this.guardrailRuleService = guardrailRuleService;
         this.rateLimiter = rateLimiter;
         this.meterRegistry = meterRegistry;
+        this.emotionBrakeEnabled = emotionBrakeEnabled;
+        this.emotionBrakeStartHour = emotionBrakeStartHour;
+        this.emotionBrakeEndHour = emotionBrakeEndHour;
     }
 
     public AgentResult chat(String message, String chatId, List<Long> mediaIds,
@@ -80,16 +87,10 @@ public class ChatEntry {
         return result;
     }
 
-    private void guardrailCheck(String prompt) {
-        // ① 情绪刹车片（FR-CORE-02）：深夜+极端情绪→拦截+冷静提示
-        if (emotionBrakeCheck(prompt)) {
-            log.info("Emotion brake triggered: {}", prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
-            throw new BizException(4002,
-                    "我注意到你现在可能情绪比较激动。深呼吸，我们不着急。" +
-                    "如果你想换个更温和的方式表达，我可以帮你。");
-        }
+    // ==================== 交叉关注点 ====================
 
-        // ② 标准护栏（ADR-6）
+    private void guardrailCheck(String prompt) {
+        // ① 标准护栏（ADR-6）
         var verdict = guardrailRuleService.check(prompt);
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked ({}): {}", verdict.ruleId(),
@@ -99,33 +100,38 @@ public class ChatEntry {
                     : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
             throw new BizException(4001, fallback);
         }
+
+        // ② 情绪刹车片（FR-CORE-02）：L2 级 + 深夜时段 + emotion_brake 规则
+        if (emotionBrakeEnabled && verdict.level() >= 2
+                && verdict.ruleId() != null && verdict.ruleId().startsWith("emotion_brake_")
+                && isLateNight()) {
+            log.info("Emotion brake triggered ({}): {}", verdict.ruleId(),
+                    prompt.length() > 30 ? prompt.substring(0, 30) + "..." : prompt);
+            meterRegistry.counter("emotion_brake.triggered").increment();
+            throw new BizException(4002,
+                    "我注意到你现在情绪比较激动。深夜情绪容易放大，可以先冷静一下再继续。" +
+                    "如果你想换个更温和的说法表达，我可以帮你。你也可以选择【继续发送】。");
+        }
+
+        // ③ 普通 L2/L1 记录
         if (verdict.level() > 0) {
             log.info("Guardrail L{} logged ({}): {}", verdict.level(), verdict.ruleId(),
                     prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
         }
     }
 
+    /** 深夜时段判定（可配置 start-hour / end-hour） */
+    private boolean isLateNight() {
+        java.time.LocalTime now = java.time.LocalTime.now();
+        int hour = now.getHour();
+        if (emotionBrakeStartHour <= emotionBrakeEndHour) {
+            return hour >= emotionBrakeStartHour && hour < emotionBrakeEndHour;
+        }
+        // 跨午夜：23:00-06:00 → hour >= 23 || hour < 6
+        return hour >= emotionBrakeStartHour || hour < emotionBrakeEndHour;
+    }
+
     private void recordChatRequest(String mode) {
         try { meterRegistry.counter("chat.request", "mode", mode).increment(); } catch (Exception ignored) {}
     }
-
-    /**
-     * 情绪刹车片（FR-CORE-02）：深夜时段(23:00-06:00) + 极端情绪关键词 → 触发冷静提示。
-     * 只对用户输出生效（拦截冲动发言），不改变 AI 回复基调。
-     */
-    private boolean emotionBrakeCheck(String prompt) {
-        if (prompt == null || prompt.isBlank()) return false;
-
-        // 深夜时段
-        LocalTime now = LocalTime.now();
-        boolean lateNight = now.getHour() >= 23 || now.getHour() < 6;
-        if (!lateNight) return false;
-
-        // 极端情绪关键词
-        return EMOTION_KEYWORDS.matcher(prompt).find();
-    }
-
-    /** 极端情绪关键词（深夜触发） */
-    private static final Pattern EMOTION_KEYWORDS = Pattern.compile(
-            "(?i)(分手|你从来|你永远|滚|去死|恨|受不了|崩溃|绝望|想死|自杀|完了|废物|傻逼|fuck|shit|hate)");
 }

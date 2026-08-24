@@ -154,6 +154,12 @@ app:
   encryption:
     enabled: true
 
+  # 情绪刹车片（FR-CORE-02，Phase 4）
+  emotion-brake:
+    enabled: true
+    start-hour: 23
+    end-hour: 6
+
   # 灰度发布（08 §3）：固定百分位桶，userId hashCode % 100 映射
   # 环境变量 CANARY_PERCENTAGE 覆盖，0=不灰度，100=全量新版本
   canary:
