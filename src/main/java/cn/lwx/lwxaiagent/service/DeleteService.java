@@ -24,6 +24,7 @@ public class DeleteService {
     private final MessageMediaMapper messageMediaMapper;
     private final SandboxSessionMapper sandboxSessionMapper;
     private final SandboxMemoryMapper sandboxMemoryMapper;
+    private final InsightRecordMapper insightRecordMapper;
 
     public DeleteService(UserMapper userMapper, UserMemoryMapper userMemoryMapper,
                          ConversationSummaryMapper conversationSummaryMapper,
@@ -32,7 +33,8 @@ public class DeleteService {
                          KnowledgeVoteMapper knowledgeVoteMapper,
                          MessageMapper messageMapper, MessageMediaMapper messageMediaMapper,
                          SandboxSessionMapper sandboxSessionMapper,
-                         SandboxMemoryMapper sandboxMemoryMapper) {
+                         SandboxMemoryMapper sandboxMemoryMapper,
+                         InsightRecordMapper insightRecordMapper) {
         this.userMapper = userMapper;
         this.userMemoryMapper = userMemoryMapper;
         this.conversationSummaryMapper = conversationSummaryMapper;
@@ -43,6 +45,7 @@ public class DeleteService {
         this.messageMediaMapper = messageMediaMapper;
         this.sandboxSessionMapper = sandboxSessionMapper;
         this.sandboxMemoryMapper = sandboxMemoryMapper;
+        this.insightRecordMapper = insightRecordMapper;
     }
 
     @Transactional
@@ -89,6 +92,10 @@ public class DeleteService {
         sandboxSessionMapper.delete(new QueryWrapper<SandboxSession>()
                 .eq("user_id", userId));
         sandboxMemoryMapper.delete(new QueryWrapper<SandboxMemory>()
+                .eq("user_id", userId));
+
+        // 7.6 删除对话洞察记录（Phase 4）
+        insightRecordMapper.delete(new QueryWrapper<InsightRecord>()
                 .eq("user_id", userId));
 
         // 8. 禁用用户账号
