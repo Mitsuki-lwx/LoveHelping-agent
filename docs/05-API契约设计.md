@@ -51,6 +51,14 @@ SSE 事件序列（现状为文本 chunk 流；结构化事件（start/chunk/end
 data: <文本片段>            （多个，打字机效果）
 ```
 
+**话术三级建议事件（FR-CORE-01，2026-08-25，增量协议）**：命中话术请求（`CapabilityRouter.isAdviceRequest` 关键词）时，流末尾追加一个命名事件，三牌结构化数据供前端渲染/单牌编辑（CAP-2）：
+```
+event: advice
+data: {"type":"advice","tiers":[{"name":"安全牌","content":"…","reaction":"对方可能反应：…"},{"name":"进击牌","content":"…","reaction":"…"},{"name":"后撤牌","content":"…","reaction":"…"}]}
+```
+- 非话术请求流与旧版完全一致（无此事件）；解析失败时服务端降级纯文本不报错；
+- `name ∈ {安全牌, 进击牌, 后撤牌}`；`content` = 具体可说的话；`reaction` = 对方可能反应（可能性描述，非保证）；
+
 ### 3.2 Agent 任务（现状）
 
 | 端点 | 用途 | 说明 |

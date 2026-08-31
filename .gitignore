@@ -2,6 +2,10 @@
 application-local.yml
 tmp
 
+### Agent local workspace (memory / skills links) ###
+.workbuddy/
+agent/
+
 ### MCP servers config (contains API keys) ###
 src/main/resources/mcp-servers.json
 
