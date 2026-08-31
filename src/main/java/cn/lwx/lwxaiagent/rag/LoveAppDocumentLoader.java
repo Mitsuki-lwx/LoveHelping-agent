@@ -144,6 +144,8 @@ public class LoveAppDocumentLoader {
                 // 为每个文档添加租户 ID 元数据（默认 "default"），用于多租户场景下的数据隔离
                 for (Document doc : docs) {
                     doc.getMetadata().putIfAbsent("tenantId", "default");
+                    // content_hash（ADR-15 增量更新）：文档级 SHA-256，供增量同步识别变更
+                    doc.getMetadata().put("doc_hash", hash(doc.getText()));
                 }
                 allDocuments.addAll(docs);
             }
@@ -154,5 +156,17 @@ public class LoveAppDocumentLoader {
         return allDocuments;
     }
 
-
+    private static String hash(String text) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] d = md.digest(text == null ? new byte[0] : text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : d) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
 }
