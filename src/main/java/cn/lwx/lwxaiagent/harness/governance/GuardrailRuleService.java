@@ -72,6 +72,23 @@ public class GuardrailRuleService {
         return new Verdict(maxLevel, hitRule);
     }
 
+    /**
+     * 仅按情绪刹车片规则（emotion_brake_*，FR-CORE-02）判定是否命中。
+     * 与 {@link #check} 解耦：同一极端词可能同时命中同级 abuse 规则，
+     * check 只保留第一条例号（V4 先插），导致 ruleId 前缀过滤失效——刹车片判定直接问"是否含刹车词"。
+     */
+    public boolean matchesEmotionBrake(String input) {
+        if (input == null || input.isBlank()) return false;
+        for (CompiledRule r : rules) {
+            if (r.ruleId() == null || !r.ruleId().startsWith("emotion_brake_")) continue;
+            boolean hit = r.regex() != null
+                    ? r.regex().matcher(input).find()
+                    : r.keyword() != null && input.contains(r.keyword());
+            if (hit) return true;
+        }
+        return false;
+    }
+
     public int ruleCount() {
         return rules.size();
     }
