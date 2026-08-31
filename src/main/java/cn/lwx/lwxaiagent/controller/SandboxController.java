@@ -4,9 +4,8 @@ import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.common.Result;
 import cn.lwx.lwxaiagent.entity.SandboxMemory;
 import cn.lwx.lwxaiagent.entity.SandboxSession;
-import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor;
-import cn.lwx.lwxaiagent.infrastructure.orchestration.CapabilitySet;
-import cn.lwx.lwxaiagent.infrastructure.orchestration.AgentResult;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphRunner;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.service.SandboxService;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import org.springframework.web.bind.annotation.*;
@@ -23,11 +22,11 @@ import java.util.Map;
 public class SandboxController {
 
     private final SandboxService sandboxService;
-    private final ChatExecutor chatExecutor;
+    private final GraphRunner graphRunner;
 
-    public SandboxController(SandboxService sandboxService, ChatExecutor chatExecutor) {
+    public SandboxController(SandboxService sandboxService, GraphRunner graphRunner) {
         this.sandboxService = sandboxService;
-        this.chatExecutor = chatExecutor;
+        this.graphRunner = graphRunner;
     }
 
     // ==================== 会话管理 ====================
@@ -86,20 +85,42 @@ public class SandboxController {
         String userId = TenantContext.getUserId();
         if (userId == null) throw new BizException(401, "未登录");
 
+        // 归属校验 + 触摸（会话仍由 SandboxService 管理）
         SandboxSession session = sandboxService.getSession(sandboxId, userId);
-
-        // 构建沙盘 prompt（人格 + 记忆 + 动态情绪）
-        String sandboxPrompt = sandboxService.buildSandboxPrompt(sandboxId, userId);
-
-        // 走 ChatExecutor 浅层（沙盘是对话，不需要多步循环）
-        AgentResult result = chatExecutor.execute(message, sandboxId.toString(), CapabilitySet.plain(), sandboxPrompt);
-
         sandboxService.touchSession(sandboxId);
 
-        if (result instanceof AgentResult.ShallowResult sr) {
-            return sr.flux();
+        Map<String, Object> input = new java.util.HashMap<>();
+        input.put(GraphStateKeys.MESSAGE, message);
+        input.put(GraphStateKeys.CHAT_ID, String.valueOf(sandboxId));
+        input.put(GraphStateKeys.USER_ID, userId);
+        input.put(GraphStateKeys.SANDBOX_ID, sandboxId);
+        input.put(GraphStateKeys.ADVICE, false);
+
+        // 走编排图（沙盘节点：人设 + 记忆 + RAG），分块模拟流式（等价 AgentLoopExecutor）
+        return Flux.create(sink -> {
+            java.util.concurrent.CompletableFuture.supplyAsync(() -> graphRunner.run(input, String.valueOf(sandboxId)))
+                    .thenAccept(result -> {
+                        String output = (String) result.get(GraphStateKeys.OUTPUT);
+                        for (String part : chunk(output == null ? "" : output)) {
+                            sink.next(part);
+                        }
+                        sink.complete();
+                    })
+                    .exceptionally(err -> {
+                        sink.next("沙盘对话出错，请稍后再试");
+                        sink.complete();
+                        return null;
+                    });
+        });
+    }
+
+    private List<String> chunk(String text) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        int size = 30;
+        for (int i = 0; i < text.length(); i += size) {
+            parts.add(text.substring(i, Math.min(text.length(), i + size)));
         }
-        return Flux.empty();
+        return parts;
     }
 
     // ==================== 记忆注入（CAP-8,10,11）====================

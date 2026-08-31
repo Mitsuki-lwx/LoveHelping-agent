@@ -2,32 +2,32 @@ package cn.lwx.lwxaiagent.infrastructure.orchestration;
 
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
-import cn.lwx.lwxaiagent.infrastructure.ai.AgentLoopExecutor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import cn.lwx.lwxaiagent.service.ChatService;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphRunner;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.service.RateLimiter;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 
+import java.util.HashMap;
 import java.util.List;
-import java.util.function.BiConsumer;
+import java.util.Map;
 
 /**
- * 聊天唯一入口：路由 + 交叉关注点 + 执行分发。
- * 两条路径：不需要工具 → ChatExecutor；需要工具 → AgentLoopExecutor（ReactAgent 多步循环）。
+ * 聊天统一入口（ADR-19 收编后）：入口交叉关注点（护栏/限流）+ 业务编排图执行。
+ * <p>不再自行路由分发——路由由 {@code OrchestrationGraph.classify} 承担；
+ * 本类把图异步执行结果桥接为 SSE Flux（文本分块模拟流式 + 🔧 工具可视化 + advice 事件标记）。</p>
  */
 @Slf4j
 @Component
 public class ChatEntry {
 
-    private final CapabilityRouter router;
-    private final ChatExecutor chatExecutor;
-    private final AgentLoopExecutor agentExecutor;
-    private final ChatService chatService;
     private final GuardrailRuleService guardrailRuleService;
     private final RateLimiter rateLimiter;
+    private final CapabilityRouter router;
+    private final GraphRunner graphRunner;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     /** 情绪刹车片配置（FR-CORE-02） */
@@ -35,19 +35,18 @@ public class ChatEntry {
     private final int emotionBrakeStartHour;
     private final int emotionBrakeEndHour;
 
-    public ChatEntry(CapabilityRouter router, ChatExecutor chatExecutor,
-                     AgentLoopExecutor agentExecutor, ChatService chatService,
-                     GuardrailRuleService guardrailRuleService, RateLimiter rateLimiter,
+    public ChatEntry(GuardrailRuleService guardrailRuleService,
+                     RateLimiter rateLimiter,
+                     CapabilityRouter router,
+                     GraphRunner graphRunner,
                      io.micrometer.core.instrument.MeterRegistry meterRegistry,
                      @Value("${app.emotion-brake.enabled:true}") boolean emotionBrakeEnabled,
                      @Value("${app.emotion-brake.start-hour:23}") int emotionBrakeStartHour,
                      @Value("${app.emotion-brake.end-hour:6}") int emotionBrakeEndHour) {
-        this.router = router;
-        this.chatExecutor = chatExecutor;
-        this.agentExecutor = agentExecutor;
-        this.chatService = chatService;
         this.guardrailRuleService = guardrailRuleService;
         this.rateLimiter = rateLimiter;
+        this.router = router;
+        this.graphRunner = graphRunner;
         this.meterRegistry = meterRegistry;
         this.emotionBrakeEnabled = emotionBrakeEnabled;
         this.emotionBrakeStartHour = emotionBrakeStartHour;
@@ -55,41 +54,82 @@ public class ChatEntry {
     }
 
     public AgentResult chat(String message, String chatId, List<Long> mediaIds,
-                            boolean forceAgent, BiConsumer<Boolean, String> taskCallback) {
+                            boolean forceAgent, java.util.function.BiConsumer<Boolean, String> taskCallback) {
+        return chat(message, chatId, mediaIds, forceAgent, false, taskCallback);
+    }
+
+    /**
+     * 统一入口（ADR-19）：护栏/限流 → 业务编排图。
+     * @param continueBrake 用户已在冷静提示后明确选择"继续发送"（FR-CORE-02 出口）：
+     *                      跳过情绪刹车片（仍保留 L3 硬阻断）
+     */
+    public AgentResult chat(String message, String chatId, List<Long> mediaIds,
+                            boolean forceAgent, boolean continueBrake,
+                            java.util.function.BiConsumer<Boolean, String> taskCallback) {
         String userId = TenantContext.getUserId() != null ? TenantContext.getUserId() : "anonymous";
 
-        // ① 交叉关注点
-        guardrailCheck(message);
+        // ① 入口交叉关注点（保留）
+        guardrailCheck(message, continueBrake);
         rateLimiter.checkQuota(userId);
 
-        // ② 路由：需不需要工具？
-        boolean needTools = forceAgent || router.needTools(message, mediaIds);
+        // ② 话术三级判定
+        boolean advice = router.isAdviceRequest(message);
 
         // ③ 指标
-        recordChatRequest(needTools ? "agent" : "plain");
+        recordChatRequest("graph");
 
-        // ④ 分发
-        AgentResult result;
-        if (needTools) {
-            SseEmitter emitter = agentExecutor.run(message, chatId,
-                    taskCallback != null ? taskCallback : (ok, err) -> {});
-            chatService.registerSession(chatId, emitter);
-            emitter.onCompletion(() -> chatService.unregisterSession(chatId));
-            emitter.onTimeout(() -> chatService.unregisterSession(chatId));
-            emitter.onError(e -> chatService.unregisterSession(chatId));
-            result = new AgentResult.DeepResult(emitter);
-        } else {
-            result = chatExecutor.execute(message, chatId, CapabilitySet.plain());
+        // ④ 组装图输入
+        Map<String, Object> input = new HashMap<>();
+        input.put(GraphStateKeys.MESSAGE, message);
+        input.put(GraphStateKeys.CHAT_ID, chatId);
+        input.put(GraphStateKeys.USER_ID, userId);
+        input.put(GraphStateKeys.ADVICE, advice);
+        if (mediaIds != null && !mediaIds.isEmpty()) {
+            input.put(GraphStateKeys.MEDIA_IDS, mediaIds); // 视觉节点（ADR-11）
+        }
+        if (forceAgent) {
+            input.put(GraphStateKeys.FORCE_AGENT, true); // LoveManus 通道
         }
 
-        // ⑤ 后处理
+        // ⑤ 异步执行图 → SSE Flux（文本分块 + 🔧 可视化 + advice 事件）+ 任务完成回调
+        java.util.function.BiConsumer<Boolean, String> cb =
+                taskCallback != null ? taskCallback : (ok, err) -> {};
+        Flux<String> flux = Flux.create(sink -> {
+            graphRunner.runAsync(input, chatId == null ? "anon" : chatId)
+                    .thenAccept(result -> {
+                        @SuppressWarnings("unchecked")
+                        List<String> tools = (List<String>) result.getOrDefault(GraphStateKeys.TOOL_EVENTS, List.of());
+                        for (String t : tools) {
+                            sink.next("🔧 调用工具: " + t);
+                        }
+                        String output = String.valueOf(result.getOrDefault(GraphStateKeys.OUTPUT, ""));
+                        for (String part : chunk(output)) {
+                            sink.next(part);
+                        }
+                        Object tiers = result.get(GraphStateKeys.ADVICE_TIERS);
+                        if (tiers != null && !tiers.toString().isBlank()) {
+                            sink.next(ChatExecutor.ADVICE_EVENT_MARKER + tiers);
+                        }
+                        sink.complete();
+                        cb.accept(true, null); // agent_task 完成回调（LoveManus 通道）
+                    })
+                    .exceptionally(err -> {
+                        log.error("ChatEntry graph run failed ({}): {}", chatId, err.getMessage());
+                        sink.next("系统繁忙，请稍后再试。");
+                        sink.complete();
+                        cb.accept(false, err.getMessage()); // 失败回调 → 任务 FAILED
+                        return null;
+                    });
+        });
+
+        // ⑥ 后处理
         rateLimiter.increment(userId);
-        return result;
+        return new AgentResult.ShallowResult(flux);
     }
 
     // ==================== 交叉关注点 ====================
 
-    private void guardrailCheck(String prompt) {
+    private void guardrailCheck(String prompt, boolean continueBrake) {
         // ① 标准护栏（ADR-6）
         var verdict = guardrailRuleService.check(prompt);
         if (verdict.level() >= 3) {
@@ -101,16 +141,17 @@ public class ChatEntry {
             throw new BizException(4001, fallback);
         }
 
-        // ② 情绪刹车片（FR-CORE-02）：L2 级 + 深夜时段 + emotion_brake 规则
-        if (emotionBrakeEnabled && verdict.level() >= 2
-                && verdict.ruleId() != null && verdict.ruleId().startsWith("emotion_brake_")
-                && isLateNight()) {
+        // ② 情绪刹车片（FR-CORE-02）：L2+ 且深夜 且 命中刹车词 且 用户未确认继续发送
+        if (emotionBrakeEnabled && !continueBrake && verdict.level() >= 2
+                && isLateNight()
+                && guardrailRuleService.matchesEmotionBrake(prompt)) {
             log.info("Emotion brake triggered ({}): {}", verdict.ruleId(),
                     prompt.length() > 30 ? prompt.substring(0, 30) + "..." : prompt);
             meterRegistry.counter("emotion_brake.triggered").increment();
             throw new BizException(4002,
                     "我注意到你现在情绪比较激动。深夜情绪容易放大，可以先冷静一下再继续。" +
-                    "如果你想换个更温和的说法表达，我可以帮你。你也可以选择【继续发送】。");
+                    "如果你想换个更温和的说法表达，我可以帮你。" +
+                    "若确认仍然要发，请携带 continueBrake=true 重试（本消息仍会被正常发送给 AI）。");
         }
 
         // ③ 普通 L2/L1 记录
@@ -127,11 +168,20 @@ public class ChatEntry {
         if (emotionBrakeStartHour <= emotionBrakeEndHour) {
             return hour >= emotionBrakeStartHour && hour < emotionBrakeEndHour;
         }
-        // 跨午夜：23:00-06:00 → hour >= 23 || hour < 6
         return hour >= emotionBrakeStartHour || hour < emotionBrakeEndHour;
     }
 
     private void recordChatRequest(String mode) {
         try { meterRegistry.counter("chat.request", "mode", mode).increment(); } catch (Exception ignored) {}
+    }
+
+    /** 分块模拟流式（与 AgentLoopExecutor 一致） */
+    private List<String> chunk(String text) {
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        int size = 30;
+        for (int i = 0; i < text.length(); i += size) {
+            parts.add(text.substring(i, Math.min(text.length(), i + size)));
+        }
+        return parts;
     }
 }

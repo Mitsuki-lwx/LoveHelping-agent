@@ -3,6 +3,7 @@ package cn.lwx.lwxaiagent.controller;
 import cn.lwx.lwxaiagent.common.Result;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.AgentResult;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatEntry;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor;
 import cn.lwx.lwxaiagent.service.ChatService;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import jakarta.servlet.http.HttpServletResponse;
@@ -28,14 +29,21 @@ import java.util.List;
  * <p>任务查询/停止是管理操作，直接调 ChatService。</p>
  */
 @RestController
+@lombok.extern.slf4j.Slf4j
 public class AiController {
 
     private final ChatEntry chatEntry;
     private final ChatService chatService;
+    private final cn.lwx.lwxaiagent.service.AgentTaskService agentTaskService;
+    private final cn.lwx.lwxaiagent.memory.MemoryService memoryService;
 
-    public AiController(ChatEntry chatEntry, ChatService chatService) {
+    public AiController(ChatEntry chatEntry, ChatService chatService,
+                        cn.lwx.lwxaiagent.service.AgentTaskService agentTaskService,
+                        cn.lwx.lwxaiagent.memory.MemoryService memoryService) {
         this.chatEntry = chatEntry;
         this.chatService = chatService;
+        this.agentTaskService = agentTaskService;
+        this.memoryService = memoryService;
     }
 
     // ==================== 聊天端点（全部走 ChatEntry）====================
@@ -44,22 +52,28 @@ public class AiController {
      * 同步聊天（legacy 直通）：走 ChatEntry → Router → ChatExecutor(shallow) → block Flux。
      */
     @GetMapping("Love_app/chat/sync")
-    public Result<String> chatSync(@RequestParam String prompt, @RequestParam String chatId) {
-        AgentResult result = chatEntry.chat(prompt, chatId, List.of(), false, null);
+    public Result<String> chatSync(@RequestParam String prompt, @RequestParam String chatId,
+                                @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
+        AgentResult result = chatEntry.chat(prompt, chatId, List.of(), false, continueBrake, null);
         if (result instanceof AgentResult.ShallowResult sr) {
-            return Result.ok(sr.flux().collectList().block().stream().reduce(String::concat).orElse(""));
+            return Result.ok(sr.flux()
+                    .filter(s -> !s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER))
+                    .collectList().block().stream().reduce(String::concat).orElse(""));
         }
         return Result.ok("sync not supported for deep mode");
     }
 
     /**
      * SSE 流式聊天（含 mediaIds 条件分流）：走 ChatEntry → Router 自动判断能力。
+     * 话术三级（FR-CORE-01）：advice 请求流末尾追加标记块 {@code data:@@ADVICE@@{json}}，
+     * 非 advice 请求流与旧版完全一致（增量协议，05 §3.1）。
      */
     @GetMapping(value = "Love_app/chat/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatSse(@RequestParam String prompt, @RequestParam String chatId,
-                                @RequestParam(required = false) String mediaIds) {
+                                @RequestParam(required = false) String mediaIds,
+                                @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
         List<Long> ids = parseMediaIds(mediaIds);
-        AgentResult result = chatEntry.chat(prompt, chatId, ids, false, null);
+        AgentResult result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
         if (result instanceof AgentResult.ShallowResult sr) {
             return sr.flux();
         }
@@ -78,9 +92,10 @@ public class AiController {
     @GetMapping(value = "Love_app/chat/sse")
     public Flux<org.springframework.http.codec.ServerSentEvent<String>> chatSseServer(
             @RequestParam String prompt, @RequestParam String chatId,
-            @RequestParam(required = false) String mediaIds) {
+            @RequestParam(required = false) String mediaIds,
+            @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
         List<Long> ids = parseMediaIds(mediaIds);
-        AgentResult result = chatEntry.chat(prompt, chatId, ids, false, null);
+        AgentResult result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
         Flux<String> stream = switch (result) {
             case AgentResult.ShallowResult sr -> sr.flux();
             case AgentResult.DeepResult dr -> {
@@ -92,7 +107,14 @@ public class AiController {
                 });
             }
         };
-        return stream.map(s -> org.springframework.http.codec.ServerSentEvent.<String>builder(s).data(s).build());
+        // 话术三级（FR-CORE-01）：@@ADVICE@@ 标记块转成独立 advice 事件，其余为纯文本 data 事件（向后兼容）
+        return stream.flatMap(s -> {
+            if (s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER)) {
+                String json = s.substring(ChatExecutor.ADVICE_EVENT_MARKER.length());
+                return Flux.just(org.springframework.http.codec.ServerSentEvent.<String>builder(json).event("advice").build());
+            }
+            return Flux.just(org.springframework.http.codec.ServerSentEvent.<String>builder(s).data(s).build());
+        });
     }
 
     /**
@@ -106,7 +128,9 @@ public class AiController {
         }
         // ShallowResult → Flux → SseEmitter 桥接
         SseEmitter emitter = new SseEmitter();
-        ((AgentResult.ShallowResult) result).flux().subscribe(
+        ((AgentResult.ShallowResult) result).flux()
+                .filter(s -> !s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER))
+                .subscribe(
                 trunk -> { try { emitter.send(trunk); } catch (Exception e) { emitter.completeWithError(e); } },
                 error -> emitter.completeWithError(error),
                 () -> emitter.complete()
@@ -115,36 +139,64 @@ public class AiController {
     }
 
     /**
-     * RAG 流式聊天（legacy 别名）：强制启用 RAG 能力。
+     * RAG 流式聊天（legacy 别名）：强制走工具/Agent 通道。
      * 保留为向后兼容端点（smoke 7.3 / 前端历史代码）。
      */
     @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatSseWithRAG(@RequestParam String prompt, @RequestParam String chatId) {
         AgentResult result = chatEntry.chat(prompt, chatId, List.of(), true, null);
-        if (result instanceof AgentResult.DeepResult dr) {
-            return dr.emitter();
-        }
-        throw new IllegalStateException("RAG should be deep mode");
+        // 全部路径收编到图（ADR-19），结果统一为 ShallowResult
+        return bridgeToEmitter(((AgentResult.ShallowResult) result).flux());
     }
 
     // ==================== Agent 任务端点（走 ChatEntry 自动升级 DEEP）====================
 
     /**
-     * 智能体对话接口（向后兼容 /LoveManus，内部走 ChatEntry → DEEP）。
+     * 智能体对话接口（向后兼容 /LoveManus，内部走 ChatEntry → 编排图 agent 路径）。
      * 保留 X-Session-Id 响应头 + 幂等键，向后兼容前端。
      */
     @GetMapping(value = "Love_app/chat/LoveManus")
     public SseEmitter doChatWithLoveManus(@RequestParam String message, String sessionId,
                                           @RequestParam(required = false) String idempotencyKey,
                                           HttpServletResponse response) {
-        // forceAgent=true：路由器强制走 DEEP（ReactAgent），自动升级
-        AgentResult result = chatEntry.chat(message, sessionId, List.of(), true, null);
-        if (result instanceof AgentResult.DeepResult dr) {
-            response.setHeader("X-Session-Id", sessionId);
-            return dr.emitter();
+        String userId = TenantContext.getUserId() != null ? TenantContext.getUserId() : "anonymous";
+        // 会话归属注册（记忆萃取前提）：agent 会话须有 user_conversations 映射，否则萃取跳过（记忆缺口修复）
+        if (sessionId != null && !sessionId.isBlank()) {
+            try {
+                memoryService.registerConversation(userId, sessionId, "智能体会话", "agent");
+            } catch (Exception e) {
+                log.warn("LoveManus conversation register failed: {}", e.getMessage());
+            }
         }
-        // 不应发生（forceAgent=true 必走 DEEP）
-        throw new IllegalStateException("Expected DeepResult for agent path");
+        // 任务落库（ADR-3）：PENDING→RUNNING，完成回调 → SUCCESS/FAILED（幂等键防重）
+        cn.lwx.lwxaiagent.entity.AgentTask task =
+                agentTaskService.submit(userId, message, idempotencyKey);
+        agentTaskService.start(task.getId());
+
+        // forceAgent=true：图 classify 强制走工具循环（ADR-19）；执行完成回调驱动任务终态
+        AgentResult result = chatEntry.chat(message, sessionId, List.of(), true, (ok, err) -> {
+            if (ok) {
+                agentTaskService.succeed(task.getId(), null, 0);
+            } else {
+                agentTaskService.fail(task.getId(), "E1000", err == null ? "graph run failed" : err);
+            }
+        });
+        response.setHeader("X-Session-Id", sessionId);
+        return bridgeToEmitter(((AgentResult.ShallowResult) result).flux());
+    }
+
+    /** ShallowResult 的 Flux → SseEmitter（文本分块 + 🔧 工具行透传；剥离 advice 标记避免 JSON 打在正文） */
+    private static SseEmitter bridgeToEmitter(Flux<String> flux) {
+        // 长超时：agent 工具循环（查询改写 + 多轮 LLM）可能超过默认 30s（对齐旧 AgentLoopExecutor 600s）
+        SseEmitter emitter = new SseEmitter(600_000L);
+        flux
+                .filter(s -> !s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER))
+                .subscribe(
+                        trunk -> { try { emitter.send(trunk); } catch (Exception e) { emitter.completeWithError(e); } },
+                        error -> emitter.completeWithError(error),
+                        () -> emitter.complete()
+                );
+        return emitter;
     }
 
     /**
