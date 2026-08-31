@@ -5,6 +5,7 @@ import cn.lwx.lwxaiagent.infrastructure.EncryptionService;
 import cn.lwx.lwxaiagent.mapper.MessageMapper;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -28,6 +29,18 @@ import static org.mockito.Mockito.*;
  */
 @ExtendWith(MockitoExtension.class)
 class MemoryServiceTest {
+
+    /**
+     * 纯 JUnit（无 Spring 上下文）下 LambdaUpdateWrapper 需要 MyBatis-Plus 的实体表映射缓存，
+     * 否则 `.eq(Message::xxx)` 的 lambda 解析抛异常（被 MemoryService 内部 try/catch 吞掉，update 从不执行）。
+     */
+    @BeforeEach
+    void initMybatisTableInfo() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                cn.lwx.lwxaiagent.entity.Message.class);
+    }
 
     /**
      * Mock 的消息 Mapper（message 表，Phase 2 对话历史真源）。
