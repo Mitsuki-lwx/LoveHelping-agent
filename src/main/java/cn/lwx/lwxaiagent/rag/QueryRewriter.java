@@ -5,6 +5,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
 import org.springframework.ai.rag.preretrieval.query.transformation.RewriteQueryTransformer;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
@@ -61,26 +62,30 @@ import org.springframework.stereotype.Component;
  * @see org.springframework.ai.rag.preretrieval.query.transformation.RewriteQueryTransformer
  * @see org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer
  */
+@Slf4j
 @Component
 public class QueryRewriter implements QueryTransformer {
 
-    /**
-     * 查询转换器（QueryTransformer）
-     * 使用 RewriteQueryTransformer 实现，负责将原始查询改写为更适合检索的形式
-     */
-    private final QueryTransformer queryTransformer;
+    private final ChatModel chatModel;
+
+    /** 检索改写指令（ADR-15）：改写 + 词表对齐扩展——把抽象/口语表述映射到知识库文档常用词 */
+    private static final String REWRITE_PROMPT = """
+            你是中文检索查询改写器。把用户查询改写成更适合向量检索的形式，并做“词表对齐”：
+            1. 消除口语、补全指代与缺失信息，规范为简洁的书面检索句；
+            2. 把抽象的说法扩展出知识库文档可能使用的同义/相关表述（用顿号并列，不解释）：
+               例：「非暴力沟通的四要素」→「非暴力沟通 四要素 四步表达框架 观察 感受 需要 请求」
+               例：「他冷战了我怎么办」→「感情 冷战 沉默 如何应对 修复 沟通」
+            3. 不改变查询意图，不编造事实，不输出解释，只输出改写后的查询本身。
+            """;
 
     /**
-     * 构造器：使用主模型（LlmGateway，ADR-7）创建 RewriteQueryTransformer。
-     * 主模型本身具备重试/降级能力，重写调用失败时自动切备用供应商。
+     * 构造器：使用主模型（LlmGateway，ADR-7）执行改写。
+     * 主模型本身具备重试/降级能力，改写调用失败时自动切备用供应商。
      *
      * @param chatModel 主聊天模型（@Primary = LlmGateway），用于执行查询重写
      */
     public QueryRewriter(ChatModel chatModel) {
-        ChatClient.Builder builder = ChatClient.builder(chatModel);
-        queryTransformer = RewriteQueryTransformer.builder()
-                .chatClientBuilder(builder)
-                .build();
+        this.chatModel = chatModel;
     }
 
     /**
@@ -88,7 +93,31 @@ public class QueryRewriter implements QueryTransformer {
      */
     @Override
     public Query transform(Query query) {
-        return queryTransformer.transform(query);
+        if (query == null || query.text() == null || query.text().isBlank()) {
+            return query;
+        }
+        // 英文/非中文查询跳过中文改写（中文词表对齐指令对英文不稳，原查询更易命中）
+        if (!containsCjk(query.text())) {
+            return query;
+        }
+        try {
+            String rewritten = ChatClient.builder(chatModel).build().prompt()
+                    .system(REWRITE_PROMPT)
+                    .user(query.text())
+                    .call()
+                    .content();
+            if (rewritten == null || rewritten.isBlank()) {
+                return query;
+            }
+            String trimmed = rewritten.trim();
+            if (trimmed.length() > 120) {
+                trimmed = trimmed.substring(0, 120);
+            }
+            return new Query(trimmed);
+        } catch (Exception e) {
+            log.warn("Query rewrite failed, use original query: {}", e.getMessage());
+            return query;
+        }
     }
 
     /**
@@ -96,5 +125,14 @@ public class QueryRewriter implements QueryTransformer {
      */
     public String doRewrite(String prompt) {
         return transform(new Query(prompt)).text();
+    }
+
+    private boolean containsCjk(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (Character.UnicodeScript.of(s.codePointAt(i)) == Character.UnicodeScript.HAN) {
+                return true;
+            }
+        }
+        return false;
     }
 }

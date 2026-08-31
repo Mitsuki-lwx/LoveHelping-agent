@@ -1,14 +1,25 @@
 package cn.lwx.lwxaiagent.rag;
 
+import cn.lwx.lwxaiagent.config.PgvectorProperties;
+import cn.lwx.lwxaiagent.rag.rerank.RerankProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.jdbc.DataSourceBuilder;
+import javax.sql.DataSource;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import com.zaxxer.hikari.HikariDataSource;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -18,34 +29,167 @@ import java.util.stream.Collectors;
  * （small-to-large：上下文完整）。子块 metadata 中的 {@code parent_text}
  * 由 {@link ParentChildDocumentTransformer} 在索引期写入。
  * </p>
+ * <p><b>混合召回（P0，RRF 接入 RAG）</b>：`app.rag.hybrid-search.enabled` 开启时，
+ * 召回 = 向量 topN + pg_trgm 关键词 topN（仅限知识库子块 parent_id 存在）→ RRF 融合 → topN，
+ * 兜住"四要素"这类词面可匹配、语义向量不佳的查询。关闭时保持纯向量（现状）。</p>
+ * <p><b>重排（阶段 4）</b>：rerank 开启时 topK 扩为粗召回窗口 topN，精排由
+ * {@link RerankDocumentPostProcessor} 在 postretrieval 阶段完成。</p>
  */
+@Slf4j
 @Component
 public class ParentChildDocumentRetriever implements DocumentRetriever {
 
     private static final int DEFAULT_TOP_K = 5;
+    private static final int RRF_K = 60;
 
     private final VectorStore vectorStore;
+    private final RerankProperties rerankProperties;
+    private final JdbcTemplate pgJdbcTemplate;
+    private final boolean hybridEnabled;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore) {
+    public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
+                                        RerankProperties rerankProperties,
+                                        PgvectorProperties pgvectorProperties,
+                                        @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled) {
         this.vectorStore = vectorStore;
+        this.rerankProperties = rerankProperties;
+        // 自建 pg JdbcTemplate（不注册为容器 bean，避免与 MySQL 默认 JdbcTemplate 按类型注入歧义）
+        DataSource pgDataSource = DataSourceBuilder.create()
+                .url(pgvectorProperties.getUrl())
+                .username(pgvectorProperties.getUsername())
+                .password(pgvectorProperties.getPassword())
+                .driverClassName(pgvectorProperties.getDriverClassName())
+                .build();
+        this.pgJdbcTemplate = new JdbcTemplate(pgDataSource);
+        this.hybridEnabled = hybridEnabled;
     }
 
     @Override
     public List<Document> retrieve(Query query) {
-        SearchRequest searchRequest = SearchRequest.builder()
-                .query(query.text())
-                .topK(DEFAULT_TOP_K)
-                .build();
-        List<Document> children = vectorStore.similaritySearch(searchRequest);
-        // 子块 → 父块全文（无 parent_text 的老数据回退为子块原文）
-        return children.stream().map(child -> {
-            Object parentText = child.getMetadata().get("parent_text");
-            if (parentText instanceof String s && !s.isBlank()) {
-                Document parent = new Document(s, child.getMetadata());
-                parent.getMetadata().put("chunk", "parent");
-                return parent;
+        int topK = rerankProperties.isEnabled() && "llm".equals(rerankProperties.getMode())
+                ? rerankProperties.getTopN() : DEFAULT_TOP_K;
+        List<Document> children = hybridEnabled
+                ? hybridRetrieve(query.text(), topK)
+                : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(topK).build());
+        return children.stream().map(this::toParent).collect(Collectors.toList());
+    }
+
+    /** 混合召回：向量 + pg_trgm 关键词 → RRF 融合（仅知识库子块） */
+    private List<Document> hybridRetrieve(String query, int topK) {
+        List<Document> vectorDocs = vectorStore.similaritySearch(
+                SearchRequest.builder().query(query).topK(topK * 3).build());
+        List<Document> keywordDocs = keywordSearch(query, topK * 3);
+
+        Map<String, RankedDoc> fused = new LinkedHashMap<>();
+        for (int i = 0; i < vectorDocs.size(); i++) {
+            fused.put(vectorDocs.get(i).getId(), new RankedDoc(vectorDocs.get(i), 1.0 / (RRF_K + i + 1), 0.0));
+        }
+        for (int i = 0; i < keywordDocs.size(); i++) {
+            Document d = keywordDocs.get(i);
+            double s = 1.0 / (RRF_K + i + 1);
+            RankedDoc r = fused.get(d.getId());
+            if (r != null) {
+                r.keywordScore += s;
+            } else {
+                fused.put(d.getId(), new RankedDoc(d, 0.0, s));
             }
-            return child;
-        }).collect(Collectors.toList());
+        }
+        List<Document> merged = fused.values().stream()
+                .sorted((a, b) -> Double.compare(b.totalScore(), a.totalScore()))
+                .limit(topK)
+                .map(r -> r.doc)
+                .toList();
+        log.info("ParentChild hybrid recall: query='{}' vector={} keyword={} fused={}",
+                query.length() > 30 ? query.substring(0, 30) + "..." : query,
+                vectorDocs.size(), keywordDocs.size(), merged.size());
+        return merged;
+    }
+
+/** 中文关键词召回（ADR-15 P0 落地）：改写后查询的关键词 LIKE 命中，限定知识库子块（metadata 含 parent_id） */
+    private List<Document> keywordSearch(String query, int topK) {
+        List<String> words = extractKeywords(query);
+        log.info("LIKE kw: query='{}' words={}", query, words);
+        if (words.isEmpty()) {
+            return List.of();
+        }
+        try {
+            StringBuilder sql = new StringBuilder("SELECT id, content, metadata::text FROM vector_store ")
+                    .append("WHERE metadata ->> 'parent_id' IS NOT NULL AND (");
+            java.util.List<Object> params = new java.util.ArrayList<>();
+            for (int i = 0; i < words.size(); i++) {
+                if (i > 0) sql.append(" OR ");
+                sql.append("content LIKE ?");
+                params.add("%" + words.get(i) + "%");
+            }
+            sql.append(") ORDER BY (");
+            for (int i = 0; i < words.size(); i++) {
+                if (i > 0) sql.append(" + ");
+                sql.append("(content LIKE ?)::int");
+                params.add("%" + words.get(i) + "%");
+            }
+            sql.append(") DESC, LENGTH(content) ASC LIMIT ?");
+            params.add(topK);
+            return pgJdbcTemplate.query(sql.toString(), (rs, row) -> {
+                Document d = new Document(rs.getString("id"), new java.util.HashMap<>());
+                try {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> meta = objectMapper.readValue(rs.getString("metadata"), Map.class);
+                    d.getMetadata().putAll(meta);
+                } catch (Exception e) {
+                    log.warn("Keyword metadata parse failed: {}", e.getMessage());
+                }
+                return d;
+            }, params.toArray());
+        } catch (Exception e) {
+            log.warn("ParentChild keyword search failed, fallback to vector only: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** 从（改写后）查询提取 2-6 字关键词：空白/顿号分隔 + 去停用词 + 长度过滤 */
+    private List<String> extractKeywords(String query) {
+        List<String> out = new java.util.ArrayList<>();
+        if (query == null) return out;
+        for (String w : query.split("[\s，,、。]+")) {
+            String t = w.trim();
+            if (t.length() < 2 || t.length() > 12) continue;
+            if (STOP_WORDS.contains(t)) continue;
+            out.add(t);
+            if (out.size() >= 6) break;
+        }
+        return out;
+    }
+
+    private static final java.util.Set<String> STOP_WORDS = java.util.Set.of(
+            "的", "了", "吗", "呢", "是", "我", "你", "他", "她", "请", "帮", "给", "在", "不",
+            "也", "都", "就", "想", "要", "说", "回答", "写", "列", "出", "具体", "内容", "步骤",
+            "怎么", "什么", "如何", "为什么", "应该", "and", "or", "the", "a", "to", "how", "what", "for");
+
+    /** 子块 → 父块全文（无 parent_text 的老数据回退为子块原文） */
+    private Document toParent(Document child) {
+        Object parentText = child.getMetadata().get("parent_text");
+        if (parentText instanceof String s && !s.isBlank()) {
+            Document parent = new Document(s, child.getMetadata());
+            parent.getMetadata().put("chunk", "parent");
+            return parent;
+        }
+        return child;
+    }
+
+    private static final class RankedDoc {
+        final Document doc;
+        double vectorScore;
+        double keywordScore;
+
+        RankedDoc(Document doc, double vectorScore, double keywordScore) {
+            this.doc = doc;
+            this.vectorScore = vectorScore;
+            this.keywordScore = keywordScore;
+        }
+
+        double totalScore() {
+            return vectorScore + keywordScore;
+        }
     }
 }

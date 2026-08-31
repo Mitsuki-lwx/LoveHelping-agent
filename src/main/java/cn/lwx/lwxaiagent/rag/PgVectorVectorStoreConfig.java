@@ -75,6 +75,10 @@ public class PgVectorVectorStoreConfig {
     @Resource
     private LoveAppDocumentLoader loveAppDocumentLoader;
 
+    /** 知识库增量同步（ADR-15 阶段4 content_hash，按文档 hash 只重建变更） */
+    @Resource
+    private KnowledgeBaseIncrementalSync knowledgeBaseIncrementalSync;
+
     /**
      * 注入 PostgreSQL pgvector 相关的配置属性
      * 包含数据库连接 URL、用户名、密码、驱动类名等
@@ -146,13 +150,11 @@ public class PgVectorVectorStoreConfig {
     public VectorStore PgVectorVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
         // ---- 步骤一：创建 PostgreSQL 数据源 ----
         DataSource pgDataSource = DataSourceBuilder.create()
-                .url(pgvectorProperties.getUrl())               // 数据库连接 URL
-                .username(pgvectorProperties.getUsername())     // 数据库用户名
-                .password(pgvectorProperties.getPassword())     // 数据库密码
-                .driverClassName(pgvectorProperties.getDriverClassName()) // JDBC 驱动类名
+                .url(pgvectorProperties.getUrl())
+                .username(pgvectorProperties.getUsername())
+                .password(pgvectorProperties.getPassword())
+                .driverClassName(pgvectorProperties.getDriverClassName())
                 .build();
-
-        // 基于数据源创建 JdbcTemplate，用于执行 SQL 操作
         JdbcTemplate pgJdbcTemplate = new JdbcTemplate(pgDataSource);
 
         // ---- 步骤二：创建 PgVectorStore 实例 ----
@@ -225,8 +227,18 @@ public class PgVectorVectorStoreConfig {
 
             log.info("Successfully loaded {} chunks into vector store", documents.size());
         } else {
-            // 表中已有数据，跳过导入
-            log.info("Vector store already has {} records, skipping initialization", count);
+            // 增量同步（ADR-15 阶段4 content_hash）：启动时只重建新增/变更文档，不再全量跳过
+            // 首次（旧块无 doc_hash）会把全部文档按"变更"重建一次，之后增量生效
+            List<Document> currentDocs = loveAppDocumentLoader.loadMarkdowns();
+            List<Document> uniqueDocs = new java.util.ArrayList<>();
+            Set<String> seen = new HashSet<>();
+            for (Document doc : currentDocs) {
+                if (seen.add(doc.getText())) {
+                    uniqueDocs.add(doc);
+                }
+            }
+            knowledgeBaseIncrementalSync.sync(vectorStore, pgJdbcTemplate,
+                    new ParentChildDocumentTransformer(), uniqueDocs);
         }
 
         // ---- 步骤四：启用 pg_trgm 扩展（混合检索关键词通道） ----
