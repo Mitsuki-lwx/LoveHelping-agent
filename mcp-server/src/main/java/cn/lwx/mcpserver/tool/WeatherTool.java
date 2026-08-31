@@ -5,9 +5,11 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 
 /**
  * <h1>天气查询工具</h1>
@@ -159,8 +161,15 @@ public class WeatherTool {
             // 构建 HTTP GET 请求
             // URI 中的格式参数：%C=天气状况，%t=温度，%h=湿度，%w=风速，用 | 分隔各字段
             // lang=zh 确保天气描述是中文
+            // 注意：format 里的 % 和 | 对 java.net.URI 是非法字符（%C 不是合法的
+            // 百分号转义，URI.create 会抛 Malformed escape pair），必须整体 URL 编码；
+            // 中文城市名同理（兼容 wttr.in 的 UTF-8 路径）。
+            String uri = "https://wttr.in/"
+                    + URLEncoder.encode(city, StandardCharsets.UTF_8)
+                    + "?format=" + URLEncoder.encode("%C|%t|%h|%w", StandardCharsets.UTF_8)
+                    + "&lang=zh";
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://wttr.in/" + city + "?format=%C|%t|%h|%w&lang=zh"))
+                    .uri(URI.create(uri))
                     .header("User-Agent", "curl")  // wttr.in 对 curl UA 返回纯文本
                     .GET()
                     .build();

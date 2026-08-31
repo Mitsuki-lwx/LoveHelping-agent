@@ -2,6 +2,8 @@ package cn.lwx.mcpserver;
 
 import cn.lwx.mcpserver.tool.BaiduImageSearchTool;
 import cn.lwx.mcpserver.tool.ImageSearchTool;
+import cn.lwx.mcpserver.tool.WeatherTool;
+import cn.lwx.mcpserver.tool.DatePlannerTool;
 import cn.lwx.mcpserver.tool.WebScrapingTool;
 import cn.lwx.mcpserver.tool.WebSearchTool;
 import org.springframework.ai.tool.ToolCallbackProvider;
@@ -166,5 +168,22 @@ public class McpServerApplication {
     @Bean
     public ToolCallbackProvider imageSearchTools(ImageSearchTool imageSearchTool) {
         return MethodToolCallbackProvider.builder().toolObjects(imageSearchTool).build();
+    }
+
+    /**
+     * 注册天气查询工具（{@link WeatherTool}）作为 MCP 工具提供者：
+     * 「今天适合约会吗」「周末天气怎么样」类问题。
+     */
+    @Bean
+    public ToolCallbackProvider weatherTools(WeatherTool weatherTool) {
+        return MethodToolCallbackProvider.builder().toolObjects(weatherTool).build();
+    }
+
+    /**
+     * 注册日期/约会规划工具（{@link DatePlannerTool}）作为 MCP 工具提供者。
+     */
+    @Bean
+    public ToolCallbackProvider datePlannerTools(DatePlannerTool datePlannerTool) {
+        return MethodToolCallbackProvider.builder().toolObjects(datePlannerTool).build();
     }
 }
