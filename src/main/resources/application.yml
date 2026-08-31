@@ -62,7 +62,8 @@ spring:
     # 独立部署收益：mcp-server 独立进程，不随主应用拉起（密钥/生命周期/扩缩容独立）。
     mcp:
       client:
-        http:
+        enabled: true                    # 1.1.8 需显式开启 MCP client（工具面恢复）
+        streamable-http:                 # 1.1.8 Streamable HTTP 配置前缀（非 http.connections）
           connections:
             # 自研 MCP Server（独立进程，Streamable HTTP）：搜索/天气/图片/网页抓取/约会方案
             lwx-agent-mcp:
@@ -91,7 +92,7 @@ spring:
     # OpenAI 兼容接口（LlmGateway 主供应商，ADR-7）
     # 当前使用 sensenova 通用 OpenAI 兼容端点
     openai:
-      base-url: ${OPENAI_BASE_URL:https://token.sensenova.cn/v1}
+      base-url: ${OPENAI_BASE_URL:https://token.sensenova.cn}
       api-key: ${OPENAI_API_KEY:}
       chat:
         options:
@@ -149,7 +150,25 @@ app:
       enabled: true
     hybrid-search:
       enabled: false        # 混合检索（pg_trgm+RRF），数据量5000+时开启
+    # 检索重排（ADR-15 阶段 4，默认关闭灰度）：开启后每条 RAG 多一次 LLM 调用（v1=主线 LLM 打分）
+    # rerank:
+    #   enabled: false       # true 时检索窗口扩为 topN=50，postretrieval 重排取 topK=5
+    #   top-n: 50
+    #   top-k: 5
+    #   mode: llm            # llm=主线模型打分；off=关闭
+    #   max-candidate-chars: 200
 
+  # Langfuse 可观测（手写 2.x 签名接入，参考 CodeForge）：密钥一律环境变量注入
+  langfuse:
+    enabled: ${LANGFUSE_ENABLED:false}
+    public-key: ${LANGFUSE_PUBLIC_KEY:}
+    secret-key: ${LANGFUSE_SECRET_KEY:}
+    host: ${LANGFUSE_HOST:http://localhost:3000}
+
+  # 编排图能力治理（ADR-19）：agent 节点工具白名单（能力域，逗号分隔）
+  orchestration:
+    tools:
+      agent-allowlist: terminate,retrieval,web,image,weather,date   # 放行 收尾+知识/网络/图片/天气/日期；pdf/download 等副作用面排除
   # 消息加密（ADR-4，Phase 3）：AES-256-GCM 透明加密，主密钥由 APP_MESSAGE_KEY 注入
   encryption:
     enabled: true
