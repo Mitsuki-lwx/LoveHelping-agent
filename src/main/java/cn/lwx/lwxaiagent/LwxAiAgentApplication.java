@@ -33,9 +33,15 @@ public class LwxAiAgentApplication {
     /**
      * 应用程序的主方法——Java 程序的入口点
      *
+     * <p>注意 {@code Hooks.enableAutomaticContextPropagation()}（Micrometer context-propagation）：
+     * 让 Reactor 流（SSE 聊天的 Flux、流式 LLM 调用）自动携带 trace 上下文，
+     * 否则流式 chat generation 会脱离请求 trace 变成孤立 root trace（2026-08-31 全链路测评结论）。</p>
+     *
      * @param args 命令行参数，可在启动时传入（例如 --server.port=9090 来覆盖端口配置）
      */
     public static void main(String[] args) {
+        // Reactor 自动上下文传播：必须先于任何 Flux 订阅开启（幂等，重复调用无副作用）
+        reactor.core.publisher.Hooks.enableAutomaticContextPropagation();
         // 启动 Spring Boot 应用：
         // 1. 传入主配置类 LwxAiAgentApplication.class 作为配置源
         // 2. run 方法返回 ConfigurableApplicationContext，即 Spring 容器本身

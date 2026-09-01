@@ -42,25 +42,31 @@ public class GraphRunner {
     private final ChatMemoryFactory chatMemoryFactory;
     private final GraphObservability observability;
     private final org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter;
+    private final io.micrometer.tracing.Tracer tracer;
     private final ConcurrentHashMap<String, CompletableFuture<?>> activeRuns = new ConcurrentHashMap<>();
 
     public GraphRunner(OrchestrationGraph orchestrationGraph,
                        ChatMemoryFactory chatMemoryFactory,
                        GraphObservability observability,
-                       org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
+                       org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter,
+                       io.micrometer.tracing.Tracer tracer) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
         this.graph = orchestrationGraph.compile();
         this.chatMemoryFactory = chatMemoryFactory;
         this.observability = observability;
         this.langfuseReporter = langfuseReporter;
+        this.tracer = tracer;
     }
 
     /** 异步执行一轮图（线程池内阻塞调用模型）。 */
     public CompletableFuture<Map<String, Object>> runAsync(Map<String, Object> input, String threadId) {
         injectHistory(input, threadId);
         CompletableFuture<Map<String, Object>> future = CompletableFuture.supplyAsync(() -> {
-            RunnableConfig config = RunnableConfig.builder().threadId(threadId).build();
-            long t0 = System.currentTimeMillis();
-            try {
+            // 全链路 trace 串联：恢复 HTTP 入口 span 的 trace 上下文（异步线程丢失请求作用域，
+            // 导致 LLM/embedding generation 变成孤立 root trace——见 2026-08-31 全链路测评）
+            io.micrometer.tracing.Span pipelineSpan = startPipelineSpan(input, threadId);
+            try (io.micrometer.tracing.Tracer.SpanInScope ws = tracer.withSpan(pipelineSpan)) {
+                RunnableConfig config = RunnableConfig.builder().threadId(threadId).build();
+                long t0 = System.currentTimeMillis();
                 OverAllState result = graph.invoke(input, config).get();
                 Map<String, Object> out = extract(result);
                 // agent / 视觉 路径由 GraphRunner 统一落库（普通/简答/沙盘由 ChatExecutor advisor 落库，避免重复）
@@ -81,12 +87,28 @@ public class GraphRunner {
                 }
                 return out;
             } catch (Exception e) {
+                pipelineSpan.error(e);
                 throw new IllegalStateException("OrchestrationGraph run failed", e);
+            } finally {
+                pipelineSpan.end();
             }
         });
         activeRuns.put(threadId, future);
         future.whenComplete((r, ex) -> activeRuns.remove(threadId));
         return future;
+    }
+
+    /** 图执行根 span：有透传上下文则挂到 HTTP 入口 trace 下（跨线程父子串联），否则独立 root */
+    private io.micrometer.tracing.Span startPipelineSpan(Map<String, Object> input, String threadId) {
+        var builder = tracer.spanBuilder().name("chat.pipeline").tag("chat.id", threadId);
+        Object tid = input.get(GraphStateKeys.PIPELINE_TRACE_ID);
+        Object sid = input.get(GraphStateKeys.PIPELINE_SPAN_ID);
+        if (tid instanceof String t && sid instanceof String s) {
+            var parentCtx = tracer.traceContextBuilder()
+                    .traceId(t).spanId(s).sampled(Boolean.TRUE).build();
+            builder.setParent(parentCtx);
+        }
+        return builder.start();
     }
 
     /** 同步执行（测试/内部调用用） */

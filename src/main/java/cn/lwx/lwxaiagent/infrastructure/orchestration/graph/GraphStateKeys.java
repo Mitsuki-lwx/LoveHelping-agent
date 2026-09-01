@@ -39,6 +39,10 @@ public final class GraphStateKeys {
     /** 图路径 trace（List&lt;String&gt; 节点名序列，CAP-7 可观测） */
     public static final String GRAPH_PATH = "graph.path";
 
+    /** 管道 trace 上下文透传：HTTP 入口 span 的 traceId/spanId（字符串；异步线程内恢复 OTLP 链路用，仅内存传递不落 checkpoint） */
+    public static final String PIPELINE_TRACE_ID = "pipeline.traceId";
+    public static final String PIPELINE_SPAN_ID = "pipeline.spanId";
+
     /** 路由常量 */
     public static final String ROUTE_SIMPLE = "SIMPLE";
     public static final String ROUTE_NORMAL = "NORMAL";

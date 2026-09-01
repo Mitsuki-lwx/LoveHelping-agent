@@ -29,6 +29,7 @@ public class ChatEntry {
     private final CapabilityRouter router;
     private final GraphRunner graphRunner;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final io.micrometer.tracing.Tracer tracer;
 
     /** 情绪刹车片配置（FR-CORE-02） */
     private final boolean emotionBrakeEnabled;
@@ -40,6 +41,7 @@ public class ChatEntry {
                      CapabilityRouter router,
                      GraphRunner graphRunner,
                      io.micrometer.core.instrument.MeterRegistry meterRegistry,
+                     io.micrometer.tracing.Tracer tracer,
                      @Value("${app.emotion-brake.enabled:true}") boolean emotionBrakeEnabled,
                      @Value("${app.emotion-brake.start-hour:23}") int emotionBrakeStartHour,
                      @Value("${app.emotion-brake.end-hour:6}") int emotionBrakeEndHour) {
@@ -48,6 +50,7 @@ public class ChatEntry {
         this.router = router;
         this.graphRunner = graphRunner;
         this.meterRegistry = meterRegistry;
+        this.tracer = tracer;
         this.emotionBrakeEnabled = emotionBrakeEnabled;
         this.emotionBrakeStartHour = emotionBrakeStartHour;
         this.emotionBrakeEndHour = emotionBrakeEndHour;
@@ -89,6 +92,14 @@ public class ChatEntry {
         }
         if (forceAgent) {
             input.put(GraphStateKeys.FORCE_AGENT, true); // LoveManus 通道
+        }
+
+        // ④b 全链路 trace 串联：把 HTTP 入口 span 上下文透传给异步图执行
+        // （SSE 异步线程丢失请求 trace 上下文，导致 LLM/embedding 变成孤立 root trace）
+        var entrySpan = tracer.currentSpan();
+        if (entrySpan != null) {
+            input.put(GraphStateKeys.PIPELINE_TRACE_ID, entrySpan.context().traceId());
+            input.put(GraphStateKeys.PIPELINE_SPAN_ID, entrySpan.context().spanId());
         }
 
         // ⑤ 异步执行图 → SSE Flux（文本分块 + 🔧 可视化 + advice 事件）+ 任务完成回调

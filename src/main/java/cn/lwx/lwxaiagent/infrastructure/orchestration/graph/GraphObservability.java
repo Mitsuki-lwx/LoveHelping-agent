@@ -24,13 +24,26 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class GraphObservability {
 
-    /** 节点执行包装：路径记录 + 计时 + 耗时指标；返回执行结果状态更新 */
+    private final io.micrometer.tracing.Tracer tracer;
+
+    public GraphObservability(MeterRegistry meterRegistry, io.micrometer.tracing.Tracer tracer) {
+        this.meterRegistry = meterRegistry;
+        this.tracer = tracer;
+    }
+
+    /** 节点执行包装：路径记录 + trace 子 span + 计时 + 耗时指标；返回执行结果状态更新 */
     public Map<String, Object> execute(String node, OverAllState state, NodeActionLike action) {
         appendPath(state, node);
+        // 全链路埋点：节点作为 chat.pipeline 的子 span（OTLP → Langfuse 可见每阶段耗时）
+        io.micrometer.tracing.Span nodeSpan = tracer.nextSpan().name("graph.node." + node);
         long start = System.nanoTime();
-        try {
+        try (io.micrometer.tracing.Tracer.SpanInScope ws = tracer.withSpan(nodeSpan.start())) {
             return action.apply(state);
+        } catch (RuntimeException e) {
+            nodeSpan.error(e);
+            throw e;
         } finally {
+            nodeSpan.end();
             String route = state.value(OrchestrationGraph.ROUTE).map(Object::toString).orElse("unknown");
             try {
                 Timer.builder("orchestration.node.duration")
@@ -77,10 +90,6 @@ public class GraphObservability {
     }
 
     private final MeterRegistry meterRegistry;
-
-    public GraphObservability(MeterRegistry meterRegistry) {
-        this.meterRegistry = meterRegistry;
-    }
 
     /** 与图节点动作等价的函数式接口（避免依赖 graph-core 类型边界） */
     @FunctionalInterface
