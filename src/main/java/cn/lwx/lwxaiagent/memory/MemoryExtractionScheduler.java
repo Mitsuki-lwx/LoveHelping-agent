@@ -1,5 +1,7 @@
 package cn.lwx.lwxaiagent.memory;
 
+import cn.lwx.lwxaiagent.infrastructure.scheduler.SchedulerBudget;
+import cn.lwx.lwxaiagent.infrastructure.scheduler.SchedulerProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 记忆萃取调度器（ADR-14，记忆系统阶段 2）。
+ * 记忆萃取调度器（ADR-14，记忆系统阶段 2；预算约束见 ADR-20）。
  * <p>
  * 周期扫描"有消息但尚未萃取摘要"的会话，异步执行记忆萃取（消息来源：message 表）。
  * 萃取失败仅告警（下次周期重试），不阻断对话。
@@ -19,42 +21,68 @@ import java.util.List;
 @Component
 public class MemoryExtractionScheduler {
 
-    private static final int BATCH_LIMIT = 10;
-
     private final JdbcTemplate jdbcTemplate;
     private final MemoryService memoryService;
     private final MemoryExtractor extractor;
     private final MemoryStore memoryStore;
+    private final SchedulerBudget budget;
+    private final SchedulerProperties schedulerProperties;
 
     public MemoryExtractionScheduler(JdbcTemplate jdbcTemplate,
                                      MemoryService memoryService,
                                      MemoryExtractor extractor,
-                                     MemoryStore memoryStore) {
+                                     MemoryStore memoryStore,
+                                     SchedulerBudget budget,
+                                     SchedulerProperties schedulerProperties) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryService = memoryService;
         this.extractor = extractor;
         this.memoryStore = memoryStore;
+        this.budget = budget;
+        this.schedulerProperties = schedulerProperties;
     }
 
     /**
-     * 每 30 分钟扫描一次；启动 30 秒后首跑（便于 E2E/开发快速验证萃取链路）。
+     * 每 30 分钟扫描一次（间隔可配 app.scheduler.extract.fixed-delay-ms）；启动 30 秒后首跑。
+     * 受 ADR-20 预算约束：开关 / 配额 / 空转退避 / 单轮时间预算。
      */
-    @Scheduled(fixedDelay = 1_800_000, initialDelay = 30_000)
+    @Scheduled(fixedDelayString = "${app.scheduler.extract.fixed-delay-ms:1800000}", initialDelay = 30_000)
     public void scanAndExtract() {
+        if (!budget.permitted("extract") || !budget.backoffAllowsRun("extract")) {
+            return;
+        }
+        long start = System.currentTimeMillis();
         try {
-            List<String> candidates = findCandidates(BATCH_LIMIT);
-            log.info("Memory extraction scan: {} candidate conversation(s)", candidates.size());
+            int batchLimit = schedulerProperties.getExtract().getBatchLimit();
+            List<String> candidates = findCandidates(batchLimit);
             if (candidates.isEmpty()) {
+                budget.recordOutcome("extract", 0, 0, System.currentTimeMillis() - start);
                 return;
             }
-            log.info("Memory extraction: {} conversation(s) to extract", candidates.size());
+
+            int allow = budget.allowance("extract", candidates.size());
+            if (allow <= 0) {
+                budget.recordOutcome("extract", candidates.size(), 0, System.currentTimeMillis() - start);
+                return;
+            }
+
+            log.info("Memory extraction scan: {} candidate conversation(s) (budget allow {})", candidates.size(), allow);
+            int processed = 0;
             for (String conversationId : candidates) {
+                if (processed >= allow || System.currentTimeMillis() - start > budget.maxRunMs()) {
+                    log.info("Extraction round budget reached (allow={}): {}/{} processed, rest deferred to next round", allow, processed, candidates.size());
+                    break;
+                }
                 try {
+                    // 萃取 LLM + 写记忆 embedding 各计 1 次配额（ADR-20：embedding 也吃配额）
+                    budget.consume("extract", 2);
                     extractOne(conversationId);
+                    processed++;
                 } catch (Exception e) {
                     log.warn("Memory extraction failed for {}: {}", conversationId, e.getMessage());
                 }
             }
+            budget.recordOutcome("extract", candidates.size(), processed, System.currentTimeMillis() - start);
         } catch (Exception e) {
             log.warn("Memory extraction scan failed: {}", e.getMessage());
         }

@@ -1,6 +1,8 @@
 package cn.lwx.lwxaiagent.evolution;
 
 import cn.lwx.lwxaiagent.evolution.config.EvolutionProperties;
+import cn.lwx.lwxaiagent.infrastructure.scheduler.SchedulerBudget;
+import cn.lwx.lwxaiagent.infrastructure.scheduler.SchedulerProperties;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -60,13 +62,21 @@ public class ReflectionScheduler {
      */
     private final EvolutionProperties props;
 
+    /** 后台调度预算（ADR-20）：配额 / 退避 / 时间预算统一问询 */
+    private final SchedulerBudget budget;
+
+    /** 后台调度配置（节奏 / 批量上限，ADR-20） */
+    private final SchedulerProperties schedulerProperties;
+
     /**
      * 构造函数，通过构造器注入进化系统配置属性。
      *
      * @param props 进化系统配置属性对象，包含各个超时和阈值参数
      */
-    public ReflectionScheduler(EvolutionProperties props) {
+    public ReflectionScheduler(EvolutionProperties props, SchedulerBudget budget, SchedulerProperties schedulerProperties) {
         this.props = props;
+        this.budget = budget;
+        this.schedulerProperties = schedulerProperties;
     }
 
     /**
@@ -90,27 +100,45 @@ public class ReflectionScheduler {
      *       确保 Spring 容器及其他组件完全初始化</li>
      * </ul>
      */
-    @Scheduled(fixedDelay = 300_000, initialDelay = 60_000)
+    @Scheduled(fixedDelayString = "${app.scheduler.reflect.fixed-delay-ms:300000}", initialDelay = 60_000)
     public void scanAndReflect() {
         if (!props.isEnabled()) {
             log.debug("Evolution disabled, skipping reflection scan");
             return;
         }
-
-        List<String> sessions = findReadySessions();
-        if (sessions.isEmpty()) {
-            log.debug("Reflection scan: no sessions ready for reflection");
+        if (!budget.permitted("reflect") || !budget.backoffAllowsRun("reflect")) {
             return;
         }
 
-        log.info("Reflection scan: {} session(s) ready for reflection", sessions.size());
+        List<String> sessions = findReadySessions();
+        if (sessions.isEmpty()) {
+            budget.recordOutcome("reflect", 0, 0, 0);
+            return;
+        }
+
+        int allow = budget.allowance("reflect", Math.min(sessions.size(), schedulerProperties.getReflect().getBatchLimit()));
+        if (allow <= 0) {
+            budget.recordOutcome("reflect", sessions.size(), 0, 0);
+            return;
+        }
+
+        log.info("Reflection scan: {} session(s) ready for reflection (budget allow {})", sessions.size(), allow);
+        long start = System.currentTimeMillis();
+        int processed = 0;
         for (String sessionId : sessions) {
+            if (processed >= allow || System.currentTimeMillis() - start > budget.maxRunMs()) {
+                log.info("Reflection round budget reached (allow={}): {}/{} processed, rest deferred to next round", allow, processed, sessions.size());
+                break;
+            }
             try {
+                budget.consume("reflect", 1);
                 skillReflector.reflect(sessionId, "default");
+                processed++;
             } catch (Exception e) {
                 log.error("Reflection failed for session {}: {}", sessionId, e.getMessage());
             }
         }
+        budget.recordOutcome("reflect", sessions.size(), processed, System.currentTimeMillis() - start);
     }
 
     /**
@@ -144,6 +172,7 @@ public class ReflectionScheduler {
     private List<String> findReadySessions() {
         // 会话总时长使用 MAX(created_at) - MIN(created_at) 计算
         // 空闲时间使用 NOW() - MAX(created_at) 计算
+        // LIMIT 使用配置的批量上限（ADR-20 app.scheduler.reflect.batch-limit）
         String sql = """
                 SELECT m.conversation_id
                 FROM message m
@@ -156,13 +185,14 @@ public class ReflectionScheduler {
                 HAVING
                     TIMESTAMPDIFF(SECOND, MAX(m.created_at), NOW()) > ?
                     OR TIMESTAMPDIFF(SECOND, MIN(m.created_at), MAX(m.created_at)) > ?
-                LIMIT 20
+                LIMIT ?
                 """;
 
         return jdbcTemplate.queryForList(
                 sql,
                 String.class,
                 props.getExtractDelaySeconds(),
-                props.getIdleTimeoutSeconds());
+                props.getIdleTimeoutSeconds(),
+                schedulerProperties.getReflect().getBatchLimit());
     }
 }
