@@ -21,6 +21,8 @@ public class ParentChildDocumentTransformer implements DocumentTransformer {
     private static final int PARENT_TARGET = 1500;
     /** 子块目标长度（字符） */
     private static final int CHILD_TARGET = 400;
+    /** 子块最小长度（字符）：过短的碎片没有独立语义，宁可与下一句合并 */
+    private static final int CHILD_MIN = 120;
 
     @Override
     public List<Document> apply(List<Document> documents) {
@@ -75,7 +77,10 @@ public class ParentChildDocumentTransformer implements DocumentTransformer {
     }
 
     /**
-     * 按句子边界（。！？…）切到目标长度；无边界时按字符硬切。
+     * 按句子边界（。！？…以及换行后的整段结束）切到目标长度；无边界时按字符硬切。
+     * <p><b>历史 bug</b>：此前把单个 {@code \n} 也当句子边界，而 Markdown 每行都有换行，
+     * 导致"一满 40 字符就切一刀"，{@code CHILD_TARGET} 从未生效——实测库内子块平均仅 46 字符。
+     * 现改为：仅以中英文句末标点为边界，且块长须先达到 {@code CHILD_MIN}。</p>
      */
     private List<String> splitBySentences(String text, int target) {
         List<String> result = new ArrayList<>();
@@ -83,14 +88,19 @@ public class ParentChildDocumentTransformer implements DocumentTransformer {
         for (int i = 0; i < text.length(); i++) {
             char ch = text.charAt(i);
             buf.append(ch);
-            boolean isBoundary = "。！？…\n".indexOf(ch) >= 0;
-            if ((isBoundary || buf.length() >= target) && buf.length() >= 40) {
+            boolean isBoundary = "。！？…；!?".indexOf(ch) >= 0;
+            if (buf.length() >= target || (isBoundary && buf.length() >= CHILD_MIN)) {
                 result.add(buf.toString().trim());
                 buf.setLength(0);
             }
         }
         if (buf.length() > 0) {
-            result.add(buf.toString().trim());
+            // 尾巴过短则并入上一块，避免产生"——让对方闭嘴。"这类无语义碎片
+            if (!result.isEmpty() && buf.length() < CHILD_MIN) {
+                result.set(result.size() - 1, (result.get(result.size() - 1) + buf).trim());
+            } else {
+                result.add(buf.toString().trim());
+            }
         }
         return result;
     }

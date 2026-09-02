@@ -125,17 +125,20 @@ public class LoveAppDocumentLoader {
                 String fileName = resource.getFilename();
                 // 构建 Markdown 文档阅读器的配置
                 MarkdownDocumentReaderConfig config = MarkdownDocumentReaderConfig.builder()
-                        // 遇到水平线（---）时分割文档，使每个章节成为独立的检索单位
-                        .withHorizontalRuleCreateDocument(true)
+                        // 不按水平线（---）切碎：整篇交 ParentChildDocumentTransformer 做父子切分。
+                        // 旧行为按 "---" 切成小节后，每节过短，导致父块聚合不出 1500 字符的
+                        // 上下文、子块平均仅 46 字符（检索注入的是碎片 → 模型只能答"我不知道"）。
+                        .withHorizontalRuleCreateDocument(false)
                         // 不包含代码块内容（代码块通常不是自然语言，对检索贡献小）
                         .withIncludeCodeBlock(false)
                         // 不包含引用块内容
                         .withIncludeBlockquote(false)
                         // 添加文件名作为元数据，key 为 "filename"
                         .withAdditionalMetadata("filename", fileName)
-                        // 从文件名中提取状态信息作为元数据
-                        // 提取规则：文件名倒数第6到第4个字符，例如 "lovehelpingXXok.md" → "ok"
-                        .withAdditionalMetadata("status",fileName.substring(fileName.length()-6,fileName.length()-4))
+                        // status 不再从文件名截取固定位（该约定只对 lovehelpingXXok.md 之类
+                        // 英文老文件有效，对中文文件名产出"边界/性强"等无意义碎片）；
+                        // 当前检索无 status 过滤消费者，统一置 "active"
+                        .withAdditionalMetadata("status", "active")
                         .build();
                 // 使用配置创建 Markdown 文档阅读器
                 MarkdownDocumentReader reader = new MarkdownDocumentReader(resource, config);
@@ -153,7 +156,44 @@ public class LoveAppDocumentLoader {
             // 记录加载失败的错误日志，但不中断整体流程
             log.error("Failed to load Markdown documents", e);
         }
-        return allDocuments;
+        return mergeByFile(allDocuments);
+    }
+
+    /**
+     * 按文件合并回整篇（ADR-15 父子索引前提）。
+     * <p>MarkdownDocumentReader 会按标题层级产出多个 Document（实测 67 篇 → 453 段，
+     * 每段仅百余字）。若直接交给 {@code ParentChildDocumentTransformer}，父块聚合不出
+     * 1500 字符的完整上下文（实测库内 parent_text 平均仅 108 字符），small-to-large 失效——
+     * 检索注入的是碎片，模型只能答"我不知道"。</p>
+     * <p>此处按 filename 归并把各段拼回整篇（保留首个段的 metadata，doc_hash 改为整篇 hash），
+     * 让 transformer 能按段落聚合出真正的大父块。</p>
+     */
+    private List<Document> mergeByFile(List<Document> docs) {
+        java.util.LinkedHashMap<String, List<Document>> byFile = new java.util.LinkedHashMap<>();
+        for (Document d : docs) {
+            String file = String.valueOf(d.getMetadata().get("filename"));
+            byFile.computeIfAbsent(file, k -> new java.util.ArrayList<>()).add(d);
+        }
+        List<Document> merged = new java.util.ArrayList<>();
+        for (java.util.Map.Entry<String, List<Document>> e : byFile.entrySet()) {
+            List<Document> parts = e.getValue();
+            StringBuilder text = new StringBuilder();
+            for (Document p : parts) {
+                String t = p.getText();
+                if (t != null && !t.isBlank()) {
+                    text.append(t.trim()).append("\n\n");
+                }
+            }
+            String whole = text.toString().trim();
+            if (whole.isEmpty()) {
+                continue;
+            }
+            Document doc = new Document(whole, new java.util.HashMap<>(parts.get(0).getMetadata()));
+            doc.getMetadata().put("doc_hash", hash(whole)); // 增量同步以整篇 hash 为准
+            merged.add(doc);
+        }
+        log.info("Markdown loaded: {} sections merged into {} documents", docs.size(), merged.size());
+        return merged;
     }
 
     private static String hash(String text) {
