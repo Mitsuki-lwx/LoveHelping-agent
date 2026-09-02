@@ -42,7 +42,8 @@ public class QuickAnswerNode {
         }
 
         Map<String, Object> out = new HashMap<>();
-        out.put(GraphStateKeys.OUTPUT, NormalChatNode.stripAdviceMarker(full));
+        // 简答恒非话术三级（advice=false）：模型输出即正文，不剥 marker（防误剥）
+        out.put(GraphStateKeys.OUTPUT, full);
         return out;
     }
 }

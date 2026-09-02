@@ -48,6 +48,7 @@ class StreamRegistryTest {
         FluxSink<String> raw = mock(FluxSink.class);
         List<String> emitted = recordingSink(raw);
         StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        s.enableMarkerStripping();
         s.append("这是给你的回复。");
         s.append(MARKER + "{\"tiers\":[{\"name\":\"safe\"}]}");
         s.flush();
@@ -61,6 +62,7 @@ class StreamRegistryTest {
         FluxSink<String> raw = mock(FluxSink.class);
         List<String> emitted = recordingSink(raw);
         StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        s.enableMarkerStripping();
         s.append("回复正文第一段");
         s.append("回复正文第二段。@");          // marker 开头散落在此块
         s.append("@ADVICE@@{\"tiers\":[]}");    // 跨块拼出完整 marker

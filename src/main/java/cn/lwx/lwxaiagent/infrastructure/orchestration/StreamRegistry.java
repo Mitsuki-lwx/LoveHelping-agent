@@ -61,6 +61,9 @@ public class StreamRegistry {
         private final StringBuilder pending = new StringBuilder();
         /** advice marker 已出现（其后内容为结构化 JSON，不再走文本流） */
         private boolean adviceSeen;
+        /** 是否剥离 advice marker——仅 advice 协议请求开启（2026-09-02 dirty_1：
+         *  普通对话被诱导写 @@ADVICE@@ 字面量时误剥成空回复，故默认不剥） */
+        private volatile boolean stripMarker;
         /** 文本是否已通过真流式转发（ChatEntry 判断是否还需 chunk 兜底） */
         private volatile boolean streamed;
         private volatile boolean cancelled;
@@ -69,14 +72,25 @@ public class StreamRegistry {
             this.sink = sink;
         }
 
+        /** 开启 advice marker 剥离（仅话术三级协议请求调用，须在首次 append 前） */
+        public synchronized void enableMarkerStripping() {
+            this.stripMarker = true;
+        }
+
         /** 追加一段 LLM 增量：剥离 advice marker 后实时转发文本部分 */
         public synchronized void append(String text) {
             if (cancelled || text == null || text.isEmpty()) {
                 return;
             }
+            // 非协议模式（advice=false）：模型输出即正文，无需 marker 窗口——
+            // 直接转发，避免用户讨论 @@ADVICE@@ 字面量被误剥成空回复
+            if (!stripMarker) {
+                emit(text);
+                return;
+            }
             pending.append(text);
             int idx;
-            while (!adviceSeen && (idx = pending.indexOf(MARKER)) >= 0) {
+            while ((idx = pending.indexOf(MARKER)) >= 0) {
                 // marker 前的文本是给用户的回复 → 发射
                 if (idx > 0) {
                     emit(pending.substring(0, idx));
@@ -96,7 +110,7 @@ public class StreamRegistry {
             if (cancelled) {
                 return;
             }
-            if (adviceSeen) {
+            if (stripMarker && adviceSeen) {
                 pending.setLength(0); // marker 后残留 payload 不发射
             } else if (pending.length() > 0) {
                 emit(pending.toString());

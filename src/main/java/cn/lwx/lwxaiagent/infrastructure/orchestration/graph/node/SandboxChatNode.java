@@ -46,7 +46,8 @@ public class SandboxChatNode {
                     chatExecutor.executeWithRag(message, chatId, sandboxPrompt, false);
             String full = sr.flux().collectList().block().stream().reduce(String::concat).orElse("");
             Map<String, Object> out = new HashMap<>();
-            out.put(GraphStateKeys.OUTPUT, NormalChatNode.stripAdviceMarker(full));
+            // advice=false：沙盘输出即正文，不剥 marker（防误剥，与 NormalChatNode 一致化）
+            out.put(GraphStateKeys.OUTPUT, full);
             return out;
         } catch (Exception e) {
             log.error("SandboxChatNode failed (sandbox={}): {}", sandboxId, e.getMessage());

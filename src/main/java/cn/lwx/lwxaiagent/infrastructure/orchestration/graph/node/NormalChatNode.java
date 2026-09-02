@@ -36,18 +36,27 @@ public class NormalChatNode {
         AgentResult.ShallowResult sr = (AgentResult.ShallowResult)
                 chatExecutor.executeWithRag(message, chatId, null, advice);
         StreamRegistry.StreamSink sink = streamRegistry.get(chatId);
+        if (sink != null && advice) {
+            sink.enableMarkerStripping(); // 仅话术三级协议请求剥离 marker（防误剥正文）
+        }
         String full = sr.flux()
                 .doOnNext(sink != null ? sink::append : t -> { })
                 .collectList().block().stream().reduce(String::concat).orElse("");
         if (sink != null) {
-            sink.flush(); // 文本已实时转发；advice 尾 payload 由 sink 剥离，full 仍含 marker 供下文切 tiers
+            sink.flush();
         }
 
         Map<String, Object> out = new HashMap<>();
-        out.put(GraphStateKeys.OUTPUT, stripAdviceMarker(full));
-        String tiers = adviceTiersJson(full);
-        if (tiers != null) {
-            out.put(GraphStateKeys.ADVICE_TIERS, tiers);
+        if (advice) {
+            // 协议场景：剥 marker 得到用户正文，结构化 JSON 走 SSE advice 事件
+            out.put(GraphStateKeys.OUTPUT, stripAdviceMarker(full));
+            String tiers = adviceTiersJson(full);
+            if (tiers != null) {
+                out.put(GraphStateKeys.ADVICE_TIERS, tiers);
+            }
+        } else {
+            // 普通对话：模型输出即正文（含被诱导讨论的 @@ADVICE@@ 字面量）
+            out.put(GraphStateKeys.OUTPUT, full);
         }
         return out;
     }

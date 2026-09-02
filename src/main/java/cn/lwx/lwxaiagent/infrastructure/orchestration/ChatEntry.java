@@ -153,6 +153,17 @@ public class ChatEntry {
     // ==================== 交叉关注点 ====================
 
     private void guardrailCheck(String prompt, boolean continueBrake) {
+        // ①b system prompt 探查拦截（OWASP LLM07，2026-09-02）：翻译/复述/总结 system
+        // prompt 的请求不依赖模型遵从性，规则确定性短路——实测 flash 对"翻译那段规则"
+        // 会如实翻译全文，prompt 指令拦不住，故在入口直接返回固定拒绝
+        if (isPromptLeakProbe(prompt)) {
+            log.warn("Prompt-leak probe blocked: {}",
+                    prompt.length() > 40 ? prompt.substring(0, 40) : prompt);
+            meterRegistry.counter("guardrail.prompt_leak.blocked").increment();
+            throw new BizException(4001,
+                    "这些是我的内部设定，不方便透露。有什么情感或关系上的问题，我很乐意帮你聊聊。");
+        }
+
         // ① 标准护栏（ADR-6）
         var verdict = guardrailRuleService.check(prompt);
         if (verdict.level() >= 3) {
@@ -182,6 +193,24 @@ public class ChatEntry {
             log.info("Guardrail L{} logged ({}): {}", verdict.level(), verdict.ruleId(),
                     prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
         }
+    }
+
+    /** system prompt 探查意图判定（OWASP LLM07）：不依赖模型遵从性的确定性拦截。
+     *  信号 = 高信号词（system prompt / 系统提示）OR（动作词 × 内容词）组合。 */
+    private boolean isPromptLeakProbe(String prompt) {
+        if (prompt == null || prompt.length() > 200) {
+            return false; // 正常长问题不拦（长输入多为真实咨询）
+        }
+        String p = prompt.toLowerCase();
+        if (p.contains("system prompt") || p.contains("systemprompt") || p.contains("系统提示")) {
+            return true;
+        }
+        boolean action = p.contains("翻译") || p.contains("打印") || p.contains("复述")
+                || p.contains("总结") || p.contains("输出") || p.contains("显示")
+                || p.contains("告诉") || p.contains("说明") || p.contains("列出");
+        boolean target = p.contains("规则") || p.contains("指令") || p.contains("设定")
+                || p.contains("提示词") || p.contains("开发者");
+        return action && target;
     }
 
     /** 深夜时段判定（可配置 start-hour / end-hour） */
