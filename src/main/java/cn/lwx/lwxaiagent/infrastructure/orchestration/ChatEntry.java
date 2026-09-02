@@ -28,6 +28,7 @@ public class ChatEntry {
     private final RateLimiter rateLimiter;
     private final CapabilityRouter router;
     private final GraphRunner graphRunner;
+    private final StreamRegistry streamRegistry;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
     private final io.micrometer.tracing.Tracer tracer;
 
@@ -40,6 +41,7 @@ public class ChatEntry {
                      RateLimiter rateLimiter,
                      CapabilityRouter router,
                      GraphRunner graphRunner,
+                     StreamRegistry streamRegistry,
                      io.micrometer.core.instrument.MeterRegistry meterRegistry,
                      io.micrometer.tracing.Tracer tracer,
                      @Value("${app.emotion-brake.enabled:true}") boolean emotionBrakeEnabled,
@@ -49,6 +51,7 @@ public class ChatEntry {
         this.rateLimiter = rateLimiter;
         this.router = router;
         this.graphRunner = graphRunner;
+        this.streamRegistry = streamRegistry;
         this.meterRegistry = meterRegistry;
         this.tracer = tracer;
         this.emotionBrakeEnabled = emotionBrakeEnabled;
@@ -106,7 +109,11 @@ public class ChatEntry {
         java.util.function.BiConsumer<Boolean, String> cb =
                 taskCallback != null ? taskCallback : (ok, err) -> {};
         Flux<String> flux = Flux.create(sink -> {
-            graphRunner.runAsync(input, chatId == null ? "anon" : chatId)
+            // 真流式桥（2026-09-02）：注册本请求的 SSE sink，图内 normal/simple 节点
+            // 在 LLM 生成时实时推送文本增量（advice marker 由 sink 剥离）
+            String regKey = chatId == null ? "anon" : chatId;
+            StreamRegistry.StreamSink streamSink = streamRegistry.register(regKey, sink);
+            graphRunner.runAsync(input, regKey)
                     .thenAccept(result -> {
                         @SuppressWarnings("unchecked")
                         List<String> tools = (List<String>) result.getOrDefault(GraphStateKeys.TOOL_EVENTS, List.of());
@@ -114,20 +121,25 @@ public class ChatEntry {
                             sink.next("🔧 调用工具: " + t);
                         }
                         String output = String.valueOf(result.getOrDefault(GraphStateKeys.OUTPUT, ""));
-                        for (String part : chunk(output)) {
-                            sink.next(part);
+                        // agent/视觉路径未接真流式（节点不用 registry）→ 兜底 chunk 保持行为
+                        if (streamSink == null || !streamSink.streamed()) {
+                            for (String part : chunk(output)) {
+                                sink.next(part);
+                            }
                         }
                         Object tiers = result.get(GraphStateKeys.ADVICE_TIERS);
                         if (tiers != null && !tiers.toString().isBlank()) {
                             sink.next(ChatExecutor.ADVICE_EVENT_MARKER + tiers);
                         }
                         sink.complete();
+                        streamRegistry.unregister(regKey);
                         cb.accept(true, null); // agent_task 完成回调（LoveManus 通道）
                     })
                     .exceptionally(err -> {
                         log.error("ChatEntry graph run failed ({}): {}", chatId, err.getMessage());
                         sink.next("系统繁忙，请稍后再试。");
                         sink.complete();
+                        streamRegistry.unregister(regKey);
                         cb.accept(false, err.getMessage()); // 失败回调 → 任务 FAILED
                         return null;
                     });

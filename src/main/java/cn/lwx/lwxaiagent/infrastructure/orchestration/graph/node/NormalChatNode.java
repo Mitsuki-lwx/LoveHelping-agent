@@ -1,8 +1,8 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node;
 
 import cn.lwx.lwxaiagent.infrastructure.orchestration.AgentResult;
-import cn.lwx.lwxaiagent.infrastructure.orchestration.CapabilitySet;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.StreamRegistry;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import org.springframework.stereotype.Component;
@@ -14,15 +14,18 @@ import java.util.Optional;
 /**
  * 普通对话节点（ADR-19 CAP-1/CAP-9）：记忆注入 + 知识库上下文 + 话术三级激活。
  * <p>复用 {@link ChatExecutor} 的既有执行与提示词，保证与旧路径行为零差异；
- * 聚合全文并将 {@code @@ADVICE@@} 标记剥离为结构化 tiers（SSE advice 事件用）。</p>
+ * 聚合全文并将 {@code @@ADVICE@@} 标记剥离为结构化 tiers（SSE advice 事件用）。
+ * 2026-09-02 真流式：LLM 增量经 {@link StreamRegistry} 实时转发 SSE，不再聚合完才吐。</p>
  */
 @Component
 public class NormalChatNode {
 
     private final ChatExecutor chatExecutor;
+    private final StreamRegistry streamRegistry;
 
-    public NormalChatNode(ChatExecutor chatExecutor) {
+    public NormalChatNode(ChatExecutor chatExecutor, StreamRegistry streamRegistry) {
         this.chatExecutor = chatExecutor;
+        this.streamRegistry = streamRegistry;
     }
 
     public Map<String, Object> apply(OverAllState state) {
@@ -32,7 +35,13 @@ public class NormalChatNode {
 
         AgentResult.ShallowResult sr = (AgentResult.ShallowResult)
                 chatExecutor.executeWithRag(message, chatId, null, advice);
-        String full = sr.flux().collectList().block().stream().reduce(String::concat).orElse("");
+        StreamRegistry.StreamSink sink = streamRegistry.get(chatId);
+        String full = sr.flux()
+                .doOnNext(sink != null ? sink::append : t -> { })
+                .collectList().block().stream().reduce(String::concat).orElse("");
+        if (sink != null) {
+            sink.flush(); // 文本已实时转发；advice 尾 payload 由 sink 剥离，full 仍含 marker 供下文切 tiers
+        }
 
         Map<String, Object> out = new HashMap<>();
         out.put(GraphStateKeys.OUTPUT, stripAdviceMarker(full));
