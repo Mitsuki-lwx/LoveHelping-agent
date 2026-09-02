@@ -106,7 +106,15 @@ public class LlmGateway implements ChatModel {
         RuntimeException last = null;
         for (int attempt = 1; attempt <= max; attempt++) {
             try {
-                return model.call(prompt);
+                ChatResponse response = model.call(prompt);
+                // 空回复防御（2026-09-02 实测 glm-4.7 偶发返回空 content 且不抛异常）：
+                // 空输出视为失败进入重试/降级，避免把空回答当成功回给用户
+                if (isEmptyResponse(response)) {
+                    log.warn("LLM {} returned empty content (attempt {}/{}), treating as failure",
+                            name, attempt, max);
+                    throw new EmptyContentException("LLM " + name + " returned empty content");
+                }
+                return response;
             } catch (RuntimeException e) {
                 last = e;
                 log.warn("LLM {} call attempt {}/{} failed: {}", name, attempt, max, e.getMessage());
@@ -116,6 +124,39 @@ public class LlmGateway implements ChatModel {
             }
         }
         throw last;
+    }
+
+    /** 空回复判定：无 choices / 无 content 文本 / content 全空白。
+     *  <p><b>例外</b>：agent 工具循环中模型可只返回 {@code tool_calls} 而 content 为空——
+     *  这是正常形态（驱动工具调用），不算空回复（2026-09-02 实测误伤 agent 图后修正）。</p> */
+    private boolean isEmptyResponse(ChatResponse response) {
+        try {
+            if (response == null || response.getResult() == null) {
+                return true;
+            }
+            var output = response.getResult().getOutput();
+            if (output == null) {
+                return true;
+            }
+            String text = output.getText();
+            boolean hasText = text != null && !text.isBlank();
+            if (!hasText && output instanceof org.springframework.ai.chat.messages.AssistantMessage am) {
+                var toolCalls = am.getToolCalls();
+                if (toolCalls != null && !toolCalls.isEmpty()) {
+                    return false; // 纯 tool_calls 响应（agent 工具循环）
+                }
+            }
+            return !hasText;
+        } catch (Exception e) {
+            return false; // 判定失败按非空处理，避免误伤
+        }
+    }
+
+    /** 空回复专用异常（触发上层重试/降级，不直接抛给用户） */
+    private static final class EmptyContentException extends RuntimeException {
+        EmptyContentException(String message) {
+            super(message);
+        }
     }
 
     // ==================== stream（流式） ====================

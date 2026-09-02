@@ -75,11 +75,26 @@ check "用户B抢注用户A会话被拒(403)" '"code":403' "$R"
 
 if [ "${SKIP_AGENT:-0}" != "1" ]; then
   echo "== 7.5 Agent（LoveManus）=="
-  AGENT_OUT=$(curl -s --max-time 150 -G "$BASE_URL/Love_app/chat/LoveManus" \
-    --data-urlencode "message=上海今天适合约会吗？查下天气简单说" \
-    --data-urlencode "sessionId=smoke_agent_$USER")
-  EVENTS=$(printf '%s' "$AGENT_OUT" | grep -c "^data:")
-  if [ "${EVENTS:-0}" -gt 5 ]; then ok "Agent 多步执行（$EVENTS 个事件）"; else bad "Agent 执行" "事件数=$EVENTS"; fi
+  # emoji(🔧) 在 Git Bash curl 下会被转码导致 grep 失败（同 7.9 中文问题），用 python 拉取校验
+  AGENT_RESULT=$(python - "$BASE_URL" "$TOKEN" "$USER" <<'PYEOF'
+import sys, urllib.request, urllib.parse
+base, token, user = sys.argv[1], sys.argv[2], sys.argv[3]
+url = base + '/Love_app/chat/LoveManus?' + urllib.parse.urlencode({
+    'message': '上海今天适合约会吗？查下天气简单说', 'sessionId': 'smoke_agent_' + user})
+req = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token})
+body = urllib.request.urlopen(req, timeout=150).read().decode('utf-8', errors='replace')
+text = ''.join(l[5:].strip() for l in body.split('\n') if l.startswith('data:'))
+has_tool = '调用工具' in text or '🔧' in text
+print(f"tool={has_tool} len={len(text.replace(' ',''))} text={text[:60]}")
+PYEOF
+)
+  AGENT_TOOL=$(printf '%s' "$AGENT_RESULT" | grep -c "tool=True")
+  AGENT_REPLY_LEN=$(printf '%s' "$AGENT_RESULT" | grep -oE "len=[0-9]+" | grep -oE "[0-9]+")
+  if [ "$AGENT_TOOL" -gt 0 ] && [ "${AGENT_REPLY_LEN:-0}" -gt 10 ]; then
+    ok "Agent 工具+回答（工具调用 + ${AGENT_REPLY_LEN}字回复）"
+  else
+    bad "Agent 执行" "$AGENT_RESULT"
+  fi
 fi
 
 echo "== 7.9 话术三级（FR-CORE-01）=="

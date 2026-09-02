@@ -5,8 +5,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,7 +32,10 @@ class LlmGatewayTest {
         doReturn(prompt).when(usage).getPromptTokens();
         doReturn(completion).when(usage).getCompletionTokens();
         ChatResponseMetadata meta = ChatResponseMetadata.builder().usage(usage).build();
-        return ChatResponse.builder().metadata(meta).generations(java.util.List.of()).build();
+        // 空回复防御（LlmGateway.isEmptyResponse）要求 generation 带真实 content，
+        // 否则 mock 的"成功响应"会被误判为空回复而触发重试/降级
+        Generation generation = new Generation(new AssistantMessage(text));
+        return ChatResponse.builder().metadata(meta).generations(java.util.List.of(generation)).build();
     }
 
     @Test
