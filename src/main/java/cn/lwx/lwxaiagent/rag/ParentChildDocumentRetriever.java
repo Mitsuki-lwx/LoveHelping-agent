@@ -72,7 +72,35 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         List<Document> children = hybridEnabled
                 ? hybridRetrieve(query.text(), topK)
                 : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(topK).build());
-        return children.stream().map(this::toParent).collect(Collectors.toList());
+        List<Document> parents = children.stream().map(this::toParent).collect(Collectors.toList());
+        logRetrieved(query.text(), children);
+        return parents;
+    }
+
+    /**
+     * 检索可观测（2026-09-02）：记录"本次召回哪些文档"——Context Precision/Recall 复盘的前提，
+     * 也是"模型答不出来到底是检索没命中还是生成不用"的判别日志。
+     */
+    private void logRetrieved(String query, List<Document> children) {
+        try {
+            StringBuilder sb = new StringBuilder("RAG_RETRIEVAL query=");
+            sb.append(query.length() > 40 ? query.substring(0, 40) + "..." : query);
+            sb.append(" hits=").append(children.size());
+            for (int i = 0; i < children.size(); i++) {
+                Document c = children.get(i);
+                var meta = c.getMetadata();
+                String file = String.valueOf(meta.getOrDefault("filename", "?"));
+                String title = String.valueOf(meta.getOrDefault("title", ""));
+                String snippet = c.getText() == null ? "" : c.getText().replace('\n', ' ');
+                sb.append(" | #").append(i + 1)
+                        .append(" file=").append(file.length() > 40 ? file.substring(0, 40) : file)
+                        .append(" title=").append(title.length() > 20 ? title.substring(0, 20) : title)
+                        .append(" [").append(snippet.length() > 45 ? snippet.substring(0, 45) : snippet).append("]");
+            }
+            log.info("{}", sb);
+        } catch (Exception e) {
+            log.warn("RAG retrieval logging failed: {}", e.getMessage());
+        }
     }
 
     /** 混合召回：向量 + pg_trgm 关键词 → RRF 融合（仅知识库子块） */
