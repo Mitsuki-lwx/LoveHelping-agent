@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.FluxSink;
 
@@ -17,6 +18,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * state 会被序列化到 Redis checkpoint——sink 引用放 state 会序列化失败（8/31 教训：
  * trace 上下文只能用字符串透传）。故以 chatId 为 key 注册/查询，state 中只需既有字符串。</p>
  *
+ * <p><b>出站事件类型（输出层白名单，2026-09-02 输出层预留）</b>——用户可见流只允许以下事件：
+ * <ul>
+ *   <li>TEXT（正文，默认流式）</li>
+ *   <li>TOOL（🔧 工具事件，ChatEntry 发出）</li>
+ *   <li>ADVICE（@@ADVICE@@ 结构卡片，协议场景）</li>
+ *   <li>ERROR（错误兜底文案）</li>
+ *   <li>REASONING（思考过程，{@code app.output.reasoning-mode} 决定；默认 discard）</li>
+ * </ul>
+ * 任何其他内容（模型原始混合输出、内部标记、prompt 片段）不得直接出站——
+ * 必须先经节点/ChatEntry 归类。思考模型（deepseek-r1/glm thinking 等）接入时，
+ * reasoning 内容应经 {@link StreamSink#appendReasoning} 交给本层裁决，禁止拼入正文流。</p>
+ *
  * <p>线程安全：{@link FluxSink#next} 本身线程安全，本类再以 synchronized 保护
  * pending/标志位状态；sink 被下游取消（客户端断连）后置 cancelled，静默停止推送。</p>
  */
@@ -28,12 +41,20 @@ public class StreamRegistry {
     private static final String MARKER = ChatExecutor.ADVICE_EVENT_MARKER;
     /** marker 跨块安全窗口：pending 保留此长度的尾巴再发射，防 marker 被截断漏检 */
     private static final int WINDOW = MARKER.length() + 16;
+    /** reasoning 出站前缀（stream 模式）：与正文文本区分，前端可按 §R§ 折叠展示 */
+    private static final String REASONING_PREFIX = "§R§";
 
     private final ConcurrentHashMap<String, StreamSink> sinks = new ConcurrentHashMap<>();
+    /** 思考过程出站策略（app.output.reasoning-mode，默认 discard：思考不糊用户脸） */
+    private final String reasoningMode;
+
+    public StreamRegistry(@Value("${app.output.reasoning-mode:discard}") String reasoningMode) {
+        this.reasoningMode = reasoningMode == null ? "discard" : reasoningMode;
+    }
 
     /** 注册（订阅建立时调用；重复注册以新 sink 覆盖，旧 sink 置 cancelled 防悬挂推送） */
     public StreamSink register(String chatId, FluxSink<String> sink) {
-        StreamSink old = sinks.put(chatId, new StreamSink(sink));
+        StreamSink old = sinks.put(chatId, new StreamSink(sink, reasoningMode));
         if (old != null) {
             old.cancel();
         }
@@ -58,6 +79,7 @@ public class StreamRegistry {
      */
     public static final class StreamSink {
         private final FluxSink<String> sink;
+        private final String reasoningMode;
         private final StringBuilder pending = new StringBuilder();
         /** advice marker 已出现（其后内容为结构化 JSON，不再走文本流） */
         private boolean adviceSeen;
@@ -68,13 +90,31 @@ public class StreamRegistry {
         private volatile boolean streamed;
         private volatile boolean cancelled;
 
-        StreamSink(FluxSink<String> sink) {
+        StreamSink(FluxSink<String> sink, String reasoningMode) {
             this.sink = sink;
+            this.reasoningMode = reasoningMode;
         }
 
         /** 开启 advice marker 剥离（仅话术三级协议请求调用，须在首次 append 前） */
         public synchronized void enableMarkerStripping() {
             this.stripMarker = true;
+        }
+
+        /**
+         * 思考过程（reasoning）出站入口（输出层，思考模型接入时调用）。
+         * <p>策略：discard（默认）= 不发给用户（打 debug 日志，思考不糊脸）；
+         * stream = 以 {@code §R§} 前缀独立行发出（前端可按前缀折叠为"思考过程"）。</p>
+         */
+        public synchronized void appendReasoning(String reasoning) {
+            if (cancelled || reasoning == null || reasoning.isBlank()) {
+                return;
+            }
+            if ("stream".equalsIgnoreCase(reasoningMode)) {
+                emit(REASONING_PREFIX + reasoning);
+            } else {
+                log.debug("Reasoning discarded by output layer (reasoning-mode=discard): {}",
+                        reasoning.length() > 80 ? reasoning.substring(0, 80) + "..." : reasoning);
+            }
         }
 
         /** 追加一段 LLM 增量：剥离 advice marker 后实时转发文本部分 */

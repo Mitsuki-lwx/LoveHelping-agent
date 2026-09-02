@@ -182,6 +182,11 @@ app:
   # 后台调度预算（ADR-20）：后台任务不得与在线请求争抢 LLM 配额。
   # 2026-09-01 实测：后台调度 20 分钟产生 95 次 LLM/embedding 调用（在线仅 1 次），
   # 是 429 与监控刷屏的主因。排查/压测时 master-enabled=false 一键静默。
+  # 输出层（2026-09-02）：用户可见流的事件白名单与思考过程策略。
+  # reasoning-mode=discard（默认）：思考模型的 reasoning 不发给用户（防推理糊脸）；
+  # stream：以 §R§ 前缀行发出（前端按前缀折叠展示为"思考过程"）。
+  output:
+    reasoning-mode: discard
   scheduler:
     master-enabled: true            # 总开关：false 时所有后台调度跳过
     llm-budget-per-minute: 30       # 每分钟后台共享配额（LLM+embedding 调用数，进程内令牌桶）

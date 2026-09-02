@@ -34,7 +34,7 @@ class StreamRegistryTest {
         @SuppressWarnings("unchecked")
         FluxSink<String> raw = mock(FluxSink.class);
         List<String> emitted = recordingSink(raw);
-        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "discard");
         s.append("你好，我是爱情顾问。");
         s.append("很高兴认识你。");
         s.flush();
@@ -47,7 +47,7 @@ class StreamRegistryTest {
         @SuppressWarnings("unchecked")
         FluxSink<String> raw = mock(FluxSink.class);
         List<String> emitted = recordingSink(raw);
-        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "discard");
         s.enableMarkerStripping();
         s.append("这是给你的回复。");
         s.append(MARKER + "{\"tiers\":[{\"name\":\"safe\"}]}");
@@ -61,7 +61,7 @@ class StreamRegistryTest {
         @SuppressWarnings("unchecked")
         FluxSink<String> raw = mock(FluxSink.class);
         List<String> emitted = recordingSink(raw);
-        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "discard");
         s.enableMarkerStripping();
         s.append("回复正文第一段");
         s.append("回复正文第二段。@");          // marker 开头散落在此块
@@ -75,7 +75,7 @@ class StreamRegistryTest {
         @SuppressWarnings("unchecked")
         FluxSink<String> raw = mock(FluxSink.class);
         List<String> emitted = recordingSink(raw);
-        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "discard");
         s.cancel();
         s.append("不应被推送");
         s.flush();
@@ -89,10 +89,36 @@ class StreamRegistryTest {
         FluxSink<String> raw = mock(FluxSink.class);
         org.mockito.Mockito.doThrow(new IllegalStateException("sink cancelled"))
                 .when(raw).next(anyString());
-        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "discard");
         s.append("触发一次异常");
         s.append("之后应被静默");
         s.flush();
         assertFalse(s.streamed());
+    }
+
+    @Test
+    void reasoningDiscardedByDefault() {
+        @SuppressWarnings("unchecked")
+        FluxSink<String> raw = mock(FluxSink.class);
+        List<String> emitted = recordingSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "discard");
+        s.appendReasoning("让我想想……这个用户可能是焦虑型依恋。");
+        s.append("正文回答。");
+        s.flush();
+        assertEquals("正文回答。", String.join("", emitted)); // 思考不进用户流
+        assertTrue(s.streamed());
+    }
+
+    @Test
+    void reasoningStreamModePrefixed() {
+        @SuppressWarnings("unchecked")
+        FluxSink<String> raw = mock(FluxSink.class);
+        List<String> emitted = recordingSink(raw);
+        StreamRegistry.StreamSink s = new StreamRegistry.StreamSink(raw, "stream");
+        s.appendReasoning("先判断意图");
+        s.append("正文。");
+        s.flush();
+        String out = String.join("", emitted);
+        assertEquals("\u00a7R\u00a7先判断意图正文。", out); // §R§ 前缀独立于正文
     }
 }
