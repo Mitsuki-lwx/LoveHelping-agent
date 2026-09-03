@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node;
 
+import cn.lwx.lwxaiagent.infrastructure.orchestration.StreamRegistry;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphNodes;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.tools.AgentToolPolicy;
@@ -7,6 +8,7 @@ import cn.lwx.lwxaiagent.infrastructure.orchestration.tools.ToolResolver;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
+import reactor.core.publisher.Flux;
 
 import static org.mockito.Mockito.mock;
 import org.junit.jupiter.api.Test;
@@ -57,7 +59,7 @@ class GraphToolLoopTest {
         AgentToolPolicy policy = new AgentToolPolicy(List.of("terminate", "retrieval"));
         ToolResolver resolver = mock(ToolResolver.class);
         when(resolver.resolve()).thenReturn(new ToolCallback[]{tool});
-        return new AgentLlmNode(model, resolver, policy);
+        return new AgentLlmNode(model, resolver, policy, new StreamRegistry("discard"));
     }
 
     private OverAllState runLlm(AgentLlmNode node, ChatModel model, String userMsg) {
@@ -77,6 +79,8 @@ class GraphToolLoopTest {
         ChatModel model = mock(ChatModel.class);
         when(model.call(any(Prompt.class))).thenReturn(response(assistant(
                 "让我检索一下", List.of(new ToolCall("c1", "function", "searchKnowledge", "{\"query\":\"非暴力沟通\"}")))));
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(response(assistant(
+                "让我检索一下", List.of(new ToolCall("c1", "function", "searchKnowledge", "{\"query\":\"非暴力沟通\"}"))))));
         AgentLlmNode node = llmNode(model, kbTool());
 
         OverAllState state = runLlm(node, model, "搜索知识库非暴力沟通内容");
@@ -90,6 +94,8 @@ class GraphToolLoopTest {
         ChatModel model = mock(ChatModel.class);
         when(model.call(any(Prompt.class))).thenReturn(response(assistant(
                 "根据知识库，非暴力沟通四要素是观察、感受、需要、请求。", List.of())));
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(response(assistant(
+                "根据知识库，非暴力沟通四要素是观察、感受、需要、请求。", List.of()))));
         AgentLlmNode node = llmNode(model, kbTool());
 
         OverAllState state = runLlm(node, model, "搜索知识库非暴力沟通内容");
@@ -103,10 +109,12 @@ class GraphToolLoopTest {
         ChatModel model = mock(ChatModel.class);
         when(model.call(any(Prompt.class))).thenReturn(response(assistant(
                 "让我检索一下", List.of(new ToolCall("c1", "function", "searchKnowledge", "{\"query\":\"非暴力沟通\"}")))));
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(response(assistant(
+                "让我检索一下", List.of(new ToolCall("c1", "function", "searchKnowledge", "{\"query\":\"非暴力沟通\"}"))))));
         AgentLlmNode node = llmNode(model, kbTool());
 
         OverAllState state = runLlm(node, model, "搜索知识库非暴力沟通内容");
-        AgentToolNode toolNode = new AgentToolNode(node, mock(MeterRegistry.class));
+        AgentToolNode toolNode = new AgentToolNode(node, mock(MeterRegistry.class), new StreamRegistry("discard"));
         merge(state, toolNode.apply(state));
 
         Object messages = state.value(GraphStateKeys.MESSAGES).orElse(null);
@@ -120,6 +128,8 @@ class GraphToolLoopTest {
         // 走完一轮 LLM→工具后,再回到 LLM(无工具)→ check
         when(model.call(any(Prompt.class))).thenReturn(response(assistant(
                 "根据知识库：观察/感受/需要/请求。", List.of())));
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(response(assistant(
+                "根据知识库：观察/感受/需要/请求。", List.of()))));
         merge(state, node.apply(state));
         assertEquals(GraphNodes.CHECK, node.hasToolCall(state), "第二轮无工具应结束");
     }
@@ -129,6 +139,7 @@ class GraphToolLoopTest {
         ToolCallback tool = kbTool();
         ChatModel model = mock(ChatModel.class);
         when(model.call(any(Prompt.class))).thenReturn(response(assistant("ok", List.of())));
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(response(assistant("ok", List.of()))));
         AgentLlmNode node = llmNode(model, tool);
         OverAllState st = runLlm(node, model, "x"); // apply 触发 currentTools 解析（含白名单过滤）
         assertEquals(tool, node.resolveTool("searchKnowledge"));

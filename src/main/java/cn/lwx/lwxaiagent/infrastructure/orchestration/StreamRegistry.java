@@ -88,6 +88,8 @@ public class StreamRegistry {
         private volatile boolean stripMarker;
         /** 文本是否已通过真流式转发（ChatEntry 判断是否还需 chunk 兜底） */
         private volatile boolean streamed;
+        /** 工具事件（🔧）是否已由节点实时发出（AgentToolNode 置位，防 ChatEntry 重复发） */
+        private volatile boolean toolsStreamed;
         private volatile boolean cancelled;
 
         StreamSink(FluxSink<String> sink, String reasoningMode) {
@@ -98,6 +100,15 @@ public class StreamRegistry {
         /** 开启 advice marker 剥离（仅话术三级协议请求调用，须在首次 append 前） */
         public synchronized void enableMarkerStripping() {
             this.stripMarker = true;
+        }
+
+        /** 标记工具事件（🔧）已由节点实时发出——ChatEntry 据此跳过兜底 TOOL_EVENTS 转发 */
+        public synchronized void markToolsStreamed() {
+            this.toolsStreamed = true;
+        }
+
+        public boolean toolsStreamed() {
+            return toolsStreamed;
         }
 
         /**

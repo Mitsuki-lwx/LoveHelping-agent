@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node;
 
 import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.StreamRegistry;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphNodes;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.tools.AgentToolPolicy;
@@ -26,6 +27,9 @@ import java.util.Map;
  * Agent 工具循环 · LLM 生成节点（ADR-19 CAP-4，自绘）。
  * 读 {@link GraphStateKeys#MESSAGES}，调用主模型（LlmGateway）生成 assistant 消息
  * （可能带 tool_calls，spring-ai 不开内部执行）；无 tool_calls 时把文本写入 OUTPUT。
+ * <p>2026-09-03 真流式（ADR-21）：`chatModel.stream` + 文本增量经 {@link StreamRegistry}
+ * 实时转发 SSE——中间轮"边想边说"的说明文本、最终轮回复都能打字机呈现；
+ * 聚合用 {@link MessageAggregator}（tool_calls 分片合并），工具判定逻辑不变。</p>
  * <p>工具集每次图执行前实时解析（{@link ToolResolver}）+ 白名单过滤（{@link AgentToolPolicy}）：
  * MCP 懒连接下首次 agent 请求时工具才补入；未在白名单域的工具一律不可见。</p>
  */
@@ -38,13 +42,16 @@ public class AgentLlmNode {
     private final ChatModel chatModel;
     private final ToolResolver toolResolver;
     private final AgentToolPolicy toolPolicy;
+    private final StreamRegistry streamRegistry;
 
     private transient ToolCallback[] currentTools = new ToolCallback[0];
 
-    public AgentLlmNode(ChatModel chatModel, ToolResolver toolResolver, AgentToolPolicy toolPolicy) {
+    public AgentLlmNode(ChatModel chatModel, ToolResolver toolResolver, AgentToolPolicy toolPolicy,
+                        StreamRegistry streamRegistry) {
         this.chatModel = chatModel;
         this.toolResolver = toolResolver;
         this.toolPolicy = toolPolicy;
+        this.streamRegistry = streamRegistry;
     }
 
     public Map<String, Object> apply(OverAllState state) {
@@ -62,6 +69,9 @@ public class AgentLlmNode {
             messages.add(new UserMessage(msg));
         }
 
+        // 2026-09-03 评估后回退：MessageAggregator 聚合在 LlmGateway 流上不稳（实测可致
+        // 空聚合→空流），agent 多轮 tool_calls 语义要求完整响应——保持 call()（9/2 已验证），
+        // 工具事件实时化由 AgentToolNode 承担（🔧 提前到文本前）。normal/simple 主链路已真流式。
         ChatResponse resp = chatModel.call(new Prompt(messages, ToolCallingChatOptions.builder()
                 .toolCallbacks(List.of(currentTools))
                 .internalToolExecutionEnabled(false)

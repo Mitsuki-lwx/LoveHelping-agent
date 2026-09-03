@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.controller;
 
+import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.common.Result;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.AgentResult;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatEntry;
@@ -73,7 +74,15 @@ public class AiController {
                                 @RequestParam(required = false) String mediaIds,
                                 @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
         List<Long> ids = parseMediaIds(mediaIds);
-        AgentResult result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
+        AgentResult result;
+        try {
+            result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
+        } catch (BizException e) {
+            // 护栏阻断（L3/情绪刹车片/prompt 探查拦截）在入口同步抛出——若冒泡出 controller
+            // 会返回 JSON 而非 SSE 流，前端按流解析即"空白"（2026-09-03 实测）。
+            // 改为把给用户的话术作为一条 SSE 消息发出（输出层 ERROR 事件，见 ADR-21）
+            return Flux.just(e.getMessage());
+        }
         if (result instanceof AgentResult.ShallowResult sr) {
             return sr.flux();
         }
@@ -95,7 +104,14 @@ public class AiController {
             @RequestParam(required = false) String mediaIds,
             @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
         List<Long> ids = parseMediaIds(mediaIds);
-        AgentResult result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
+        AgentResult result;
+        try {
+            result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
+        } catch (BizException e) {
+            // 同 chatSse：入口阻断话术作为默认 data 事件发出（不设 event 名，触发前端 onmessage）
+            return Flux.just(org.springframework.http.codec.ServerSentEvent
+                    .<String>builder(e.getMessage()).build());
+        }
         Flux<String> stream = switch (result) {
             case AgentResult.ShallowResult sr -> sr.flux();
             case AgentResult.DeepResult dr -> {

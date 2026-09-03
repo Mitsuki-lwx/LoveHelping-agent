@@ -45,15 +45,22 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
     private final VectorStore vectorStore;
     private final RerankProperties rerankProperties;
     private final JdbcTemplate pgJdbcTemplate;
+    private final org.springframework.ai.embedding.EmbeddingModel embeddingModel;
     private final boolean hybridEnabled;
+    /** 相似度分数日志开关（排查检索质量时开；默认关，避免在线链路多一次 embedding 调用） */
+    private final boolean logScore;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
                                         RerankProperties rerankProperties,
                                         PgvectorProperties pgvectorProperties,
-                                        @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled) {
+                                        @Qualifier("dashscopeEmbeddingModel") org.springframework.ai.embedding.EmbeddingModel embeddingModel,
+                                        @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled,
+                                        @Value("${app.rag.log-score:false}") boolean logScore) {
         this.vectorStore = vectorStore;
         this.rerankProperties = rerankProperties;
+        this.embeddingModel = embeddingModel;
+        this.logScore = logScore;
         // 自建 pg JdbcTemplate（不注册为容器 bean，避免与 MySQL 默认 JdbcTemplate 按类型注入歧义）
         DataSource pgDataSource = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())
@@ -97,10 +104,47 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
                         .append(" title=").append(title.length() > 20 ? title.substring(0, 20) : title)
                         .append(" [").append(snippet.length() > 45 ? snippet.substring(0, 45) : snippet).append("]");
             }
+            if (logScore) {
+                sb.append(" | scores=").append(scoresFor(query, children));
+            }
             log.info("{}", sb);
         } catch (Exception e) {
             log.warn("RAG retrieval logging failed: {}", e.getMessage());
         }
+    }
+
+    /**
+     * 命中文档的余弦相似度（1 - 距离）——Context Precision 量化的分子。
+     * <p>Spring AI 1.1.8 无带分检索 API（jar 中无 SearchResult），故自行 embed 查询后
+     * 用 pgvector {@code <=>} 算子对命中 id 计算；仅在 {@code app.rag.log-score=true} 时调用。</p>
+     */
+    private java.util.Map<String, Double> scoresFor(String query, List<Document> hits) {
+        java.util.Map<String, Double> scores = new java.util.LinkedHashMap<>();
+        if (hits.isEmpty() || embeddingModel == null) {
+            return scores;
+        }
+        try {
+            float[] vec = embeddingModel.embed(query);
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < vec.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append(vec[i]);
+            }
+            sb.append("]");
+            List<String> ids = hits.stream().map(Document::getId).filter(java.util.Objects::nonNull).toList();
+            if (ids.isEmpty()) {
+                return scores;
+            }
+            String in = String.join(",", ids.stream().map(id -> "'" + id + "'").toList());
+            pgJdbcTemplate.query(
+                    "SELECT id::text, 1 - (embedding <=> ?::vector) AS score FROM vector_store WHERE id::text IN (" + in + ")",
+                    rs -> {
+                        scores.put(rs.getString(1), rs.getDouble(2));
+                    }, sb.toString());
+        } catch (Exception e) {
+            log.warn("RAG score logging failed: {}", e.getMessage());
+        }
+        return scores;
     }
 
     /** 混合召回：向量 + pg_trgm 关键词 → RRF 融合（仅知识库子块） */

@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node;
 
+import cn.lwx.lwxaiagent.infrastructure.orchestration.StreamRegistry;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -31,10 +32,12 @@ public class AgentToolNode {
 
     private final AgentLlmNode llmNode;
     private final MeterRegistry meterRegistry;
+    private final StreamRegistry streamRegistry;
 
-    public AgentToolNode(AgentLlmNode llmNode, MeterRegistry meterRegistry) {
+    public AgentToolNode(AgentLlmNode llmNode, MeterRegistry meterRegistry, StreamRegistry streamRegistry) {
         this.llmNode = llmNode;
         this.meterRegistry = meterRegistry;
+        this.streamRegistry = streamRegistry;
     }
 
     public Map<String, Object> apply(OverAllState state) {
@@ -58,13 +61,20 @@ public class AgentToolNode {
         }
         Message last = messages.get(messages.size() - 1);
         if (last instanceof AssistantMessage am && am.getToolCalls() != null) {
+            StreamRegistry.StreamSink sink = streamRegistry.get(chatId);
             for (ToolCall tc : am.getToolCalls()) {
                 ToolCallback cb = llmNode.resolveTool(tc.name());
                 if (cb == null) {
                     log.warn("AgentToolNode: unknown tool '{}', skipping", tc.name());
                     continue;
                 }
-                toolEvents.add(tc.name()); // SSE 🔧 工具可视化（多轮循环累积）
+                toolEvents.add(tc.name()); // SSE 🔧 工具可视化（多轮循环累积，兜底）
+                // 真流式（ADR-21）：🔧 事件在工具执行时实时发给用户（排在后续回答前），
+                // 而非图完成才补发——避免工具卡片跑到最终回答后面
+                if (sink != null) {
+                    sink.append("🔧 调用工具: " + tc.name());
+                    sink.markToolsStreamed();
+                }
                 String result;
                 String outcome = "success";
                 try {

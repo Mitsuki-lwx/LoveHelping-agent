@@ -117,8 +117,13 @@ public class ChatEntry {
                     .thenAccept(result -> {
                         @SuppressWarnings("unchecked")
                         List<String> tools = (List<String>) result.getOrDefault(GraphStateKeys.TOOL_EVENTS, List.of());
-                        for (String t : tools) {
-                            sink.next("🔧 调用工具: " + t);
+                        // 真流式（ADR-21）：agent 工具执行时已实时发 🔧（AgentToolNode 置位）——
+                        // 只有非流式/兜底路径才在此补发，避免重复
+                        boolean toolsAlreadySent = streamSink != null && streamSink.toolsStreamed();
+                        if (!toolsAlreadySent) {
+                            for (String t : tools) {
+                                sink.next("🔧 调用工具: " + t);
+                            }
                         }
                         String output = String.valueOf(result.getOrDefault(GraphStateKeys.OUTPUT, ""));
                         // agent/视觉路径未接真流式（节点不用 registry）→ 兜底 chunk 保持行为
