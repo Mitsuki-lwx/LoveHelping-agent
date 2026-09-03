@@ -1,0 +1,15 @@
+{
+  "description": "检索层 ground truth（Context Precision/Recall 量化）。expect_docs 为期望命中文档的中文关键字——命中判定：RAG_RETRIEVAL 日志的 file= 含任一关键字。2026-09-03 建，跑 scripts/retrieval_eval.py。",
+  "cases": [
+    {"id": "gt_01", "question": "煤气灯效应的三个典型特征是什么？", "expect_docs": ["危险信号：煤气灯效应"]},
+    {"id": "gt_02", "question": "离婚冷静期是多久？从哪年开始施行的？", "expect_docs": ["离婚冷静期：30天的制度"]},
+    {"id": "gt_03", "question": "关系里的末日四骑士具体指哪四种沟通模式？", "expect_docs": ["末日四骑士"]},
+    {"id": "gt_04", "question": "按照法律，返还彩礼需要满足哪些条件？", "expect_docs": ["彩礼与婚约的法律边界"]},
+    {"id": "gt_05", "question": "非暴力沟通的四要素是哪四个？", "expect_docs": ["非暴力沟通表达框架"]},
+    {"id": "gt_06", "question": "异地恋情侣怎么保持亲密感？", "expect_docs": ["让异地亲密保持鲜活"]},
+    {"id": "gt_07", "question": "吵架后对方开始冷战筑墙，我该怎么办？", "expect_docs": ["筑墙", "化解冷战冲突"]},
+    {"id": "gt_08", "question": "怎么向伴侣道歉才不会越道越糟？", "expect_docs": ["如何向伴侣道歉"]},
+    {"id": "gt_09", "question": "出轨或欺骗之后如何一步一步重建信任？", "expect_docs": ["重建关系中的信任"]},
+    {"id": "gt_10", "question": "斯腾伯格的爱情三角理论包含哪三个成分？", "expect_docs": ["爱情三角论"]}
+  ]
+}
