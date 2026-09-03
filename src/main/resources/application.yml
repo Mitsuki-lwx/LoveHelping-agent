@@ -150,8 +150,9 @@ app:
       enabled: true
     hybrid-search:
       enabled: false        # 混合检索（pg_trgm+RRF），数据量5000+时开启
-    # 检索日志是否带相似度分数（默认关：需多一次 embedding 调用；排查检索质量时开）
-    log-score: false
+    # 检索日志带相似度分数（默认开：每次检索多一次 query embedding——百炼 text-embedding-v3
+    # 查询量小成本可忽略；Context Precision 量化与检索质量排查依赖此分数）
+    log-score: true
     # 检索重排（ADR-15 阶段 4，默认关闭灰度）：开启后每条 RAG 多一次 LLM 调用（v1=主线 LLM 打分）
     # rerank:
     #   enabled: false       # true 时检索窗口扩为 topN=50，postretrieval 重排取 topK=5

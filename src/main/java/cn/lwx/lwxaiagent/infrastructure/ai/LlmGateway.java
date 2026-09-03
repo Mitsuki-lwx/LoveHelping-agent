@@ -116,14 +116,78 @@ public class LlmGateway implements ChatModel {
                 }
                 return response;
             } catch (RuntimeException e) {
+                // 不可重试的 4xx（参数/鉴权错误等）重试无意义：直接失败（外层走降级/报错）
+                if (!isRetryable(e)) {
+                    log.warn("LLM {} call failed with non-retryable error (attempt {}/{}): {}",
+                            name, attempt, max, e.getMessage());
+                    throw e;
+                }
                 last = e;
                 log.warn("LLM {} call attempt {}/{} failed: {}", name, attempt, max, e.getMessage());
                 if (attempt < max) {
-                    sleepQuietly(props.getRetry().getBackoffMs() * (1L << (attempt - 1)));
+                    sleepQuietly(retryDelayMs(e, attempt));
                 }
             }
         }
         throw last;
+    }
+
+    /** 429 尊重 Retry-After 的封顶值（秒）——不让单次用户请求被拖死 */
+    private static final long MAX_RETRY_AFTER_SEC = 30;
+
+    /**
+     * 是否值得重试：429（限流）、5xx（服务端）、网络/超时、空回复——可重试；
+     * 4xx（400/401/403/404/422 等参数与鉴权问题）不可重试（2026-09-03 增强）。
+     */
+    private boolean isRetryable(RuntimeException e) {
+        if (e instanceof EmptyContentException) {
+            return true;
+        }
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof org.springframework.web.reactive.function.client.WebClientResponseException wcre) {
+                int status = wcre.getStatusCode().value();
+                return status >= 500 || status == 429;
+            }
+            if (t instanceof org.springframework.web.client.HttpStatusCodeException hsce) {
+                int status = hsce.getStatusCode().value();
+                return status >= 500 || status == 429;
+            }
+            if (t instanceof java.net.SocketTimeoutException || t instanceof java.net.ConnectException
+                    || t instanceof java.net.http.HttpTimeoutException) {
+                return true; // 网络/超时
+            }
+        }
+        return true; // 未知异常默认可重试（保守，宁可重试也不直接放弃）
+    }
+
+    /** 本次重试前的等待：429 且带 Retry-After 用其值（封顶 30s），否则指数退避 */
+    private long retryDelayMs(RuntimeException e, int attempt) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            try {
+                String retryAfter = null;
+                if (t instanceof org.springframework.web.reactive.function.client.WebClientResponseException wcre) {
+                    var h = wcre.getHeaders();
+                    if (h != null) {
+                        retryAfter = h.getFirst("Retry-After");
+                    }
+                } else if (t instanceof org.springframework.web.client.HttpStatusCodeException hsce) {
+                    var h = hsce.getResponseHeaders();
+                    if (h != null) {
+                        retryAfter = h.getFirst("Retry-After");
+                    }
+                }
+                if (retryAfter != null && !retryAfter.isBlank()) {
+                    try {
+                        long sec = (long) Double.parseDouble(retryAfter.trim());
+                        return Math.min(sec, MAX_RETRY_AFTER_SEC) * 1000;
+                    } catch (NumberFormatException ignored) {
+                        // Retry-After 为 HTTP-date 时忽略，退回指数退避
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return props.getRetry().getBackoffMs() * (1L << (attempt - 1));
     }
 
     /** 空回复判定：无 choices / 无 content 文本 / content 全空白。

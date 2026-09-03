@@ -111,4 +111,40 @@ class LlmGatewayTest {
         assertEquals(120.0, promptTokens);
         assertEquals(80.0, completionTokens);
     }
+
+    @Test
+    void fourHundredError_doesNotRetry() {
+        ChatModel primary = mock(ChatModel.class);
+        ChatModel fallback = mock(ChatModel.class);
+        RuntimeException badRequest = new org.springframework.web.reactive.function.client.WebClientResponseException(
+                "bad request", org.springframework.http.HttpStatusCode.valueOf(400), "Bad Request",
+                null, null, null, null);
+        when(primary.call(any(Prompt.class))).thenThrow(badRequest);
+
+        LlmGatewayProperties p = props();
+        p.setFallbackEnabled(false); // 4xx 直接失败（重试无意义）
+        LlmGateway gateway = new LlmGateway(primary, fallback, p, new SimpleMeterRegistry());
+        // fallback 关闭时 4xx 直接失败包装为 BizException（不进入无意义重试）
+        assertThrows(cn.lwx.lwxaiagent.common.BizException.class, () -> gateway.call(new Prompt("hi")));
+        verify(primary, times(1)).call(any(Prompt.class)); // 只调一次，未重试
+    }
+
+    @Test
+    void rateLimit_errorIsRetriedWithRetryAfter() throws Exception {
+        ChatModel primary = mock(ChatModel.class);
+        ChatModel fallback = mock(ChatModel.class);
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.add("Retry-After", "1");
+        org.springframework.web.reactive.function.client.WebClientResponseException tooMany =
+                new org.springframework.web.reactive.function.client.WebClientResponseException(
+                        "rate limited", org.springframework.http.HttpStatusCode.valueOf(429), "Too Many Requests",
+                        headers, null, null, null);
+        when(primary.call(any(Prompt.class)))
+                .thenThrow(tooMany)
+                .thenReturn(response("ok", 10, 5)); // 第二次成功
+
+        LlmGateway gateway = new LlmGateway(primary, fallback, props(), new SimpleMeterRegistry());
+        gateway.call(new Prompt("hi")); // 429 → 尊重 Retry-After(1s) 重试 → 成功
+        verify(primary, times(2)).call(any(Prompt.class));
+    }
 }
