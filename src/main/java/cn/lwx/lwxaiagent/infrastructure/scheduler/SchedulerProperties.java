@@ -21,6 +21,10 @@ public class SchedulerProperties {
     /** 单轮调度最长执行毫秒数：超出即结束本轮，剩余候选留待下轮 */
     private long maxRunMs = 60_000;
 
+    /** 在线优先（ADR-20 补强，2026-09-03）：有在线请求在途/近期活跃时，本轮后台调度
+     *  直接让路跳过——避免与用户争抢同一条 LLM 通道（9/1 实测后台 20 分钟 89 次 embedding） */
+    private boolean yieldToOnline = true;
+
     /** 空转退避：连续 N 轮无候选后，实际执行频率按 2 的幂衰减（封顶 max-multiplier 倍） */
     private IdleBackoff idleBackoff = new IdleBackoff();
 

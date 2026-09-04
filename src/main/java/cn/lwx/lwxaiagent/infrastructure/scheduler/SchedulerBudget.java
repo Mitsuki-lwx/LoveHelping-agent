@@ -23,6 +23,8 @@ public class SchedulerBudget {
 
     private final SchedulerProperties props;
     private final MeterRegistry meterRegistry;
+    /** 在线负载感知（可为 null：单测或未装配时按"无在线负载"处理） */
+    private final OnlineLoadTracker onlineLoad;
 
     /** 每调度器状态：连续空转轮数（candidates=0） */
     private final Map<String, AtomicInteger> idleRounds = new ConcurrentHashMap<>();
@@ -32,9 +34,12 @@ public class SchedulerBudget {
     private final AtomicLong tokens = new AtomicLong();
     private final AtomicLong lastRefillNanos = new AtomicLong(System.nanoTime());
 
-    public SchedulerBudget(SchedulerProperties props, MeterRegistry meterRegistry) {
+    public SchedulerBudget(SchedulerProperties props, MeterRegistry meterRegistry,
+                           @org.springframework.beans.factory.annotation.Autowired(required = false)
+                           OnlineLoadTracker onlineLoad) {
         this.props = props;
         this.meterRegistry = meterRegistry;
+        this.onlineLoad = onlineLoad;
         this.tokens.set(props.getLlmBudgetPerMinute());
     }
 
@@ -90,6 +95,13 @@ public class SchedulerBudget {
      */
     public int allowance(String name, int want) {
         try {
+            // 在线优先（ADR-20 补强 2026-09-03）：用户在等回答时后台让路，
+            // 不与其争抢同一条 LLM 通道（9/1 实测后台 20 分钟 89 次 embedding 挤占在线）
+            if (props.isYieldToOnline() && onlineLoad != null && onlineLoad.isOnlineActive()) {
+                log.info("Scheduler {} yielded to online traffic (inflight={})", name, onlineLoad.inFlight());
+                skipped(name, "yield-to-online");
+                return 0;
+            }
             refill();
             long available = tokens.get();
             if (available <= 0) {

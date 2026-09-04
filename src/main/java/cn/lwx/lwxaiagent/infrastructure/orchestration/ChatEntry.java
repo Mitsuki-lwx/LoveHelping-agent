@@ -29,6 +29,8 @@ public class ChatEntry {
     private final CapabilityRouter router;
     private final GraphRunner graphRunner;
     private final StreamRegistry streamRegistry;
+    /** 在线负载/并发闸门（ADR-20 补强 + OWASP LLM10，2026-09-03） */
+    private final cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker onlineLoad;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
     private final io.micrometer.tracing.Tracer tracer;
 
@@ -42,6 +44,7 @@ public class ChatEntry {
                      CapabilityRouter router,
                      GraphRunner graphRunner,
                      StreamRegistry streamRegistry,
+                     cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker onlineLoad,
                      io.micrometer.core.instrument.MeterRegistry meterRegistry,
                      io.micrometer.tracing.Tracer tracer,
                      @Value("${app.emotion-brake.enabled:true}") boolean emotionBrakeEnabled,
@@ -52,6 +55,7 @@ public class ChatEntry {
         this.router = router;
         this.graphRunner = graphRunner;
         this.streamRegistry = streamRegistry;
+        this.onlineLoad = onlineLoad;
         this.meterRegistry = meterRegistry;
         this.tracer = tracer;
         this.emotionBrakeEnabled = emotionBrakeEnabled;
@@ -77,6 +81,11 @@ public class ChatEntry {
         // ① 入口交叉关注点（保留）
         guardrailCheck(message, continueBrake);
         rateLimiter.checkQuota(userId);
+        // 全局并发闸门（OWASP LLM10）：在线请求同时超过 app.online.max-inflight 时
+        // 直接给用户友好提示，避免 LLM 被打满（可用性 + 成本双重失控）
+        if (onlineLoad != null && !onlineLoad.enter()) {
+            throw new BizException(4003, "当前咨询比较多，稍等一下再问我会更好。");
+        }
 
         // ② 话术三级判定
         boolean advice = router.isAdviceRequest(message);
@@ -152,7 +161,12 @@ public class ChatEntry {
 
         // ⑥ 后处理
         rateLimiter.increment(userId);
-        return new AgentResult.ShallowResult(flux);
+        // 在线在途计数随 SSE 生命周期回收（完成/取消/异常都会触发 doFinally）
+        return new AgentResult.ShallowResult(flux.doFinally(sig -> {
+            if (onlineLoad != null) {
+                onlineLoad.exit();
+            }
+        }));
     }
 
     // ==================== 交叉关注点 ====================

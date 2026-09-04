@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SchedulerBudgetTest {
 
     private SchedulerBudget budget(SchedulerProperties props) {
-        return new SchedulerBudget(props, new SimpleMeterRegistry());
+        return new SchedulerBudget(props, new SimpleMeterRegistry(), null);
     }
 
     @Test
