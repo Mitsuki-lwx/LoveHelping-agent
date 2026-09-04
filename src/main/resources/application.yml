@@ -144,10 +144,12 @@ app:
     # 视觉模型（ADR-11）：基于 GoPlan 端点换 model 即多模态；未配置则图片聊天不可用
     vision-model: mimo-v2.5
 
-  # RAG 查询改写开关（ADR-15）：开启时检索前用 LLM 改写用户查询（每轮多一次 LLM 调用）
+  # RAG 查询改写开关（ADR-15）：开启时检索前用 LLM 改写用户查询（每轮多一次 LLM 调用）。
+  # 2026-09-04 评测实锤：改写劣化严重（"冷战筑墙怎么办"被压成"吵架"、关键实体丢失、
+  # 偶发注入猜测词）→ 默认关闭，用原始 query 检索（诊断：原始 query 目标文档在 top5 内）
   rag:
     query-rewrite:
-      enabled: true
+      enabled: false
     hybrid-search:
       enabled: false        # 混合检索（pg_trgm+RRF），数据量5000+时开启
     # 检索日志带相似度分数（默认开：每次检索多一次 query embedding——百炼 text-embedding-v3

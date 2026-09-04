@@ -35,7 +35,7 @@ def main():
             {"prompt": c["question"], "chatId": c["id"]})
         r = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
         urllib.request.urlopen(r, timeout=180).read()
-        time.sleep(1.2)  # 等日志落盘
+        time.sleep(3.0)  # 等日志落盘
         added = read_log()[lines_before:]
         hit = [l for l in added if "RAG_RETRIEVAL" in l]
         files = []
