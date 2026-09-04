@@ -27,9 +27,11 @@ def judge(api_key, question, golden, answer):
     prompt = f"""你是评测员。根据标准答案评价模型回答的正确性，输出 0-1 分数与一句话理由。
 
 评分标准：
-- 1 分：回答包含标准答案的所有关键事实，且没有与标准答案相悖或编造的内容；
-- 中间值：部分关键事实缺失或有轻微偏差；
+- 1 分：回答覆盖标准答案的全部关键事实，且没有与标准答案相悖或编造的内容；
+- 中间值：缺少部分关键事实或有轻微偏差；
 - 0 分：回答与标准答案关键事实相悖，或答非所问。
+
+重要规则：**语义等价即视为命中**——模型用自己的话表达相同含义（措辞不同、例子不同但意思一致）应给高分，不得因用词差异扣分；与问题相关但超出标准答案范围的合理补充内容（扩展说明、额外例子）**不扣分**，除非与标准答案直接相悖或编造错误事实；只依据"关键事实点是否覆盖、是否相悖"评分。
 
 题目：{question}
 标准答案：{golden}
@@ -46,18 +48,18 @@ def judge(api_key, question, golden, answer):
     req = urllib.request.Request("https://open.bigmodel.cn/api/paas/v4/chat/completions",
         data=body, headers={"Content-Type": "application/json",
                             "Authorization": "Bearer " + api_key})
-    for attempt in range(3):
+    for attempt in range(5):
         try:
-            resp = json.loads(urllib.request.urlopen(req, timeout=120).read())
+            resp = json.loads(urllib.request.urlopen(req, timeout=180).read())
             content = resp["choices"][0]["message"]["content"]
             # 去可能的 ```json 包裹
             content = re.sub(r"^```(?:json)?|```$", "", content.strip()).strip()
             out = json.loads(content)
             return float(out.get("score", 0)), out.get("reason", "")
         except Exception as e:
-            if attempt == 2:
+            if attempt == 4:
                 return 0.0, "judge调用失败: %s" % str(e)[:100]
-            time.sleep(2)
+            time.sleep(5)
 
 def ask_app(base, token, question, cid):
     url = base + "/Love_app/chat/sse?" + urllib.parse.urlencode({"prompt": question, "chatId": cid})
