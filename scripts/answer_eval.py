@@ -80,6 +80,7 @@ def main():
     ap.add_argument("--base", default="http://localhost:13263/api")
     ap.add_argument("--cases", default=os.path.join(ROOT, "scripts", "retrieval-ground-truth.json"))
     ap.add_argument("--api-key", default=None)
+    ap.add_argument("--rounds", type=int, default=3)
     args = ap.parse_args()
     key = args.api_key or load_zhipu_key()
     gt = json.load(io.open(args.cases, encoding="utf-8"))["cases"]
@@ -90,21 +91,31 @@ def main():
         headers={"Content-Type": "application/json"})
     token = json.loads(urllib.request.urlopen(req, timeout=30).read())["token"]
 
-    print("%-8s %-16s %-5s %s" % ("case", "AC分数", "判词", "reason 摘要"))
-    scores = []
+    # rounds 默认 3：flash 生成与 judge 均有波动，多轮均值才可信
+    rounds = max(1, min(5, args.rounds))
+    print("%-8s %-24s %-6s %s" % ("case", "各轮AC分(3轮)", "均值", "最差轮 reason"))
+    means = []
     for c in gt:
-        answer = ask_app(args.base, token, c["question"], "ac_" + c["id"])
-        if not answer:
-            print("%-8s %-16s %-5s 空回复" % (c["id"], "-", "-"))
-            continue
-        s, reason = judge(key, c["question"], c["golden_answer"], answer)
-        scores.append(s)
-        print("%-8s %-16s %-5.2f %s" % (c["id"], (s > 0.7 and "正确") or
-              (s >= 0.4 and "部分") or "错误", s, reason[:70]))
-        time.sleep(0.5)
-    if scores:
-        print("\nAnswer Correctness 均值: %.2f (n=%d)" %
-              (sum(scores) / len(scores), len(scores)))
+        per = []
+        worst = ("", 0.0)
+        for rnd in range(rounds):
+            answer = ask_app(args.base, token, c["question"], "ac_" + c["id"] + "_r" + str(rnd))
+            if not answer:
+                per.append(0.0)
+                continue
+            s, reason = judge(key, c["question"], c["golden_answer"], answer)
+            per.append(s)
+            if reason and (worst[1] == 0.0 or s < worst[1]):
+                worst = (reason[:60], s)
+            time.sleep(0.3)
+        m = sum(per) / len(per)
+        means.append(m)
+        tag = "正确" if m > 0.7 else ("部分" if m >= 0.4 else "错误")
+        print("%-8s %-24s %-6.2f %s" % (c["id"], " ".join("%.2f" % x for x in per), m,
+              ("(全部正确)" if worst[0] == "" else worst[0])))
+    if means:
+        print("\nAnswer Correctness 均值(多轮): %.2f (n=%d, rounds=%d)" %
+              (sum(means) / len(means), len(means), rounds))
 
 if __name__ == "__main__":
     main()

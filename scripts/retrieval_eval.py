@@ -1,67 +1,50 @@
-"""检索层评测（Context Precision/Recall）——用 retrieval-ground-truth.json 的用例实测。
+"""检索层评测（Context Precision/Recall）——直接调 admin 检索端点（2026-09-04 v2）。
 
-用法：python scripts/retrieval_eval.py --base http://localhost:5612/api
-依赖：应用在跑（含 RAG 检索日志 RAG_RETRIEVAL）、MySQL/Redis 可达、注册接口可用。
-原理：每条用例串行发 /chat/sse（唯一 chatId），请求前后对比 app 日志新增的
-RAG_RETRIEVAL 行（advisor 线程无 chatId，串行时新增行即本请求），提取 file= 列表，
-与 expect_docs 比对算 Precision@5 与 Recall。
+v2 变更：不再嗅探应用日志（依赖单实例/日志路径，多实例混写会假阴性），改为
+GET /admin/rag/retrieve（admin 鉴权）直接跑 retriever 拿父文档命中列表——
+绕过 classify 路由（simple 分支不检索的波动问题消失），且同文档多块在父级去重，
+P@5 口径更准（每文件一票）。
+
+用法：ADMIN_API_KEY=xxx python scripts/retrieval_eval.py --base http://localhost:PORT/api
 """
-import argparse, io, json, os, re, sys, time, urllib.request, urllib.parse
-
-LOG = os.path.join(os.environ.get("TEMP", "/tmp"), "main-app.log")
-
-def read_log():
-    with io.open(LOG, encoding="utf-8", errors="replace") as f:
-        return f.read().splitlines()
+import argparse, io, json, os, re, time, urllib.request, urllib.parse
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="http://localhost:5612/api")
-    ap.add_argument("--cases", default=os.path.join(os.path.dirname(__file__), "retrieval-ground-truth.json"))
+    ap.add_argument("--base", default="http://localhost:12753/api")
+    ap.add_argument("--cases", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "retrieval-ground-truth.json"))
+    ap.add_argument("--admin-key", default=os.environ.get("ADMIN_API_KEY", ""))
     args = ap.parse_args()
+    if not args.admin_key:
+        raise SystemExit("需要 ADMIN_API_KEY 环境变量或 --admin-key")
     gt = json.load(io.open(args.cases, encoding="utf-8"))["cases"]
 
-    user = "gteval_%d" % int(time.time())
-    req = urllib.request.Request(args.base + "/auth/register",
-        data=json.dumps({"username": user, "password": "Passw0rd!123"}).encode(),
-        headers={"Content-Type": "application/json"})
-    token = json.loads(urllib.request.urlopen(req, timeout=30).read())["token"]
+    def retrieve(q):
+        url = args.base + "/admin/rag/retrieve?" + urllib.parse.urlencode({"query": q})
+        r = urllib.request.Request(url, headers={"X-Admin-Key": args.admin_key})
+        return json.loads(urllib.request.urlopen(r, timeout=60).read())["hits"]
 
-    precisions, recalls = [], []
-    print("%-8s %-28s %-5s %-5s %s" % ("case", "期望文档", "P@5", "Recall", "命中top5"))
+    recalls, mrrs, skipped = [], [], 0
+    print("%-8s %-28s %-6s %-6s %s" % ("case", "期望文档", "Recall", "MRR@5", "命中top5"))
     for c in gt:
-        # classify 路由不稳定（simple/quick 分支不检索）→ 无 RAG 行的例重试最多 2 次，
-        # 仍无则标记 N/A（不算失败，避免评测被路由波动污染）
-        hit, retried = [], 0
-        while not hit and retried <= 2:
-            lines_before = len(read_log())
-            url = args.base + "/Love_app/chat/sse?" + urllib.parse.urlencode(
-                {"prompt": c["question"], "chatId": c["id"] + "_r" + str(retried)})
-            r = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
-            urllib.request.urlopen(r, timeout=180).read()
-            time.sleep(3.5)  # 等日志落盘（scores 计算使日志行延迟）
-            added = read_log()[lines_before:]
-            hit = [l for l in added if "RAG_RETRIEVAL" in l]
-            retried += 1
-        if not hit:
-            print("%-8s %-28s N/A  (classify 未走 RAG 检索)" % (c["id"], "/".join(c["expect_docs"])[:28]))
+        try:
+            files = retrieve(c["question"])
+        except Exception as e:
+            print("%-8s %-28s ERROR %s" % (c["id"], "/".join(c["expect_docs"])[:28], str(e)[:60]))
+            skipped += 1
             continue
-        files = []
-        if hit:
-            for m in re.finditer(r"file=([^ |\]]+)", hit[-1]):
-                files.append(m.group(1))
-        # files 里含中文文件名（GBK 终端显示乱码但读文件是 UTF-8）
         exp = c["expect_docs"]
-        hits_top5 = [f for f in files[:5] if any(k in f for k in exp)]
-        p = len(hits_top5) / 5.0
-        rec = 1.0 if hits_top5 else 0.0  # 每例期望 1 篇（gt_07 两篇判 or）
-        precisions.append(p); recalls.append(rec)
-        exp_s = "/".join(exp)
-        print("%-8s %-28s %-5.2f %-5.2f %s" % (c["id"], exp_s[:28], p, rec,
-              ", ".join(f[:18] for f in files[:5])[:60]))
-    if precisions:
-        print("\nContext Precision@5 均值: %.2f | Recall 均值: %.2f" %
-              (sum(precisions)/len(precisions), sum(recalls)/len(recalls)))
+        rank = next((i + 1 for i, f in enumerate(files[:5]) if any(k in f for k in exp)), None)
+        rec = 1.0 if rank else 0.0
+        mrr = 1.0 / rank if rank else 0.0
+        recalls.append(rec); mrrs.append(mrr)
+        print("%-8s %-28s %-6.2f %-6.2f %s" % (c["id"], "/".join(exp)[:28], rec, mrr,
+              ", ".join(f[:18] for f in files[:5])[:58]))
+        time.sleep(0.3)
+    if recalls:
+        print("\nRecall@5 均值: %.2f | MRR@5 均值: %.3f (n=%d%s)" %
+              (sum(recalls)/len(recalls), sum(mrrs)/len(mrrs),
+               len(recalls), ", skipped=%d" % skipped if skipped else ""))
 
 if __name__ == "__main__":
     main()

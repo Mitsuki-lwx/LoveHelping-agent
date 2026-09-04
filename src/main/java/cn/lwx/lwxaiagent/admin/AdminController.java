@@ -18,13 +18,17 @@ public class AdminController {
     private final AdminGuard adminGuard;
     private final CanaryConfig canaryConfig;
     private final SkillIngestor skillIngestor;
+    /** 检索器（评测/排查用——绕过 classify 与日志，直接看检索层命中） */
+    private final org.springframework.ai.rag.retrieval.search.DocumentRetriever documentRetriever;
 
     public AdminController(GoldenSetRunner goldenSetRunner, AdminGuard adminGuard,
-                           CanaryConfig canaryConfig, SkillIngestor skillIngestor) {
+                           CanaryConfig canaryConfig, SkillIngestor skillIngestor,
+                           cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever documentRetriever) {
         this.goldenSetRunner = goldenSetRunner;
         this.adminGuard = adminGuard;
         this.canaryConfig = canaryConfig;
         this.skillIngestor = skillIngestor;
+        this.documentRetriever = documentRetriever;
     }
 
     @PostMapping("/golden-set/run")
@@ -64,5 +68,25 @@ public class AdminController {
         log.info("Batch vectorization triggered by admin");
         int count = skillIngestor.vectorizeAllApproved();
         return Map.of("success", true, "vectorized", count);
+    }
+
+    /**
+     * 检索层调试/评测端点（admin）：直接跑 retriever（不经 classify/聊天链路），
+     * 返回命中的父文档 filename 列表——检索评测从"日志嗅探"升级为显式 API。
+     */
+    @GetMapping("/rag/retrieve")
+    public Map<String, Object> ragRetrieve(@RequestParam String query, HttpServletRequest request) {
+        adminGuard.check(request);
+        var docs = documentRetriever.retrieve(new org.springframework.ai.rag.Query(query));
+        var files = new java.util.LinkedHashSet<String>();
+        for (var d : docs) {
+            Object f = d.getMetadata().get("filename");
+            if (f != null) {
+                files.add(f.toString());
+            }
+        }
+        log.info("Admin rag/retrieve query='{}' hits={} files={}", query.length() > 40 ? query.substring(0, 40) : query,
+                docs.size(), files.size());
+        return Map.of("query", query, "hits", new java.util.ArrayList<>(files));
     }
 }
