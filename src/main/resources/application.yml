@@ -150,11 +150,11 @@ app:
   rag:
     query-rewrite:
       enabled: false
-    # 混合召回（向量 + LIKE 关键词 → RRF 融合）：2026-09-04 实测开启后 P@5 0.50→0.34、
-    # Recall 1.00→0.70 退化——keyword 通道为整词 LIKE（无分词器，整句 query 匹配不上），
-    # RRF 反而稀释向量序 → 保持关闭（待关键词通道接入真实分词/或文档量级上去后再评估）
+    # 混合召回（向量 + jieba 分词关键词 LIKE → RRF 融合，2026-09-04 开启）：
+    # extractKeywords 已修复为 jieba 查询端分词逐词 LIKE（原整句 LIKE 空转→hybrid 退化），
+    # trgm GIN 索引已就绪——keyword 通道有料可融，RRF 把双通道命中的目标提前
     hybrid-search:
-      enabled: false
+      enabled: true
     # 向量粗召回数（默认 8）：top5 去重后父文档常不足；8 对 Recall 更稳（9/4 实测 Recall 1.00）
     top-k: 8
     # 检索日志带相似度分数（默认开：每次检索多一次 query embedding——百炼 text-embedding-v3

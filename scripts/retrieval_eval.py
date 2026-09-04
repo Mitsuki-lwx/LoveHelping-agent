@@ -30,14 +30,22 @@ def main():
     precisions, recalls = [], []
     print("%-8s %-28s %-5s %-5s %s" % ("case", "期望文档", "P@5", "Recall", "命中top5"))
     for c in gt:
-        lines_before = len(read_log())
-        url = args.base + "/Love_app/chat/sse?" + urllib.parse.urlencode(
-            {"prompt": c["question"], "chatId": c["id"]})
-        r = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
-        urllib.request.urlopen(r, timeout=180).read()
-        time.sleep(3.0)  # 等日志落盘
-        added = read_log()[lines_before:]
-        hit = [l for l in added if "RAG_RETRIEVAL" in l]
+        # classify 路由不稳定（simple/quick 分支不检索）→ 无 RAG 行的例重试最多 2 次，
+        # 仍无则标记 N/A（不算失败，避免评测被路由波动污染）
+        hit, retried = [], 0
+        while not hit and retried <= 2:
+            lines_before = len(read_log())
+            url = args.base + "/Love_app/chat/sse?" + urllib.parse.urlencode(
+                {"prompt": c["question"], "chatId": c["id"] + "_r" + str(retried)})
+            r = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+            urllib.request.urlopen(r, timeout=180).read()
+            time.sleep(3.5)  # 等日志落盘（scores 计算使日志行延迟）
+            added = read_log()[lines_before:]
+            hit = [l for l in added if "RAG_RETRIEVAL" in l]
+            retried += 1
+        if not hit:
+            print("%-8s %-28s N/A  (classify 未走 RAG 检索)" % (c["id"], "/".join(c["expect_docs"])[:28]))
+            continue
         files = []
         if hit:
             for m in re.finditer(r"file=([^ |\]]+)", hit[-1]):

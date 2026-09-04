@@ -223,24 +223,49 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         }
     }
 
-    /** 从（改写后）查询提取 2-6 字关键词：空白/顿号分隔 + 去停用词 + 长度过滤 */
+    /**
+     * 中文分词提取关键词（2026-09-04 修复）：原实现按空白/标点切整段——中文无空格，
+     * "冷战筑墙怎么办"被当成一个整词 LIKE，关键词通道近乎空转（hybrid 退化根因）。
+     * 现用 jieba 对查询分词（SEARCH 细粒度），逐词 LIKE 可命中专有实体（筑墙/冷战/道歉）。
+     */
     private List<String> extractKeywords(String query) {
         List<String> out = new java.util.ArrayList<>();
-        if (query == null) return out;
-        for (String w : query.split("[\s，,、。]+")) {
-            String t = w.trim();
-            if (t.length() < 2 || t.length() > 12) continue;
-            if (STOP_WORDS.contains(t)) continue;
-            out.add(t);
-            if (out.size() >= 6) break;
+        if (query == null || query.isBlank()) return out;
+        try {
+            for (com.huaban.analysis.jieba.SegToken tok :
+                    JIEBA.process(query, com.huaban.analysis.jieba.JiebaSegmenter.SegMode.SEARCH)) {
+                String t = tok.word.trim();
+                if (t.length() < 2 || t.length() > 12) continue;      // 中文词一般≥2字；跳过单字防海量命中
+                if (STOP_WORDS.contains(t)) continue;
+                if (!t.matches("[\\p{IsHan}A-Za-z0-9\\-]+")) continue; // 剔除标点/符号碎片
+                out.add(t);
+                if (out.size() >= 6) break;
+            }
+        } catch (Exception e) {
+            log.warn("jieba segment failed (fallback raw split): {}", e.getMessage());
+        }
+        // 兜底：分词结果为空（纯英文/异常）退回按空白切
+        if (out.isEmpty()) {
+            for (String w : query.split("[\s，,、。]+")) {
+                String t = w.trim();
+                if (t.length() >= 2 && t.length() <= 12 && !STOP_WORDS.contains(t)) {
+                    out.add(t);
+                    if (out.size() >= 6) break;
+                }
+            }
         }
         return out;
     }
 
+    /** jieba 分词器实例（线程安全、词典随 classpath 自动加载） */
+    private static final com.huaban.analysis.jieba.JiebaSegmenter JIEBA =
+            new com.huaban.analysis.jieba.JiebaSegmenter();
+
     private static final java.util.Set<String> STOP_WORDS = java.util.Set.of(
             "的", "了", "吗", "呢", "是", "我", "你", "他", "她", "请", "帮", "给", "在", "不",
             "也", "都", "就", "想", "要", "说", "回答", "写", "列", "出", "具体", "内容", "步骤",
-            "怎么", "什么", "如何", "为什么", "应该", "and", "or", "the", "a", "to", "how", "what", "for");
+            "怎么", "什么", "如何", "为什么", "应该", "以及", "或者", "一个", "一些", "起来",
+            "and", "or", "the", "a", "to", "how", "what", "for");
 
     /** 子块 → 父块全文（无 parent_text 的老数据回退为子块原文） */
     private Document toParent(Document child) {

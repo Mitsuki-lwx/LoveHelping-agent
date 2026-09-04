@@ -99,6 +99,14 @@
     <!-- ======================== 项目依赖 ======================== -->
     <dependencies>
 
+        <!-- 中文分词（RAG 关键词检索，2026-09-04）：jieba 词典内置、零配置；
+             仅用于查询端分词（extractKeywords），替代原整句 LIKE -->
+        <dependency>
+            <groupId>com.huaban</groupId>
+            <artifactId>jieba-analysis</artifactId>
+            <version>1.0.2</version>
+        </dependency>
+
         <!-- ========== Spring Boot 基础 Starter ========== -->
 
         <!-- Spring MVC + 内嵌 Tomcat，提供 REST API 能力 -->
