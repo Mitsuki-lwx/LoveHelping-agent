@@ -150,8 +150,13 @@ app:
   rag:
     query-rewrite:
       enabled: false
+    # 混合召回（向量 + LIKE 关键词 → RRF 融合）：2026-09-04 实测开启后 P@5 0.50→0.34、
+    # Recall 1.00→0.70 退化——keyword 通道为整词 LIKE（无分词器，整句 query 匹配不上），
+    # RRF 反而稀释向量序 → 保持关闭（待关键词通道接入真实分词/或文档量级上去后再评估）
     hybrid-search:
-      enabled: false        # 混合检索（pg_trgm+RRF），数据量5000+时开启
+      enabled: false
+    # 向量粗召回数（默认 8）：top5 去重后父文档常不足；8 对 Recall 更稳（9/4 实测 Recall 1.00）
+    top-k: 8
     # 检索日志带相似度分数（默认开：每次检索多一次 query embedding——百炼 text-embedding-v3
     # 查询量小成本可忽略；Context Precision 量化与检索质量排查依赖此分数）
     log-score: true

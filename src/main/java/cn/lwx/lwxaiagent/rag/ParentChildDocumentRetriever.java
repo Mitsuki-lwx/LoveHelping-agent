@@ -39,7 +39,7 @@ import java.util.stream.Collectors;
 @Component
 public class ParentChildDocumentRetriever implements DocumentRetriever {
 
-    private static final int DEFAULT_TOP_K = 5;
+    // topK 由配置 app.rag.top-k 接管（2026-09-04，原硬编码 5 提高至默认 8）
     private static final int RRF_K = 60;
 
     private final VectorStore vectorStore;
@@ -49,6 +49,8 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
     private final boolean hybridEnabled;
     /** 相似度分数日志开关（排查检索质量时开；默认关，避免在线链路多一次 embedding 调用） */
     private final boolean logScore;
+    /** 向量粗召回数（app.rag.top-k；默认 8：top5 去重后父文档数常不足，扩到 8 稳 Recall） */
+    private final int topK;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
@@ -56,11 +58,13 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
                                         PgvectorProperties pgvectorProperties,
                                         @Qualifier("dashscopeEmbeddingModel") org.springframework.ai.embedding.EmbeddingModel embeddingModel,
                                         @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled,
-                                        @Value("${app.rag.log-score:false}") boolean logScore) {
+                                        @Value("${app.rag.log-score:false}") boolean logScore,
+                                        @Value("${app.rag.top-k:8}") int topK) {
         this.vectorStore = vectorStore;
         this.rerankProperties = rerankProperties;
         this.embeddingModel = embeddingModel;
         this.logScore = logScore;
+        this.topK = Math.max(3, topK);
         // 自建 pg JdbcTemplate（不注册为容器 bean，避免与 MySQL 默认 JdbcTemplate 按类型注入歧义）
         DataSource pgDataSource = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())
@@ -74,11 +78,11 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
 
     @Override
     public List<Document> retrieve(Query query) {
-        int topK = rerankProperties.isEnabled() && "llm".equals(rerankProperties.getMode())
-                ? rerankProperties.getTopN() : DEFAULT_TOP_K;
+        int k = rerankProperties.isEnabled() && "llm".equals(rerankProperties.getMode())
+                ? rerankProperties.getTopN() : topK;
         List<Document> children = hybridEnabled
-                ? hybridRetrieve(query.text(), topK)
-                : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(topK).build());
+                ? hybridRetrieve(query.text(), k)
+                : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k).build());
         List<Document> parents = children.stream().map(this::toParent).collect(Collectors.toList());
         logRetrieved(query.text(), children);
         return parents;
