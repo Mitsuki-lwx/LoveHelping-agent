@@ -40,6 +40,24 @@ public class CapabilityRouter {
     }
 
     /**
+     * 域外话题检测（2026-09-05，agent_eval off 用例驱动）：明显与恋爱/关系无关的请求
+     * （写代码/作业/办公文档等工程学术类）→ 拦截并引导，不进入 LLM 作答。
+     * glm-flash 对 prompt 级拒绝遵循弱（中英文 Scope 段实测无效）→ 规则层确定性兜底。
+     * 保守规则：只锁"明显工程/学术/办公"意图，生活闲聊（天气/电影等）放行到工具链。
+     */
+    public boolean isOffTopic(String message) {
+        if (message == null || message.isBlank()) return false;
+        boolean hit = message.matches("(?i).*(" +
+                "帮我?写.{0,12}(代码|程序|脚本|函数|算法|冒泡|二分|递归|排序|作业|论文|简历|python|java|sql)|" +  // 帮我写一段冒泡排序代码
+                "写.{0,8}(代码|程序|python|java|javascript|rust|sql|shell|bash)|" +             // 写一个Java二分查找
+                "(二分|冒泡|快排|排序|递归|二叉树|链表|动态规划).{0,6}(算法|实现|代码)|" +                  // 二分查找实现
+                "leetcode|力扣|编程题|作业|论文|开题|答辩|毕业设计|简历|ppt|excel表格|表格公式|" +
+                "翻译.{0,6}(文档|句子|文章)|数学题|物理题|化学题|电路).*");
+        boolean relationshipContext = message.matches("(?i).*(ta|对象|男朋友|女朋友|老公|老婆|伴侣|他|她|我们).{0,10}(代码|编程|程序|作业).*");
+        return hit && !relationshipContext;
+    }
+
+    /**
      * 简单问题判定（ADR-19 CAP-2）：问候/感谢/短情绪句 → 走最短路径直接回答。
      * 规则：不命中工具意图与话术请求 + 长度受限 + 无疑问词/检索词 + 匹配正例关键词或短句。
      * 误判面小（最坏情况 = 普通对话节点等价输出），由检查节点兜底。

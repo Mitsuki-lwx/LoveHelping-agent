@@ -13,6 +13,8 @@ public final class GraphNodes {
     public static final String ROUTE = "route";
     /** 简单问题直接回答 */
     public static final String QUICK_ANSWER = "quick_answer";
+    /** 域外话题拒绝（R_OFF_TOPIC → 固定引导，不调 LLM） */
+    public static final String OFF_TOPIC = "off_topic";
     /** 普通对话（记忆 + 知识库上下文 + 话术三级） */
     public static final String NORMAL = "normal";
     /** 沙盘对话（人设 + 沙盘记忆 + 动态情绪） */

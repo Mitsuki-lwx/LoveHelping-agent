@@ -6,6 +6,7 @@ import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.AgentToolNode;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.CheckNode;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.GraphVisionNode;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.NormalChatNode;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.OffTopicNode;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.SandboxChatNode;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node.QuickAnswerNode;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphObservability;
@@ -43,6 +44,7 @@ public class OrchestrationGraph {
 
     private final CapabilityRouter router;
     private final QuickAnswerNode quickAnswerNode;
+    private final OffTopicNode offTopicNode;
     private final NormalChatNode normalChatNode;
     private final SandboxChatNode sandboxChatNode;
     private final AgentLlmNode agentLlmNode;
@@ -61,9 +63,11 @@ public class OrchestrationGraph {
     static final String R_SANDBOX = "sandbox";
     static final String R_AGENT = "agent";
     static final String R_VISION = "vision";
+    static final String R_OFF_TOPIC = "off_topic";
 
     public OrchestrationGraph(CapabilityRouter router,
                               QuickAnswerNode quickAnswerNode,
+                              OffTopicNode offTopicNode,
                               NormalChatNode normalChatNode,
                               SandboxChatNode sandboxChatNode,
                               AgentLlmNode agentLlmNode,
@@ -74,6 +78,7 @@ public class OrchestrationGraph {
                               RedisSaver redisSaver) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
         this.router = router;
         this.quickAnswerNode = quickAnswerNode;
+        this.offTopicNode = offTopicNode;
         this.normalChatNode = normalChatNode;
         this.sandboxChatNode = sandboxChatNode;
         this.agentLlmNode = agentLlmNode;
@@ -91,6 +96,7 @@ public class OrchestrationGraph {
         // —— 节点 ——
         stateGraph.addNode(GraphNodes.CLASSIFY, n(GraphNodes.CLASSIFY, this::classify));
         stateGraph.addNode(GraphNodes.QUICK_ANSWER, n(GraphNodes.QUICK_ANSWER, quickAnswerNode::apply));
+        stateGraph.addNode(GraphNodes.OFF_TOPIC, n(GraphNodes.OFF_TOPIC, offTopicNode::apply));
         stateGraph.addNode(GraphNodes.NORMAL, n(GraphNodes.NORMAL, normalChatNode::apply));
         stateGraph.addNode(GraphNodes.SANDBOX, n(GraphNodes.SANDBOX, sandboxChatNode::apply));
         stateGraph.addNode(GraphNodes.AGENT_LLM, n(GraphNodes.AGENT_LLM, agentLlmNode::apply));
@@ -101,6 +107,7 @@ public class OrchestrationGraph {
         // —— 固定边 ——
         stateGraph.addEdge(START, GraphNodes.CLASSIFY);
         stateGraph.addEdge(GraphNodes.QUICK_ANSWER, GraphNodes.CHECK);
+        stateGraph.addEdge(GraphNodes.OFF_TOPIC, GraphNodes.CHECK);
         stateGraph.addEdge(GraphNodes.NORMAL, GraphNodes.CHECK);
         stateGraph.addEdge(GraphNodes.SANDBOX, GraphNodes.CHECK);
         stateGraph.addEdge(GraphNodes.VISION, GraphNodes.CHECK);
@@ -112,7 +119,7 @@ public class OrchestrationGraph {
                 edge(this::category),
                 Map.of(R_SIMPLE, GraphNodes.QUICK_ANSWER, R_NORMAL, GraphNodes.NORMAL,
                         R_SANDBOX, GraphNodes.SANDBOX, R_AGENT, GraphNodes.AGENT_LLM,
-                        R_VISION, GraphNodes.VISION));
+                        R_VISION, GraphNodes.VISION, R_OFF_TOPIC, GraphNodes.OFF_TOPIC));
 
         // —— 条件边：agent_llm → 有工具调用? agent_tool / 无 → check ——
         stateGraph.addConditionalEdges(GraphNodes.AGENT_LLM,
@@ -136,7 +143,10 @@ public class OrchestrationGraph {
 
     private String classifyInner(OverAllState state) {
         String r;
-        if (state.value(GraphStateKeys.FORCE_AGENT).map(v -> Boolean.TRUE.equals(v)).orElse(false)) {
+        String preMsg = state.value(GraphStateKeys.MESSAGE).map(Object::toString).orElse("");
+        if (router.isOffTopic(preMsg)) {
+            r = R_OFF_TOPIC; // 域外话题（写代码等）规则拦截 → 固定引导（2026-09-05）
+        } else if (state.value(GraphStateKeys.FORCE_AGENT).map(v -> Boolean.TRUE.equals(v)).orElse(false)) {
             r = R_AGENT; // LoveManus 通道强制走工具循环
         } else if (state.value(GraphStateKeys.SANDBOX_ID).isPresent()) {
             r = R_SANDBOX;
