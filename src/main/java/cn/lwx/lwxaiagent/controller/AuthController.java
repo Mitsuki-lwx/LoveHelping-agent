@@ -125,8 +125,8 @@ public class AuthController {
         String password = body.get("password");
         // 获取租户 ID，未提供时使用默认值 "default"
         String tenantId = body.getOrDefault("tenantId", "default");
-        // 获取角色，未提供时默认分配 "USER" 角色
-        String role = body.getOrDefault("role", "USER");
+        // 安全（2026-09-05 高危修复 #1）：忽略请求体 role，公开注册恒为 USER（防自封 ADMIN）
+        String role = "USER";
 
         // 参数校验：用户名和密码不能为空
         if (username == null || password == null || username.isBlank() || password.isBlank()) {

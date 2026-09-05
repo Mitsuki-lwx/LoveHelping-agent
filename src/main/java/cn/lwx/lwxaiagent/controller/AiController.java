@@ -220,7 +220,14 @@ public class AiController {
      */
     @GetMapping("Love_app/chat/LoveManus/task/{taskId}")
     public Result<cn.lwx.lwxaiagent.entity.AgentTask> getAgentTask(@PathVariable Long taskId) {
-        return Result.ok(chatService.getAgentTask(taskId));
+        // 安全（2026-09-05 高危修复 #3）：任务归属校验——非本人/非 ADMIN 一律 403
+        cn.lwx.lwxaiagent.entity.AgentTask task = agentTaskService.get(taskId);
+        String me = TenantContext.getUserId();
+        boolean admin = "ADMIN".equals(TenantContext.getRole());
+        if (!admin && (task == null || me == null || !me.equals(task.getUserId()))) {
+            throw new cn.lwx.lwxaiagent.common.BizException(403, "无权访问该任务");
+        }
+        return Result.ok(task);
     }
 
     /**
@@ -228,6 +235,15 @@ public class AiController {
      */
     @GetMapping("Love_app/chat/LoveManus/stop/{sessionId}")
     public Result<String> stopLoveManus(@PathVariable String sessionId) {
+        // 安全（2026-09-05 高危修复 #3）：会话归属校验——匿名/非本人不可停他人会话
+        String me = TenantContext.getUserId();
+        boolean admin = "ADMIN".equals(TenantContext.getRole());
+        if (!admin) {
+            String owner = memoryService.getOwnerUserId(sessionId);
+            if (me == null || owner == null || !me.equals(owner)) {
+                throw new cn.lwx.lwxaiagent.common.BizException(403, "无权停止该会话");
+            }
+        }
         return Result.ok(chatService.stopAgent(sessionId));
     }
 

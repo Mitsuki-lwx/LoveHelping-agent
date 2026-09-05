@@ -126,7 +126,9 @@ public class UserService {
             throw new RuntimeException("用户名已存在");
         }
         if (tenantId == null || tenantId.isBlank()) tenantId = "default";
-        if (role == null || role.isBlank()) role = "USER";
+        // 安全（2026-09-05 高危修复 #1）：公开注册入口一律 USER——请求体 role 不可信，
+        // 杜绝注册自封 ADMIN 越权。管理员账号只经受控路径创建（flyway seed / 内部工具）。
+        role = "USER";
 
         userMapper.insert(new User(username, passwordEncoder.encode(password), tenantId, role));
         log.info("User registered: username={}, tenant={}", username, tenantId);

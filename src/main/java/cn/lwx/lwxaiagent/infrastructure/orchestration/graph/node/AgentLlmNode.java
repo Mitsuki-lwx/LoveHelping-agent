@@ -44,7 +44,13 @@ public class AgentLlmNode {
     private final AgentToolPolicy toolPolicy;
     private final StreamRegistry streamRegistry;
 
-    private transient ToolCallback[] currentTools = new ToolCallback[0];
+    /**
+     * 工具集缓存（2026-09-05 高危修复 #5）：原为实例字段且每次 apply 覆写——
+     * 多请求并发时 A 覆写后 B 可能读到 A 的工具集（AgentToolNode 跨节点 resolveTool 复用）。
+     * 工具集对全请求相同，改为首次解析后固定缓存（volatile 可见性），消除覆写竞态。
+     * 注：MCP 懒连接（首次执行工具才补入）与"首次解析即缓存"兼容——首请求 resolve 即含已连 MCP。
+     */
+    private volatile ToolCallback[] cachedTools;
 
     public AgentLlmNode(ChatModel chatModel, ToolResolver toolResolver, AgentToolPolicy toolPolicy,
                         StreamRegistry streamRegistry) {
@@ -55,8 +61,15 @@ public class AgentLlmNode {
     }
 
     public Map<String, Object> apply(OverAllState state) {
-        // 实时解析 + 白名单过滤（MCP 懒连接：首次执行时工具才补入）
-        this.currentTools = toolPolicy.filter(toolResolver.resolve());
+        // 首次解析 + 白名单过滤，之后复用缓存（消除每请求覆写竞态）
+        if (cachedTools == null) {
+            synchronized (this) {
+                if (cachedTools == null) {
+                    cachedTools = toolPolicy.filter(toolResolver.resolve());
+                }
+            }
+        }
+        ToolCallback[] currentTools = cachedTools;
         List<Message> messages = new ArrayList<>();
         Object existing = state.value(GraphStateKeys.MESSAGES).orElse(null);
         if (existing instanceof List<?> l) {
@@ -115,8 +128,9 @@ public class AgentLlmNode {
 
     /** 工具名 → 匹配的 ToolCallback */
     public ToolCallback resolveTool(String name) {
-        if (name == null || currentTools == null) return null;
-        for (ToolCallback cb : currentTools) {
+        ToolCallback[] tools = cachedTools;
+        if (name == null || tools == null) return null;
+        for (ToolCallback cb : tools) {
             if (name.equals(cb.getToolDefinition().name())) return cb;
         }
         return null;
