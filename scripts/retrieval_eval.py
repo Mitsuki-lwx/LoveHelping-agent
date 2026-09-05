@@ -34,7 +34,21 @@ def main():
             skipped += 1
             continue
         exp = c["expect_docs"]
-        rank = next((i + 1 for i, f in enumerate(files[:5]) if any(k in f for k in exp)), None)
+        # expect_mode: any(默认，同文档关键字变体) / all(多跳，要求全部文档都命中 top5)
+        mode = c.get("expect_mode", "any")
+        hit_pos = []
+        for i, f in enumerate(files[:5]):
+            if any(k in f for k in exp):
+                hit_pos.append(i + 1)
+        rank = hit_pos[0] if hit_pos else None
+        if mode == "all":
+            # 多跳：期望文档都要被召回，MRR 用最晚命中的位置
+            need = len(exp)
+            got = len(hit_pos)
+            if got == need:
+                rank = hit_pos[-1]  # 全部命中才算 Recall；MRR 取最晚位置
+            else:
+                rank = None
         rec = 1.0 if rank else 0.0
         mrr = 1.0 / rank if rank else 0.0
         recalls.append(rec); mrrs.append(mrr)

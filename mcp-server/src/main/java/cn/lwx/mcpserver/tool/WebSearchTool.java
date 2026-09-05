@@ -201,7 +201,7 @@ public class WebSearchTool {
      *         如果无搜索结果，返回空字符串 {@code ""}。
      *         如果发生错误，返回对应的错误描述字符串。
      */
-    @Tool(description = "Search the internet for current information using Google Search. Returns up to 5 search results with titles, snippets, and URLs. Use this to find up-to-date information, news, or facts that are not in the local knowledge base.")
+    @Tool(description = "Search the internet for CURRENT/EXTERNAL information only (recent policy changes, news, movies, weather, facts NOT in the local knowledge base). Do NOT use this for stable relationship/psychology/law domain questions that the local knowledge base (searchKnowledge) already covers - prefer searchKnowledge first for domain questions. Use this only when the question needs real-time data or the knowledge base has no coverage.")
     public String searchWeb(@ToolParam(description = "Search query keyword") String query) {
         // 参数校验：查询关键词不能为空
         if (!StringUtils.hasText(query)) {
