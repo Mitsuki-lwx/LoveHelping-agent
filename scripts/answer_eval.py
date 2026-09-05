@@ -96,6 +96,8 @@ def main():
     print("%-8s %-24s %-6s %s" % ("case", "各轮AC分(3轮)", "均值", "最差轮 reason"))
     means = []
     for c in gt:
+        if not c.get("golden_answer"):
+            continue  # 无标准答案的例只作检索用例
         per = []
         worst = ("", 0.0)
         for rnd in range(rounds):
