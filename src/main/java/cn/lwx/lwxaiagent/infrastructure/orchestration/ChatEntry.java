@@ -191,6 +191,13 @@ public class ChatEntry {
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked ({}): {}", verdict.ruleId(),
                     prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
+            // 可观测（2026-09-05 可观测测试发现）：L3 阻断此前不计任何指标——
+            // 08 §2.2 承诺的 guardrail.trigger{level,rule_id}（误报率数据源）与
+            // chat.request（含被拦截请求）在此补齐，否则护栏行为完全不可观测。
+            meterRegistry.counter("guardrail.trigger", "level", "3",
+                    "rule_id", verdict.ruleId()).increment();
+            meterRegistry.counter("chat.request", "mode", "blocked",
+                    "status", "l3").increment();
             String fallback = "self_harm".equals(verdict.ruleId())
                     ? "我注意到你现在的状态可能非常难受。如果你正在经历难以承受的时刻，请一定联系专业援助：全国心理援助热线 400-161-9995，北京心理危机研究与干预中心 010-82951332。你不需要独自面对，我们慢慢聊。"
                     : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
