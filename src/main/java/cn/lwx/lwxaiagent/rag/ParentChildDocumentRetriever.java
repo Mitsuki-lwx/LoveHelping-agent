@@ -191,7 +191,8 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         }
         try {
             StringBuilder sql = new StringBuilder("SELECT id, content, metadata::text FROM vector_store ")
-                    .append("WHERE metadata ->> 'parent_id' IS NOT NULL AND (");
+                    // 2026-09-05：父子切块改为 overlap 扁平（无 parent_id）——去掉过滤，全块可被关键词命中
+                    .append("WHERE (");
             java.util.List<Object> params = new java.util.ArrayList<>();
             for (int i = 0; i < words.size(); i++) {
                 if (i > 0) sql.append(" OR ");

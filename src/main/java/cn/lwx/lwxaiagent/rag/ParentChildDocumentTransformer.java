@@ -17,91 +17,79 @@ import java.util.List;
  */
 public class ParentChildDocumentTransformer implements DocumentTransformer {
 
-    /** 父块目标长度（字符） */
-    private static final int PARENT_TARGET = 1500;
-    /** 子块目标长度（字符） */
-    private static final int CHILD_TARGET = 400;
-    /** 子块最小长度（字符）：过短的碎片没有独立语义，宁可与下一句合并 */
-    private static final int CHILD_MIN = 120;
+    /** 目标块长（字符）：2026-09-05 由父子索引改为 overlap 扁平切块——两轮对照评测
+     * （69 文档库 overlap MRR 0.906 vs 父子 0.817；扩 3 篇长文后 0.848 vs 0.842）
+     * overlap 从未输过且无父子链复杂度、注入更省上下文 → 父子为过度设计。 */
+    private static final int TARGET = 400;
+    /** 相邻块共享尾部长度（字符）：交界语义两边都完整，防止切点截断 */
+    private static final int OVERLAP = 80;
 
     @Override
     public List<Document> apply(List<Document> documents) {
-        List<Document> children = new ArrayList<>();
+        List<Document> chunks = new ArrayList<>();
         for (Document doc : documents) {
-            splitParent(doc, children);
+            splitOverlap(doc, chunks);
         }
-        return children;
+        return chunks;
     }
 
     /**
-     * 单个文档 → 多个父块 → 每个父块切子块。
+     * 句子级滑动窗口切块：句子为最小单位（保语义），累积到 TARGET 收块，
+     * 下一块起点回溯到距本块尾约 OVERLAP 的句子（交界语义在相邻块都完整）。
      */
-    private void splitParent(Document doc, List<Document> out) {
-        List<String> parents = splitByParagraphs(doc.getText(), PARENT_TARGET);
-        for (int p = 0; p < parents.size(); p++) {
-            String parentText = parents.get(p);
-            String parentId = (String) doc.getMetadata().getOrDefault("source", "doc") + "#p" + p;
-            List<String> childTexts = splitBySentences(parentText, CHILD_TARGET);
-            for (int c = 0; c < childTexts.size(); c++) {
-                Document child = new Document(childTexts.get(c), doc.getMetadata());
-                child.getMetadata().put("parent_id", parentId);
-                child.getMetadata().put("parent_text", parentText);
-                child.getMetadata().put("chunk", "child");
-                out.add(child);
+    private void splitOverlap(Document doc, List<Document> out) {
+        List<String> sentences = splitSentences(doc.getText());
+        if (sentences.isEmpty()) {
+            return;
+        }
+        int start = 0;
+        int idx = 0;
+        while (start < sentences.size()) {
+            StringBuilder buf = new StringBuilder();
+            int end = start;
+            while (end < sentences.size() && (buf.length() < TARGET || end == start)) {
+                buf.append(sentences.get(end));
+                end++;
             }
+            String chunkText = buf.toString().trim();
+            if (!chunkText.isEmpty()) {
+                Document d = new Document(chunkText, new java.util.HashMap<>(doc.getMetadata()));
+                d.getMetadata().put("chunk", "overlap");
+                d.getMetadata().put("chunk_index", idx++);
+                out.add(d);
+            }
+            if (end >= sentences.size()) {
+                break;
+            }
+            // 下一窗口起点：从 end 回溯，让重叠部分约 OVERLAP 字（至少前进一句防死循环）
+            int next = end;
+            int tail = 0;
+            while (next > start + 1 && tail < OVERLAP) {
+                next--;
+                tail += sentences.get(next).length();
+            }
+            start = next;
         }
     }
 
-    /**
-     * 按空行段落聚合到目标长度。
-     */
-    private List<String> splitByParagraphs(String text, int target) {
-        List<String> result = new ArrayList<>();
-        String[] paragraphs = text.split("\\n\\s*\\n");
-        StringBuilder buf = new StringBuilder();
-        for (String p : paragraphs) {
-            String s = p.trim();
-            if (s.isEmpty()) {
-                continue;
-            }
-            if (buf.length() + s.length() > target && buf.length() > 0) {
-                result.add(buf.toString().trim());
-                buf.setLength(0);
-            }
-            buf.append(s).append("\n");
-        }
-        if (buf.length() > 0) {
-            result.add(buf.toString().trim());
-        }
-        return result;
-    }
-
-    /**
-     * 按句子边界（。！？…以及换行后的整段结束）切到目标长度；无边界时按字符硬切。
-     * <p><b>历史 bug</b>：此前把单个 {@code \n} 也当句子边界，而 Markdown 每行都有换行，
-     * 导致"一满 40 字符就切一刀"，{@code CHILD_TARGET} 从未生效——实测库内子块平均仅 46 字符。
-     * 现改为：仅以中英文句末标点为边界，且块长须先达到 {@code CHILD_MIN}。</p>
-     */
-    private List<String> splitBySentences(String text, int target) {
-        List<String> result = new ArrayList<>();
+    /** 按中英文句末标点切句（保留标点），容忍无标点长段 */
+    private List<String> splitSentences(String text) {
+        List<String> out = new ArrayList<>();
         StringBuilder buf = new StringBuilder();
         for (int i = 0; i < text.length(); i++) {
             char ch = text.charAt(i);
             buf.append(ch);
-            boolean isBoundary = "。！？…；!?".indexOf(ch) >= 0;
-            if (buf.length() >= target || (isBoundary && buf.length() >= CHILD_MIN)) {
-                result.add(buf.toString().trim());
+            if ("。！？…；!?".indexOf(ch) >= 0) {
+                String s = buf.toString().trim();
+                if (!s.isEmpty()) {
+                    out.add(s);
+                }
                 buf.setLength(0);
             }
         }
-        if (buf.length() > 0) {
-            // 尾巴过短则并入上一块，避免产生"——让对方闭嘴。"这类无语义碎片
-            if (!result.isEmpty() && buf.length() < CHILD_MIN) {
-                result.set(result.size() - 1, (result.get(result.size() - 1) + buf).trim());
-            } else {
-                result.add(buf.toString().trim());
-            }
+        if (!buf.toString().trim().isEmpty()) {
+            out.add(buf.toString().trim());
         }
-        return result;
+        return out;
     }
 }
