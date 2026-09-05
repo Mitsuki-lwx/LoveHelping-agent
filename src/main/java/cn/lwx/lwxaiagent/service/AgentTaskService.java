@@ -24,9 +24,12 @@ public class AgentTaskService {
     private static final int HEARTBEAT_TIMEOUT_MINUTES = 10;
 
     private final AgentTaskMapper taskMapper;
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
-    public AgentTaskService(AgentTaskMapper taskMapper) {
+    public AgentTaskService(AgentTaskMapper taskMapper,
+                            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.taskMapper = taskMapper;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -68,6 +71,8 @@ public class AgentTaskService {
 
     /** 完成：→ SUCCESS（带产物引用） */
     public void succeed(Long taskId, String resultRef, long tokenUsage) {
+        // 可观测（2026-09-05）：agent.task{status}——08 §2.2 契约兑现
+        meterRegistry.counter("agent.task", "status", "success").increment();
         AgentTask task = taskMapper.selectById(taskId);
         if (task == null) {
             return;
@@ -82,6 +87,7 @@ public class AgentTaskService {
 
     /** 失败：→ FAILED（归因） */
     public void fail(Long taskId, String errorCode, String errorMsg) {
+        meterRegistry.counter("agent.task", "status", "failed").increment();
         AgentTask task = taskMapper.selectById(taskId);
         if (task == null) {
             return;
@@ -99,6 +105,7 @@ public class AgentTaskService {
 
     /** 取消：→ CANCELLED */
     public void cancel(Long taskId) {
+        meterRegistry.counter("agent.task", "status", "cancelled").increment();
         AgentTask task = taskMapper.selectById(taskId);
         if (task == null) {
             return;

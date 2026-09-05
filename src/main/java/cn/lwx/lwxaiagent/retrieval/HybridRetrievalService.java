@@ -34,10 +34,14 @@ public class HybridRetrievalService {
     /** RRF 常数 k（防止除以零） */
     private static final int RRF_K = 60;
 
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
     public HybridRetrievalService(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
                                    PgvectorProperties pgvectorProperties,
-                                   @Value("${app.rag.hybrid-search.enabled:true}") boolean hybridEnabled) {
+                                   @Value("${app.rag.hybrid-search.enabled:true}") boolean hybridEnabled,
+                                   io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.vectorStore = vectorStore;
+        this.meterRegistry = meterRegistry;
         DataSource ds = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())
                 .username(pgvectorProperties.getUsername())
@@ -52,6 +56,17 @@ public class HybridRetrievalService {
      * 检索入口：向量检索（或混合检索，开启时）。
      */
     public List<Document> search(String query, int userTopK, String tenantId) {
+        // 可观测（2026-09-05）：rag.hit/rag.empty——空结果率监控数据源（08 §2.2 契约兑现）
+        List<Document> result = doSearch(query, userTopK, tenantId);
+        meterRegistry.counter("rag.hit", "store", "pgvector").increment();
+        if (result.isEmpty()) {
+            meterRegistry.counter("rag.empty", "store", "pgvector").increment();
+        }
+        return result;
+    }
+
+    /** 原检索实现（被 search 包装打点，2026-09-05） */
+    private List<Document> doSearch(String query, int userTopK, String tenantId) {
         if (!hybridEnabled) {
             // 纯向量检索
             return vectorStore.similaritySearch(SearchRequest.builder().query(query).topK(userTopK).build());

@@ -61,8 +61,12 @@ public class SkillRetriever {
      *
      * @param props 进化系统配置属性对象
      */
-    public SkillRetriever(EvolutionProperties props) {
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
+    public SkillRetriever(EvolutionProperties props,
+                          io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.props = props;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -128,6 +132,10 @@ public class SkillRetriever {
         }
 
         log.info("SkillRetriever injected {} skills for tenant={}", count, tenantId);
+        // 可观测（2026-09-05）：skill.injection——进化模块实际注入效果（08 §2.2 契约兑现）
+        if (count > 0) {
+            meterRegistry.counter("skill.injection").increment();
+        }
         return sb.toString();
     }
 
