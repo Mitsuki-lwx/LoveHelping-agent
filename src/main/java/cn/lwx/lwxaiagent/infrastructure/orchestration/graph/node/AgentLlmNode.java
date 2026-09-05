@@ -77,9 +77,16 @@ public class AgentLlmNode {
                 if (o instanceof Message m) messages.add(m);
             }
         } else {
-            // 首次：用用户消息建立初始消息
+            // 首次：系统提示（身份/护栏/工具分工——2026-09-05 中危修复：此前无 SystemMessage，
+            // agent 裸跑无系统约束）+ 用户消息
             String msg = state.value(GraphStateKeys.MESSAGE).map(Object::toString).orElse("");
+            messages.add(new org.springframework.ai.chat.messages.SystemMessage(systemPrompt()));
             messages.add(new UserMessage(msg));
+        }
+        // 步数计数（防无上限工具循环烧配额）
+        int step = state.value(GraphStateKeys.AGENT_STEP).map(v -> ((Number) v).intValue()).orElse(0) + 1;
+        if (step > MAX_STEPS) {
+            log.warn("AgentLlmNode: max steps {} reached, forcing end of tool loop", MAX_STEPS);
         }
 
         // 2026-09-03 评估后回退：MessageAggregator 聚合在 LlmGateway 流上不稳（实测可致
@@ -102,11 +109,16 @@ public class AgentLlmNode {
             log.warn("AgentLlmNode: model returned non-assistant output, ending cycle");
             out.put(GraphStateKeys.MESSAGES, messages);
         }
+        out.put(GraphStateKeys.AGENT_STEP, step);
         return out;
     }
 
     /** 有工具调用则回工具节点，否则结束循环进检查 */
     public String hasToolCall(OverAllState state) {
+        int step = state.value(GraphStateKeys.AGENT_STEP).map(v -> ((Number) v).intValue()).orElse(0);
+        if (step >= MAX_STEPS) {
+            return GraphNodes.CHECK; // 步数上限（2026-09-05）：强制结束工具循环
+        }
         Object existing = state.value(GraphStateKeys.MESSAGES).orElse(null);
         if (existing instanceof List<?> l && !l.isEmpty()) {
             Object last = l.get(l.size() - 1);

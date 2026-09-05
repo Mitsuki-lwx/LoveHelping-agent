@@ -92,6 +92,9 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         GuardrailResult outputCheck = outputGuardrail.check(outputText, userText);
         if (outputCheck.blocked()) {
             log.warn("Output guardrail: {}", outputCheck.reason());
+            // 中危修复（2026-09-05）：blocked 输出不得外发——替换为通用引导话术
+            // （此前仅记日志，'最后防线'形同虚设；agent/非流路径均走本方法）
+            return fallbackResponse(BLOCK_TEXT);
         }
         return response;
     }

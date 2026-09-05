@@ -240,6 +240,15 @@ public class MemoryService {
         } catch (Exception e) {
             log.warn("Failed to delete conversation mapping: {}", e.getMessage());
         }
+        // 中危修复（2026-09-05）：清除会话须连坐派生记忆——否则软删后 conversation_summary
+        // 与 user_memory 仍注入后续对话（'已清除记忆仍被记住'）。facts 保留 hit_count 追溯历史
+        // 无意义，一并清；CANDIDATE 低置信也清（来源已不可追溯）。
+        try {
+            jdbcTemplate.update("DELETE FROM conversation_summary WHERE conversation_id = ?", conversationId);
+            jdbcTemplate.update("DELETE FROM user_memory WHERE source_conversation_id = ?", conversationId);
+        } catch (Exception e) {
+            log.warn("Failed to clear derived memory: {}", e.getMessage());
+        }
         log.info("Cleared memory for conversation: {}", conversationId);
     }
 }

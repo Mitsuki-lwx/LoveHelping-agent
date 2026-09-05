@@ -161,7 +161,14 @@ public class SkillReflector {
                 log.info("Reflected {} valid skills from session {} (votes: {})",
                         valid.size(), chatId, votes.size());
             } else {
-                log.info("No valid skills reflected from session {}", chatId);
+                // 中危修复（2026-09-05）：无有效产出也打占位标记（is_active=0）——
+                // 防止该会话永远留在候选、每 5 分钟重复反思烧 LLM 配额
+                try {
+                    skillMapper.insertSkipMark(chatId);
+                } catch (Exception e) {
+                    log.warn("Failed to insert reflection skip mark for {}: {}", chatId, e.getMessage());
+                }
+                log.info("No valid skills reflected from session {} (skip-marked)", chatId);
             }
 
         } catch (Exception e) {

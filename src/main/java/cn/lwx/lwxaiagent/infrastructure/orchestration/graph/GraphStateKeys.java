@@ -34,6 +34,8 @@ public final class GraphStateKeys {
     public static final String ADVICE_TIERS = "adviceTiers";
     /** 强制走工具循环（LoveManus 通道，forceAgent=true 时置位） */
     public static final String FORCE_AGENT = "forceAgent";
+    /** agent 工具循环步数计数（2026-09-05 中危修复：限制无上限循环） */
+    public static final String AGENT_STEP = "agentStep";
     /** 本轮执行过的工具名（List&lt;String&gt;，SSE 🔧 可视化用） */
     public static final String TOOL_EVENTS = "toolEvents";
     /** 图路径 trace（List&lt;String&gt; 节点名序列，CAP-7 可观测） */

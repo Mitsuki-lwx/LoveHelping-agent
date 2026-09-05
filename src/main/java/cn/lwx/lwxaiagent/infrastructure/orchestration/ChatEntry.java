@@ -123,6 +123,9 @@ public class ChatEntry {
             String regKey = chatId == null ? "anon" : chatId;
             StreamRegistry.StreamSink streamSink = streamRegistry.register(regKey, sink);
             graphRunner.runAsync(input, regKey)
+                    // 中危修复（2026-09-05）：图执行超时保护——90s 未完成则结束 SSE
+                    // （模型悬挂时此前无限等待：SSE 永不结束 + 在线闸门计数泄漏）
+                    .orTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
                     .thenAccept(result -> {
                         @SuppressWarnings("unchecked")
                         List<String> tools = (List<String>) result.getOrDefault(GraphStateKeys.TOOL_EVENTS, List.of());

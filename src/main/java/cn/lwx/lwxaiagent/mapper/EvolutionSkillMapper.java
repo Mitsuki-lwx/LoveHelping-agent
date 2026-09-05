@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Insert;
 
 import java.util.List;
 
@@ -55,6 +56,15 @@ public interface EvolutionSkillMapper extends BaseMapper<EvolutionSkill> {
      */
     @Select("SELECT COUNT(*) FROM evolution_skill WHERE source_session_id = #{sessionId}")
     int countBySessionId(@Param("sessionId") String sessionId);
+
+    /**
+     * 零产出占位（2026-09-05 中危修复）：反思无有效技能时插 is_active=0 占位行——
+     * 让 {@code source_session_id} 去重生效，避免该会话永久重候选、每 5min 重复烧 LLM。
+     * 检索方均过滤 is_active=1，占位行不参与任何技能消费。
+     */
+    @Insert("INSERT INTO evolution_skill (tenant_id, skill_name, description, content, source_session_id, quality_score, is_active) "
+            + "VALUES ('default', '__reflected_no_skill__', '', '', #{sessionId}, 0, 0)")
+    int insertSkipMark(@Param("sessionId") String sessionId);
 
     /**
      * 查询指定租户下全部活跃的进化技能，按质量评分降序排列。

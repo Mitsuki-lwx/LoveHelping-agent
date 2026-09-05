@@ -72,7 +72,8 @@ public class OutputGuardrail {
      */
     private static final List<String> SELF_HARM_KEYWORDS = List.of(
             "自杀", "自残", "了结自己", "不想活", "了此残生", "寻短见",
-            "结束生命", "轻生", "割腕", "跳楼", "吃药自杀"
+            "结束生命", "轻生", "割腕", "跳楼", "吃药自杀",
+            "想死", "活不下去", "撑不下去", "不想再醒", "离开这个世界", "伤害自己", "结束自己"
     );
 
     /**
