@@ -55,8 +55,7 @@ import java.util.List;
  * <h3>为什么 KnowledgeSearchTool 由 Spring 注入而其他手动 new</h3>
  * <p>
  * {@link KnowledgeSearchTool} 使用了 {@code @Component} 注解并依赖了 Spring 管理的其他 Bean
- *（如 {@link cn.lwx.lwxaiagent.retrieval.HybridRetrievalService}、
- * {@link cn.lwx.lwxaiagent.retrieval.MilvusVectorRetriever} 等），
+ *（如 rag/ 检索内核、MCP 工具等），
  * 必须通过 Spring 依赖注入来管理其生命周期。
  * 而其他工具类是无状态的简单工具，无需依赖注入，手动实例化即可。
  * </p>

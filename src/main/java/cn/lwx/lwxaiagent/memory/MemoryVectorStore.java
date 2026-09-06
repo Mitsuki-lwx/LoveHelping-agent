@@ -1,6 +1,5 @@
 package cn.lwx.lwxaiagent.memory;
 
-import cn.lwx.lwxaiagent.retrieval.HybridRetrievalService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -20,16 +19,13 @@ import java.util.Map;
 public class MemoryVectorStore {
 
     private final VectorStore vectorStore;
-    private final HybridRetrievalService retrievalService;
 
     private static final String SOURCE_KEY = "source";
     private static final String SOURCE_MEMORY = "memory";
     private static final String USER_ID_KEY = "userId";
 
-    public MemoryVectorStore(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
-                             HybridRetrievalService retrievalService) {
+    public MemoryVectorStore(@Qualifier("PgVectorVectorStore") VectorStore vectorStore) {
         this.vectorStore = vectorStore;
-        this.retrievalService = retrievalService;
     }
 
     /**

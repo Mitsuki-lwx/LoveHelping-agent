@@ -83,6 +83,12 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         List<Document> children = hybridEnabled
                 ? hybridRetrieve(query.text(), k)
                 : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k).build());
+        // 双轨收敛（2026-09-06）：过滤记忆/技能块（source=memory|evolution）——知识库检索只回文档
+        // （此前向量通道无过滤，用户记忆/已学技能可能被当知识库上下文注入，与显式注入重复/串扰）
+        children = children.stream()
+                .filter(d -> !"memory".equals(d.getMetadata().get("source"))
+                        && !"evolution".equals(d.getMetadata().get("source")))
+                .toList();
         List<Document> parents = children.stream().map(this::toParent).collect(Collectors.toList());
         logRetrieved(query.text(), children);
         return parents;

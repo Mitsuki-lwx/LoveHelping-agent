@@ -18,9 +18,10 @@ def main():
     if not args.admin_key:
         raise SystemExit("需要 ADMIN_API_KEY 环境变量或 --admin-key")
     gt = json.load(io.open(args.cases, encoding="utf-8"))["cases"]
+    ep = "rag/retrieve"
 
     def retrieve(q):
-        url = args.base + "/admin/rag/retrieve?" + urllib.parse.urlencode({"query": q})
+        url = args.base + "/admin/" + ep + "?" + urllib.parse.urlencode({"query": q})
         r = urllib.request.Request(url, headers={"X-Admin-Key": args.admin_key})
         return json.loads(urllib.request.urlopen(r, timeout=60).read())["hits"]
 

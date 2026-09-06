@@ -3,7 +3,6 @@ package cn.lwx.lwxaiagent.evolution;
 import cn.lwx.lwxaiagent.entity.EvolutionSkill;
 import cn.lwx.lwxaiagent.evolution.config.EvolutionProperties;
 import cn.lwx.lwxaiagent.mapper.EvolutionSkillMapper;
-import cn.lwx.lwxaiagent.retrieval.HybridRetrievalService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +45,8 @@ public class SkillRetriever {
      * 当未配置时，此字段为 null，技能检索功能不可用（跳过注入，不影响对话）。
      */
     @Autowired(required = false)
-    private HybridRetrievalService hybridService;
+    @org.springframework.beans.factory.annotation.Qualifier("PgVectorVectorStore")
+    private org.springframework.ai.vectorstore.VectorStore vectorStore;
 
     @Autowired(required = false)
     private EvolutionSkillMapper skillMapper;
@@ -156,9 +156,14 @@ public class SkillRetriever {
      * @return 向量检索结果列表，检索服务不可用时返回空列表
      */
     private List<Document> search(String query, int topK, String tenantId) {
-        if (hybridService != null) {
+        // 双轨收敛（2026-09-06）：技能检索从门面(B)改为直查向量 + 源过滤（技能数据量小，纯向量足够）
+        if (vectorStore != null) {
             log.info("SkillRetriever: searching vector store for '{}' (topK={})", query, topK);
-            return hybridService.search(query, topK, tenantId);
+            var docs = vectorStore.similaritySearch(
+                    org.springframework.ai.vectorstore.SearchRequest.builder().query(query).topK(topK).build());
+            return docs.stream()
+                    .filter(d -> "evolution".equals(d.getMetadata().get("source")))
+                    .toList();
         }
         log.debug("SkillRetriever: no vector store available, skipping skill search");
         return List.of();

@@ -20,7 +20,6 @@ public class AdminController {
     private final SkillIngestor skillIngestor;
     /** 检索器（评测/排查用——绕过 classify 与日志，直接看检索层命中） */
     private final org.springframework.ai.rag.retrieval.search.DocumentRetriever documentRetriever;
-
     public AdminController(GoldenSetRunner goldenSetRunner, AdminGuard adminGuard,
                            CanaryConfig canaryConfig, SkillIngestor skillIngestor,
                            cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever documentRetriever) {
@@ -89,4 +88,5 @@ public class AdminController {
                 docs.size(), files.size());
         return Map.of("query", query, "hits", new java.util.ArrayList<>(files));
     }
+
 }

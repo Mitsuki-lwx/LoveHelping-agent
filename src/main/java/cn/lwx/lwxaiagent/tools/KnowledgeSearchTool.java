@@ -1,6 +1,5 @@
 package cn.lwx.lwxaiagent.tools;
 
-import cn.lwx.lwxaiagent.retrieval.HybridRetrievalService;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +46,7 @@ public class KnowledgeSearchTool {
      * 使用 {@code required = false}：检索服务不可用时知识库工具降级为空结果，不影响对话。
      */
     @Autowired(required = false)
-    private HybridRetrievalService hybridRetrievalService;
+    private cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever knowledgeRetriever;
 
     /**
      * <h3>搜索恋爱关系知识库</h3>
@@ -71,9 +70,10 @@ public class KnowledgeSearchTool {
         }
 
         List<Document> results;
-        if (hybridRetrievalService != null) {
-            // 统一检索门面（pgvector 向量检索，ADR-1）
-            results = hybridRetrievalService.search(query, k, tenantId);
+        if (knowledgeRetriever != null) {
+            // 双轨收敛（2026-09-06）：searchKnowledge 改走知识库统一检索内核
+            // （rag/ ParentChildDocumentRetriever：jieba 关键词 + RRF + 源过滤，无 advisor 重排开销）
+            results = knowledgeRetriever.retrieve(new org.springframework.ai.rag.Query(query));
         } else {
             // 兜底：直接走 pgvector 相似度检索
             results = PgVectorVectorStore.similaritySearch(SearchRequest.builder().query(query).topK(k).build());
