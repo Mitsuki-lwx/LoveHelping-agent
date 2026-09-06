@@ -40,4 +40,29 @@ public class ChatModelConfig {
     public ChatModel primaryChatModel(LlmGateway llmGateway) {
         return llmGateway;
     }
+
+    /**
+     * 备模型注册（2026-09-06 降级链落地）：此前 LlmGateway 的 @Qualifier("deepSeekChatModel")
+     * 引用的 bean 从未注册（"deepseek" 非 Spring AI 标准 provider 名，配置被静默忽略）——
+     * 降级链是纸面降级（fallback==null，故障时直接 5000）。现注册真实可用的备：
+     * DashScope OpenAI 兼容端点 + qwen-plus（key 复用 spring.ai.dashscope.api-key）。
+     * 主（BigModel glm-4-flash）故障时 LlmGateway 自动切到本备。
+     */
+    @Bean("deepSeekChatModel")
+    public ChatModel deepSeekFallbackModel(
+            @org.springframework.beans.factory.annotation.Value("${app.llm.fallback-api-key:}") String fallbackKey,
+            @org.springframework.beans.factory.annotation.Value("${app.llm.fallback-base-url:https://token.sensenova.cn}") String fallbackBaseUrl,
+            @org.springframework.beans.factory.annotation.Value("${app.llm.fallback-model:deepseek-v4-flash}") String fallbackModel) {
+        // baseUrl 不带尾路径：Spring AI 拼 /v1/chat/completions（带尾 /v1 会双 v1 404，dashscope 教训）
+        org.springframework.ai.openai.api.OpenAiApi api = org.springframework.ai.openai.api.OpenAiApi.builder()
+                .baseUrl(fallbackBaseUrl)
+                .apiKey(fallbackKey)
+                .build();
+        return org.springframework.ai.openai.OpenAiChatModel.builder()
+                .openAiApi(api)
+                .defaultOptions(org.springframework.ai.openai.OpenAiChatOptions.builder()
+                        .model(fallbackModel)
+                        .build())
+                .build();
+    }
 }
