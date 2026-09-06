@@ -55,15 +55,6 @@ public class ChatModelConfig {
         // 原生通道经 WebClient 调用 dashscope /api/v1 —— 与 embedding 同域，验证过可用；
         // 而 OpenAI 兼容 /v1 型网关（dashscope compatible-mode / sensenova）对框架 WebClient 返回
         // 404（curl 同 URL 200，排查 header/body/UA 非因）——不用兼容通道作备，记录待办。
-        var dsApi = com.alibaba.cloud.ai.dashscope.api.DashScopeApi.builder()
-                .apiKey(dashScopeKey)
-                .build();
-        var opts = com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions.builder()
-                .model("qwen-plus")
-                .build();
-        return new com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel(dsApi, opts,
-                org.springframework.ai.model.tool.ToolCallingManager.builder().build(),
-                org.springframework.retry.support.RetryTemplate.builder().build(),
-                io.micrometer.observation.ObservationRegistry.NOOP);
+        return new RestFallbackChatModel(dashScopeKey, "qwen-plus");
     }
 }
