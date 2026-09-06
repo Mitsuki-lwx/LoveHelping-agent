@@ -50,19 +50,20 @@ public class ChatModelConfig {
      */
     @Bean("deepSeekChatModel")
     public ChatModel deepSeekFallbackModel(
-            @org.springframework.beans.factory.annotation.Value("${app.llm.fallback-api-key:}") String fallbackKey,
-            @org.springframework.beans.factory.annotation.Value("${app.llm.fallback-base-url:https://token.sensenova.cn}") String fallbackBaseUrl,
-            @org.springframework.beans.factory.annotation.Value("${app.llm.fallback-model:deepseek-v4-flash}") String fallbackModel) {
-        // baseUrl 不带尾路径：Spring AI 拼 /v1/chat/completions（带尾 /v1 会双 v1 404，dashscope 教训）
-        org.springframework.ai.openai.api.OpenAiApi api = org.springframework.ai.openai.api.OpenAiApi.builder()
-                .baseUrl(fallbackBaseUrl)
-                .apiKey(fallbackKey)
+            @org.springframework.beans.factory.annotation.Value("${spring.ai.dashscope.api-key:}") String dashScopeKey) {
+        // 降级备模型（2026-09-06 落地）：spring-ai-alibaba 原生 DashScopeChatModel（qwen-plus）。
+        // 原生通道经 WebClient 调用 dashscope /api/v1 —— 与 embedding 同域，验证过可用；
+        // 而 OpenAI 兼容 /v1 型网关（dashscope compatible-mode / sensenova）对框架 WebClient 返回
+        // 404（curl 同 URL 200，排查 header/body/UA 非因）——不用兼容通道作备，记录待办。
+        var dsApi = com.alibaba.cloud.ai.dashscope.api.DashScopeApi.builder()
+                .apiKey(dashScopeKey)
                 .build();
-        return org.springframework.ai.openai.OpenAiChatModel.builder()
-                .openAiApi(api)
-                .defaultOptions(org.springframework.ai.openai.OpenAiChatOptions.builder()
-                        .model(fallbackModel)
-                        .build())
+        var opts = com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions.builder()
+                .model("qwen-plus")
                 .build();
+        return new com.alibaba.cloud.ai.dashscope.chat.DashScopeChatModel(dsApi, opts,
+                org.springframework.ai.model.tool.ToolCallingManager.builder().build(),
+                org.springframework.retry.support.RetryTemplate.builder().build(),
+                io.micrometer.observation.ObservationRegistry.NOOP);
     }
 }
