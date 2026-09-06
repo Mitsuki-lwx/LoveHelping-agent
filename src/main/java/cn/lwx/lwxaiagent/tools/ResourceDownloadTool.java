@@ -88,6 +88,15 @@ public class ResourceDownloadTool {
             @ToolParam(description = "Timeout in milliseconds (optional, default 30000)") Integer timeout) {
         // 参数校验：null 或非正数则取默认超时
         int t = (timeout != null && timeout > 0) ? timeout : DEFAULT_TIMEOUT;
+        // 安全（2026-09-06 工具抽查）：URL 协议/内网校验 + 文件名清洗（防 SSRF/路径穿越）
+        String whyUrl = cn.lwx.lwxaiagent.tools.ToolSafety.validateHttpUrl(url);
+        if (whyUrl != null) {
+            return "URL 不合法: " + whyUrl;
+        }
+        fileName = cn.lwx.lwxaiagent.tools.ToolSafety.sanitizeFileName(fileName);
+        if (fileName.isBlank()) {
+            return "文件名非法";
+        }
         // 确保下载目录存在
         String dir = FileConstant.FILE_SAVE_DIR + "/downloads/";
         FileUtil.mkdir(dir);
@@ -128,6 +137,16 @@ public class ResourceDownloadTool {
             @ToolParam(description = "Array of file names, must match URLs length") String[] fileNames,
             @ToolParam(description = "Timeout in ms per image (optional, default 15000)") Integer timeout) {
         int t = (timeout != null && timeout > 0) ? timeout : DEFAULT_TIMEOUT;
+        // 安全（2026-09-06 工具抽查）：URL 逐个协议/内网校验、文件名清洗（防 SSRF/路径穿越）
+        for (int i = 0; i < urls.length; i++) {
+            String whyUrl = cn.lwx.lwxaiagent.tools.ToolSafety.validateHttpUrl(urls[i]);
+            if (whyUrl != null) {
+                return "第 " + (i + 1) + " 个 URL 不合法: " + whyUrl;
+            }
+            if (fileNames[i] != null) {
+                fileNames[i] = cn.lwx.lwxaiagent.tools.ToolSafety.sanitizeFileName(fileNames[i]);
+            }
+        }
         // 校验 URL 数量与文件名数量必须一致
         if (urls.length != fileNames.length) {
             return "Error: URLs count (" + urls.length + ") != file names count (" + fileNames.length + ")";

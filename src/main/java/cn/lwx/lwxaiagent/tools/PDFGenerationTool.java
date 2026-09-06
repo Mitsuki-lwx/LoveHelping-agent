@@ -146,6 +146,11 @@ public class PDFGenerationTool {
             @ToolParam(description = "Content in markdown format") String content,
             @ToolParam(description = "Path or URL of an image to include at the top (optional)") String imagePath) {
         String fileDir = FileConstant.FILE_SAVE_DIR + "/pdf";
+        // 安全（2026-09-06 工具抽查）：fileName 直拼可路径穿越——清洗路径成分
+        fileName = cn.lwx.lwxaiagent.tools.ToolSafety.sanitizeFileName(fileName);
+        if (fileName.isBlank()) {
+            return "文件名非法";
+        }
         String filePath = fileDir + "/" + fileName;
         try {
             // 确保 PDF 输出目录存在
@@ -198,6 +203,13 @@ public class PDFGenerationTool {
 
                 // --- 封面图片 ---
                 if (imagePath != null && !imagePath.isBlank()) {
+                    // 安全（2026-09-06）：URL 型封面过协议/内网校验（本地相对路径放行）
+                    if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+                        String why = cn.lwx.lwxaiagent.tools.ToolSafety.validateHttpUrl(imagePath);
+                        if (why != null) {
+                            return "封面图 URL 不合法: " + why;
+                        }
+                    }
                     seenImages.add(imagePath);  // 记录封面图片 URL，避免正文中重复
                     try {
                         Image img = new Image(ImageDataFactory.create(imagePath));
