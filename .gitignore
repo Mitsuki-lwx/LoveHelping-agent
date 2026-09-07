@@ -74,3 +74,8 @@ skills-lock.json
 /.zcode
 /uploads/
 .mysql-dev
+
+# 用户备份/临时目录（勿入库）
+target_lockbak*/
+.graphify/
+
