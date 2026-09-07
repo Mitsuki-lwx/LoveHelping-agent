@@ -54,6 +54,10 @@ public class SPAFallbackConfig implements WebMvcConfigurer {
      */
     @Override
     public void addViewControllers(org.springframework.web.servlet.config.annotation.ViewControllerRegistry registry) {
+        // 规则0：根路径 → index.html（context-path=/api 下访问站点根 / 直接落地应用）
+        registry.addViewController("/")
+                .setViewName("forward:/index.html");
+
         // 规则1：匹配单层非 API 路径（如 /login、/about），转发到 index.html
         registry.addViewController("/{path:[a-zA-Z][a-zA-Z\\d-]*}")
                 .setViewName("forward:/index.html");
