@@ -1,0 +1,119 @@
+# ============================================================
+# CI（2026-09-07）：后端单测 + 全链路 E2E 冒烟（有 LLM secrets 才跑）
+# 安全扫描见 security.yml（gitleaks 全历史）
+# ============================================================
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # ---- 后端单测（纯逻辑，零外部依赖，必跑必绿）----
+  backend-test:
+    name: Backend Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Run unit tests
+        run: ./mvnw -B test
+        env:
+          OPENAI_API_KEY: dummy-for-context-test
+          DASHSCOPE_API_KEY: dummy-for-context-test
+
+  # ---- 全链路 E2E 冒烟（18 项：注册→SSE→RAG→Agent→护栏→降级）----
+  # 需要真实 LLM secrets（模型调用无法 mock）——secrets 未配置时该 job 自动跳过，
+  # 仓库依然绿；配置后每次 push/PR 即全链路回归。
+  e2e-smoke:
+    name: E2E Smoke (18 items)
+    needs: backend-test
+    if: ${{ secrets.OPENAI_API_KEY != '' }}
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-mysql-pwd
+          MYSQL_DATABASE: agentdb
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pci-mysql-pwd"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-pg-pwd
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -h 127.0.0.1"
+          --health-interval 10s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 3s --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      # 1) 构建两个可执行 jar（主应用 + mcp-server 工具面）
+      - name: Build jars
+        run: |
+          ./mvnw -B package -DskipTests
+          ./mvnw -B -f mcp-server/pom.xml package -DskipTests
+
+      # 2) 起 mcp-server（主应用启动需连 MCP）
+      - name: Start mcp-server
+        run: |
+          java -jar mcp-server/target/mcp-server-0.0.1-SNAPSHOT.jar --server.port=8125 > mcp.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null -m 2 http://localhost:8125/ && break || sleep 2
+          done
+
+      # 3) 起主应用（prod profile：首次启动自动 Flyway + PG 向量化，需几分钟）
+      - name: Start app
+        env:
+          SPRING_PROFILES_ACTIVE: prod
+          MYSQL_PASSWORD: ci-mysql-pwd
+          PGVECTOR_PASSWORD: ci-pg-pwd
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ADMIN_API_KEY: smoke-test-admin-key
+          MCP_SERVER_URL: http://localhost:8125/mcp
+        run: |
+          java -jar target/lwx-ai-agent-0.0.1-SNAPSHOT.jar --server.port=8088 > app.log 2>&1 &
+          for i in $(seq 1 150); do
+            curl -s -m 3 http://localhost:8088/api/actuator/health | grep -q '"status":"UP"' && break || sleep 4
+          done
+          curl -s -m 5 http://localhost:8088/api/actuator/health
+
+      # 4) E2E 冒烟 18 项
+      - name: Run e2e smoke
+        run: BASE_URL=http://localhost:8088/api ADMIN_API_KEY=smoke-test-admin-key bash scripts/e2e-smoke.sh
+
+      # 5) 失败即吐日志（省得再拉）
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            app.log
+            mcp.log

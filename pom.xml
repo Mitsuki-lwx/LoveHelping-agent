@@ -175,8 +175,11 @@
             </exclusions>
         </dependency>
 
-        <!-- spring-ai-alibaba Agent 编排框架（ADR-8 落地）：ReactAgent/StateGraph/checkpoint，
-             用于替换手写 ReAct 循环；版本由 spring-ai-alibaba-bom:1.1.2.0 管理（2026-08-20 引入） -->
+        <!-- spring-ai-alibaba Agent 编排（ADR-8 落地，2026-09-07 注释修正）：
+             graph 核心（StateGraph/checkpoint RedisSaver）在 graph-core——由本依赖传递提供；
+             本项目护栏/指标拦截器 extends 其 ToolInterceptor（graph.agent.interceptor 扩展点，
+             见 AgentGuardrailInterceptor），故须保留 framework 层（非仅高层 API 壳）。
+             版本由 spring-ai-alibaba-bom:1.1.2.0 管理（2026-08-20 引入） -->
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-agent-framework</artifactId>
