@@ -7,6 +7,8 @@
   <img src="https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-336791?style=flat-square&logo=postgresql" alt="PG + pgvector"/>
   <img src="https://img.shields.io/badge/Docker-compose-blue?style=flat-square&logo=docker" alt="Docker Compose"/>
   <img src="https://img.shields.io/badge/状态-稳定_%E2%9C%93-1f8f4c?style=flat-square" alt="stable"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/Mitsuki-lwx/LoveHelping-agent/ci.yml?branch=main&label=CI&style=flat-square&logo=githubactions" alt="CI"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/Mitsuki-lwx/LoveHelping-agent/security.yml?branch=main&label=gitleaks&style=flat-square" alt="gitleaks"/>
 </p>
 
 <h1 align="center">💌 LoveHelping · 恋爱解忧</h1>
@@ -107,7 +109,7 @@ BASE_URL=http://localhost:8088/api ADMIN_API_KEY=xxx bash scripts/e2e-smoke.sh
 | [03 · ADR 决策记录](docs/03-技术决策记录.md) | 20+ 条技术裁决（父子索引为何放弃、降级链怎么落地…）|
 | [07 · 安全与合规](docs/07-安全与合规.md) | 内容安全 / 数据合规 / 域外规则 |
 | [08 · 可观测](docs/08-可观测性与发布.md) · [09 · 测试策略](docs/09-测试策略.md) | 指标 trace / 压测 NFR |
-| [10 · 部署发布](docs/10-部署发布.md) | Docker 编排 / FAQ / 生产加固 |
+| [10 · 部署发布](docs/10-部署发布.md) | Docker 编排 / **CD 流水线** / **灾备运维手册**（备份恢复·Sentry·密钥轮换）/ FAQ |
 
 ## 🏗 系统架构
 
@@ -151,6 +153,15 @@ flowchart LR
 - 🤖 **Agent 评测**：6 类三层边界（工具调用 / 域外 / 内容安全）全过
 - 🚀 **E2E 冒烟**：18 项（注册 → SSE 打字机 → RAG → Agent → 护栏 → 降级）一键回归
 - ⚡ **容量实测**：并发 40 零 429（厂商无硬限流）；闸门默认 24 路（P95 ≈3.5s 平衡点）；SSE 50 路长连接 0 断连
+
+### 工程与运维（2026-09-07 企业级四课）
+
+- ✅ **单测 105**：接口层秒级回归网——Auth(10)/Sandbox(7)/MemoryFacts(7) 契约 + RBAC 拦截器四态，越权 403/404/未登录 401 全部钉死
+- 🔄 **CI 三层流水线**（GitHub Actions）：`gitleaks` 密钥扫描（全历史）→ `mvn test` → E2E 18 项（mysql/pgvector/redis service 容器，配置 Secrets 后自动全量回归）
+- 📦 **CD**：`git tag v*` → 构建双镜像推送 GHCR → （可选）ssh 自动部署；`TAG=旧版本` 一键回滚
+- 📜 **审计日志**：敏感操作（登录/改密/注销/删除）append-only 落表，`/admin/audit` 可查——**谁在几点做了什么都有据可查**
+- 🧯 **灾备**：3-2-1 备份脚本（`ops/backup.sh`，7 日轮转）+ 恢复演练手册 + Sentry 错误追踪（填 `SENTRY_DSN` 即启用）
+- 🔐 **RBAC**：方法级 `@RequireRole`（拦截器真校验，非前端藏菜单）——后续 ADMIN 能力的权限底座
 
 ## 🗂 目录结构
 
