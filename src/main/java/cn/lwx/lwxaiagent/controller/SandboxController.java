@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.controller;
 
+import cn.lwx.lwxaiagent.audit.AuditLog;
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.common.Result;
 import cn.lwx.lwxaiagent.entity.SandboxMemory;
@@ -75,6 +76,7 @@ public class SandboxController {
         return Result.ok("ok");
     }
 
+    @AuditLog("sandbox_delete")
     @DeleteMapping("/{id}")
     public Result<String> delete(@PathVariable Long id) {
         String userId = TenantContext.getUserId();

@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.controller;
 
+import cn.lwx.lwxaiagent.audit.AuditLog;
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.common.Result;
 import cn.lwx.lwxaiagent.entity.UserMemory;
@@ -39,6 +40,7 @@ public class MemoryFactsController {
      * 编辑一条事实（纠错：编辑即转正，置信度拉满）。
      * Body: {"content": "纠正后的内容"}
      */
+    @AuditLog("memory_update")
     @PutMapping("/{id}")
     public Result<String> updateFact(@PathVariable Long id, @RequestBody Map<String, String> body) {
         String content = body.get("content");
@@ -58,6 +60,7 @@ public class MemoryFactsController {
     /**
      * 删除一条事实。
      */
+    @AuditLog("memory_delete")
     @DeleteMapping("/{id}")
     public Result<String> deleteFact(@PathVariable Long id) {
         boolean ok = memoryStore.deleteFact(requireUserId(), id);

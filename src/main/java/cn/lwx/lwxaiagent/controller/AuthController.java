@@ -4,6 +4,7 @@ import cn.lwx.lwxaiagent.tenant.JwtTokenProvider;
 import cn.lwx.lwxaiagent.tenant.UserService;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import io.jsonwebtoken.Claims;
+import cn.lwx.lwxaiagent.audit.AuditLog;
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.tenant.AdminGuard;
 import cn.lwx.lwxaiagent.service.DeleteService;
@@ -118,6 +119,7 @@ public class AuthController {
      * @return Map 包含 success（是否成功）、token（成功后返回）、username、role，
      *         或失败时的 message（错误描述）
      */
+    @AuditLog("register")
     @PostMapping("/register")
     public Map<String, Object> register(@RequestBody Map<String, String> body) {
         // 从请求体中提取参数
@@ -181,6 +183,7 @@ public class AuthController {
      * @param body 请求体，包含 username 和 password
      * @return Map 包含 success、token、username、role，或失败时的 message
      */
+    @AuditLog("login")
     @PostMapping("/login")
     public Map<String, Object> login(@RequestBody Map<String, String> body) {
         String username = body.get("username");
@@ -267,6 +270,7 @@ public class AuthController {
      * <h3>更新个人资料（V18 个人中心）</h3>
      * <p>body 可含：nickname / avatarEmoji / bio（均为可选，非空字段才更新）。</p>
      */
+    @AuditLog("update_profile")
     @PutMapping("/profile")
     public Map<String, Object> updateProfile(@RequestBody(required = false) Map<String, String> body) {
         String userId = TenantContext.getUserId();
@@ -287,6 +291,7 @@ public class AuthController {
      * <h3>修改密码（V18 个人中心）</h3>
      * <p>body：oldPassword / newPassword。成功后建议前端引导重新登录。</p>
      */
+    @AuditLog("change_password")
     @PutMapping("/password")
     public Map<String, Object> changePassword(@RequestBody(required = false) Map<String, String> body) {
         String userId = TenantContext.getUserId();
@@ -311,6 +316,7 @@ public class AuthController {
      * <h3>用户自行注销（ADR-5）</h3>
      * <p>级联删除当前用户的所有数据（会话、消息、记忆、Skill、任务等），并禁用账号。</p>
      */
+    @AuditLog("delete_account")
     @DeleteMapping("/account")
     public Map<String, Object> deleteAccount() {
         String userId = TenantContext.getUserId();
@@ -325,6 +331,7 @@ public class AuthController {
     /**
      * <h3>管理员强制注销用户（ADR-5）</h3>
      */
+    @AuditLog("admin_delete_account")
     @DeleteMapping("/admin/account/{userId}")
     public Map<String, Object> deleteAccountByAdmin(@PathVariable String userId,
                                                      HttpServletRequest request) {

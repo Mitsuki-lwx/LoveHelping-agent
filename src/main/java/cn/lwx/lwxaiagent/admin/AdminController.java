@@ -20,14 +20,27 @@ public class AdminController {
     private final SkillIngestor skillIngestor;
     /** 检索器（评测/排查用——绕过 classify 与日志，直接看检索层命中） */
     private final org.springframework.ai.rag.retrieval.search.DocumentRetriever documentRetriever;
+    /** 审计查询（V20 课3）：敏感操作事后取证 */
+    private final cn.lwx.lwxaiagent.service.AuditService auditService;
     public AdminController(GoldenSetRunner goldenSetRunner, AdminGuard adminGuard,
                            CanaryConfig canaryConfig, SkillIngestor skillIngestor,
-                           cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever documentRetriever) {
+                           cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever documentRetriever,
+                           cn.lwx.lwxaiagent.service.AuditService auditService) {
         this.goldenSetRunner = goldenSetRunner;
         this.adminGuard = adminGuard;
         this.canaryConfig = canaryConfig;
         this.skillIngestor = skillIngestor;
         this.documentRetriever = documentRetriever;
+        this.auditService = auditService;
+    }
+
+    /** 审计日志查询（X-Admin-Key 保护）：?limit=50 最近 N 条敏感操作记录 */
+    @GetMapping("/audit")
+    public java.util.Map<String, Object> audit(HttpServletRequest request,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "50") int limit) {
+        adminGuard.check(request);
+        var entries = auditService.recent(limit);
+        return java.util.Map.of("total", entries.size(), "entries", entries);
     }
 
     @PostMapping("/golden-set/run")

@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.tenant.interceptor;
 
 import cn.lwx.lwxaiagent.tenant.JwtTokenProvider;
+import cn.lwx.lwxaiagent.tenant.RequireRole;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import io.jsonwebtoken.Claims;
 import jakarta.annotation.Resource;
@@ -160,9 +161,9 @@ public class TenantInterceptor implements HandlerInterceptor {
             token = request.getParameter("token");
         }
 
-        // 如果没有找到任何 Token，视为匿名请求，直接放行
+        // 如果没有找到任何 Token，视为匿名请求——但方法带 @RequireRole 时须拒绝（401）
         if (token == null) {
-            return true;
+            return requireRoleCheck(request, response, handler, true);
         }
 
         try {
@@ -172,7 +173,8 @@ public class TenantInterceptor implements HandlerInterceptor {
             jwtTokenProvider.injectContext(claims);
             log.debug("Tenant context set: tenant={}, user={}",
                     TenantContext.getTenantId(), TenantContext.getUserId());
-            return true;
+            // RBAC（2026-09-07 课3 第 2 级）：方法级 @RequireRole 角色校验（403 语义）
+            return requireRoleCheck(request, response, handler, false);
         } catch (Exception e) {
             // JWT 验证失败 —— 记录警告日志（含详细错误），但对外返回模糊消息
             log.warn("Invalid JWT token: {}", e.getMessage());
@@ -180,6 +182,39 @@ public class TenantInterceptor implements HandlerInterceptor {
             response.getWriter().write("Invalid or expired token");
             return false;  // 阻止请求进入 Controller
         }
+    }
+
+    /**
+     * 方法级 RBAC 校验（@RequireRole，2026-09-07 课3）。
+     * 未标注注解 → 放行；匿名访问注解端点 → 401；角色不符 → 403。
+     */
+    private boolean requireRoleCheck(HttpServletRequest request, HttpServletResponse response,
+                                     Object handler, boolean anonymous) throws Exception {
+        if (!(handler instanceof org.springframework.web.method.HandlerMethod hm)) {
+            return true;
+        }
+        RequireRole rr = hm.getMethodAnnotation(RequireRole.class);
+        if (rr == null) {
+            return true;
+        }
+        String required = rr.value();
+        if (anonymous) {
+            log.warn("RBAC deny: anonymous access to {} (need {})", request.getRequestURI(), required);
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":401,\"message\":\"未登录\"}");
+            return false;
+        }
+        String actual = TenantContext.getRole();
+        if (actual == null || !required.equals(actual)) {
+            log.warn("RBAC deny: user={} role={} access {} (need {})",
+                    TenantContext.getUserId(), actual, request.getRequestURI(), required);
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":403,\"message\":\"需要角色 " + required + "\"}");
+            return false;
+        }
+        return true;
     }
 
     /**

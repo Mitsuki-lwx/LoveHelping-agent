@@ -124,6 +124,12 @@
         </dependency>
 
         <!-- Spring Boot 测试框架（JUnit 5 + Mockito + Spring Test） -->
+        <!-- AOP（2026-09-07 审计切面 @AuditLog） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
