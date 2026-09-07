@@ -8,6 +8,11 @@
 
 name: lwx-ai-agent
 
+# 镜像仓库（CD 推送目标；TAG 由 release 流水线注入，服务器部署用 compose pull 拉取）
+x-images:
+  app: &app-image  ${IMAGE_REGISTRY:-ghcr.io/Mitsuki-lwx/lovehelping}:${TAG:-latest}
+  mcp: &mcp-image  ${IMAGE_REGISTRY:-ghcr.io/Mitsuki-lwx/lovehelping-mcp}:${TAG:-latest}
+
 services:
   mysql:
     image: mysql:8.0
@@ -56,6 +61,7 @@ services:
       retries: 8
 
   mcp-server:
+    image: *mcp-image
     build:
       context: .
       dockerfile: mcp-server/Dockerfile
@@ -67,6 +73,7 @@ services:
       - "8125"
 
   app:
+    image: *app-image
     build:
       context: .
       dockerfile: Dockerfile
