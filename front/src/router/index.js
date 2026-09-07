@@ -3,7 +3,8 @@ import { isAuthenticated, getUser } from '../utils/auth.js'
 import Home from '../views/Home.vue'
 import Login from '../views/Login.vue'
 import LoveChat from '../views/LoveChat.vue'
-import ManusChat from '../views/ManusChat.vue'
+import Sandbox from '../views/Sandbox.vue'
+import MemoryArchive from '../views/MemoryArchive.vue'
 import History from '../views/History.vue'
 import Admin from '../views/Admin.vue'
 
@@ -21,10 +22,22 @@ const routes = [
     component: LoveChat,
     meta: { requiresAuth: true }
   },
+  // 恋爱全能帮（旧 LoveManus task 通道）合并进统一聊天（后端 classify 自动路由 agent），
+  // 2026-09-07：旧路径重定向到 /love-chat（前端不再区分"简单/困难"会话）
   {
     path: '/manus-chat',
-    name: 'ManusChat',
-    component: ManusChat,
+    redirect: '/love-chat'
+  },
+  {
+    path: '/sandbox',
+    name: 'Sandbox',
+    component: Sandbox,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/memory',
+    name: 'MemoryArchive',
+    component: MemoryArchive,
     meta: { requiresAuth: true }
   },
   {

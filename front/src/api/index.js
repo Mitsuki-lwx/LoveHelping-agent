@@ -162,5 +162,48 @@ export function clearConversation(conversationId) {
   return apiClient.delete(`/memory/${encodeURIComponent(conversationId)}`)
 }
 
+// ===== 角色模拟屋（Sandbox · 自定义模拟对话，2026-09-07 按后端能力新增） =====
+
+export function sandboxCreate(body) {
+  return apiClient.post('/sandbox/create', body)   // {channel, personaId?, customTraits?, relationshipStage?}
+}
+export function listSandboxPersonas() {
+  return apiClient.get('/sandbox/personas')
+}
+export function listSandboxSessions(channel = 'REALISTIC') {
+  return apiClient.get('/sandbox/list', { params: { channel } })
+}
+export function sandboxReset(id) {
+  return apiClient.post(`/sandbox/${id}/reset`)
+}
+export function sandboxDelete(id) {
+  return apiClient.delete(`/sandbox/${id}`)
+}
+export function createSandboxChatSSE(sandboxId, message, handlers) {
+  const url = `/sandbox/chat?sandboxId=${encodeURIComponent(sandboxId)}&message=${encodeURIComponent(message)}`
+  return createSSE(url, handlers)
+}
+export function listSandboxMemories(sandboxId) {
+  return apiClient.get(`/sandbox/${sandboxId}/memory`)
+}
+export function addSandboxMemory(sandboxId, factText, type = 'FACT') {
+  return apiClient.post(`/sandbox/${sandboxId}/memory`, { type, factText, sourceType: 'MANUAL' })
+}
+export function deleteSandboxMemory(sandboxId, memoryId) {
+  return apiClient.delete(`/sandbox/${sandboxId}/memory/${memoryId}`)
+}
+
+// ===== 记忆档案（/memory/facts · 我的记忆，2026-09-07 新增） =====
+
+export function getMyMemoryFacts() {
+  return apiClient.get('/memory/facts')
+}
+export function updateMemoryFact(id, content) {
+  return apiClient.put(`/memory/facts/${id}`, { content })
+}
+export function deleteMemoryFact(id) {
+  return apiClient.delete(`/memory/facts/${id}`)
+}
+
 export { generateChatId }
 export default apiClient

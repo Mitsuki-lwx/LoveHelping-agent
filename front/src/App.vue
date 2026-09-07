@@ -3,9 +3,10 @@
     <nav v-if="showNav" class="top-nav">
       <div class="nav-left">
         <router-link to="/" class="nav-brand">LoveHelping</router-link>
-        <router-link to="/love-chat" class="nav-link">恋爱专家</router-link>
-        <router-link to="/manus-chat" class="nav-link">恋爱全能帮</router-link>
-        <router-link to="/history" class="nav-link">历史记录</router-link>
+        <router-link to="/love-chat" class="nav-link">解忧信箱</router-link>
+        <router-link to="/sandbox" class="nav-link">角色模拟屋</router-link>
+        <router-link to="/memory" class="nav-link">记忆档案</router-link>
+        <router-link to="/history" class="nav-link">旧信存档</router-link>
         <router-link v-if="isAdminUser" to="/admin" class="nav-link admin-link">管理</router-link>
       </div>
       <div class="nav-right">
