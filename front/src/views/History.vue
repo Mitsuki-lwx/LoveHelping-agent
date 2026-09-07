@@ -90,8 +90,8 @@ function switchTab(tab) {
 }
 
 function continueChat(conv) {
-  const path = activeTab.value === 'love' ? '/love-chat' : '/manus-chat'
-  router.push(`${path}?sessionId=${encodeURIComponent(conv.conversation_id)}`)
+  // 2026-09-07：LoveManus 通道合并进统一聊天——历史里的 agent 会话也在解忧信箱继续
+  router.push(`/love-chat?sessionId=${encodeURIComponent(conv.conversation_id)}`)
 }
 
 function confirmDelete(conv) {

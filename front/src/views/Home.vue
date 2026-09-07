@@ -9,19 +9,31 @@
       <div class="ink-divider"></div>
     </div>
 
-    <!-- 两封"信"作为功能入口 -->
+    <!-- 四能力入口（按后端能力组织，2026-09-07） -->
     <div class="card-grid">
       <div class="entry-card letter-card fold anim-letter-in" @click="$router.push('/love-chat')">
         <span class="entry-wax">信</span>
-        <h2 class="hand entry-name">恋爱解忧信</h2>
-        <p class="entry-desc">恋爱心理 · 情感咨询 · 温暖陪伴<br>给每段纠结一段被认真听过的时光</p>
+        <h2 class="hand entry-name">解忧信箱</h2>
+        <p class="entry-desc">恋爱问答 · 情感陪伴 · 复杂问题自动调度<br>不用分简单困难——都写进一封信</p>
         <span class="entry-open">写一封信去</span>
       </div>
-      <div class="entry-card letter-card anim-letter-in" style="animation-delay: 0.08s" @click="$router.push('/manus-chat')">
-        <span class="entry-wax wax-tools">帮</span>
-        <h2 class="hand entry-name">恋爱全能帮</h2>
-        <p class="entry-desc">调用工具处理复杂任务<br>分析 · 计划 · 行动，一次解决</p>
-        <span class="entry-open">开始求助</span>
+      <div class="entry-card letter-card anim-letter-in" style="animation-delay: 0.06s" @click="$router.push('/sandbox')">
+        <span class="entry-wax wax-stage">演</span>
+        <h2 class="hand entry-name">角色模拟屋</h2>
+        <p class="entry-desc">自定义情境与 TA 对话排练<br>预置人设或自写性格，把想说的话先练一遍</p>
+        <span class="entry-open">去排练</span>
+      </div>
+      <div class="entry-card letter-card anim-letter-in" style="animation-delay: 0.12s" @click="$router.push('/memory')">
+        <span class="entry-wax wax-mem">忆</span>
+        <h2 class="hand entry-name">记忆档案</h2>
+        <p class="entry-desc">AI 记住的关于你的事<br>偏好在案 · 经历留档 · 随时核对修正</p>
+        <span class="entry-open">翻翻档案</span>
+      </div>
+      <div class="entry-card letter-card anim-letter-in" style="animation-delay: 0.18s" @click="$router.push('/history')">
+        <span class="entry-wax wax-arch">档</span>
+        <h2 class="hand entry-name">旧信存档</h2>
+        <p class="entry-desc">往来的所有对话留在这里<br>哪封信想再看，随时翻开</p>
+        <span class="entry-open">翻开旧信</span>
       </div>
     </div>
 
@@ -123,6 +135,9 @@
   margin-bottom: 14px;
 }
 .wax-tools { background: radial-gradient(circle at 34% 30%, oklch(56% 0.1 250), oklch(42% 0.09 250)); }
+.wax-stage { background: radial-gradient(circle at 34% 30%, oklch(62% 0.12 70), oklch(50% 0.11 70)); }
+.wax-mem { background: radial-gradient(circle at 34% 30%, oklch(56% 0.1 160), oklch(44% 0.09 160)); }
+.wax-arch { background: radial-gradient(circle at 34% 30%, oklch(48% 0.05 250), oklch(36% 0.05 250)); }
 .entry-name { font-size: 22px; margin: 0 0 10px; letter-spacing: 0.14em; }
 .entry-desc {
   font-size: 13.5px;

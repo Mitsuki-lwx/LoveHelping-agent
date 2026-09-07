@@ -77,14 +77,6 @@
           @keydown.enter="sendMessage"
           :disabled="loading"
         />
-        <!-- 📖 RAG 检索开关（新增，第一期）。点亮后走知识库检索 + 流式输出 -->
-        <button
-          :class="['rag-toggle', { active: useRag }]"
-          @click="useRag = !useRag"
-          :title="useRag ? '知识库检索已开启' : '知识库检索已关闭'"
-        >
-          📖
-        </button>
         <button class="send-btn" @click="sendMessage" :disabled="loading || !inputText.trim()">
           <span class="send-ink">寄出</span>
         </button>
@@ -97,7 +89,7 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { createLoveChatSSE, createLoveChatRagSSE, generateChatId, voteMessage, registerConversation, getConversationMessages } from '../api/index.js'
+import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages } from '../api/index.js'
 import { saveLocalConversation } from '../utils/history.js'
 import { getUser } from '../utils/auth.js'
 import { createTypewriter } from '../utils/typewriter.js'
@@ -158,8 +150,6 @@ function renderMarkdown(text) {
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
-/** RAG toggle (added Phase 1). When enabled, uses /sse/rag endpoint with PGvector knowledge base retrieval */
-const useRag = ref(false)
 const messagesRef = ref(null)
 const voteStates = ref({})
 const showFeedback = ref(null)
@@ -245,10 +235,11 @@ function sendMessage() {
   messages.value.push({ role: 'ai', content: '' })
   const aiMsgIdx = messages.value.length - 1
 
-  // Choose normal SSE or RAG SSE based on RAG toggle (added Phase 1)
-  const sseFn = useRag.value ? createLoveChatRagSSE : createLoveChatSSE
-  cancelSSE = sseFn(text, chatId.value, {
+  // 统一入口 /Love_app/chat/sse（2026-09-07）：后端 classify 自动路由——简单/知识库/Agent 全自动
+  cancelSSE = createLoveChatSSE(text, chatId.value, {
     onMessage(data) {
+      // 防御（2026-09-07 合并统一流后）：剥离话术三牌事件标记，避免 JSON 残文进正文
+      if (data && data.startsWith('@@ADVICE@@')) return
       messages.value[aiMsgIdx].content += data
       scrollToBottom()
     },
@@ -594,22 +585,6 @@ onUnmounted(() => {
 }
 .chat-input::placeholder { color: var(--ink-faint); font-family: var(--font-hand); letter-spacing: 0.06em; }
 .chat-input:disabled { opacity: 0.6; }
-.rag-toggle {
-  border: 1px solid var(--ink-line);
-  background: var(--paper-card);
-  border-radius: 50%;
-  width: 38px; height: 38px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
-  flex-shrink: 0;
-}
-.rag-toggle:hover { transform: rotate(-8deg) scale(1.06); }
-.rag-toggle.active {
-  background: var(--wine-soft);
-  border-color: var(--wine);
-  box-shadow: 0 0 0 3px oklch(92% 0.03 25 / 0.6);
-}
 .send-btn {
   border: none;
   border-radius: 20px;
