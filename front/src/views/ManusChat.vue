@@ -54,6 +54,7 @@ import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { createManusChatSSE, stopManusChat, getConversationMessages, registerConversation, voteMessage } from '../api/index.js'
 import { saveLocalConversation } from '../utils/history.js'
+import { createTypewriter } from '../utils/typewriter.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -158,19 +159,15 @@ function onScroll() {
   userScrolledAway = !isNearBottom
 }
 
-// 打字机动画（2026-09-07：排队告知/错误等非流式文案也逐字呈现）
-let busyTimer = null
+// 打字机动画（重构 2026-09-07：抽至 utils/typewriter.js，行为不变——35ms/字）
+const typewriter = createTypewriter()
 function typewrite(msgIdx, text) {
-  if (busyTimer) { clearInterval(busyTimer); busyTimer = null }
   const msg = messages.value[msgIdx]
   msg.content = ''
-  let i = 0
-  busyTimer = setInterval(() => {
-    i += 1
-    msg.content = text.slice(0, i)
+  typewriter.start(text, (partial) => {
+    msg.content = partial
     scrollToBottom()
-    if (i >= text.length) { clearInterval(busyTimer); busyTimer = null }
-  }, 35)
+  })
 }
 
 async function scrollToBottom() {
@@ -204,7 +201,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (busyTimer) clearInterval(busyTimer)
+  typewriter.stop()
   const el = messagesRef.value
   if (el) {
     el.removeEventListener('scroll', onScroll)

@@ -78,6 +78,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { createLoveChatSSE, createLoveChatRagSSE, generateChatId, voteMessage, registerConversation, getConversationMessages } from '../api/index.js'
 import { saveLocalConversation } from '../utils/history.js'
 import { getUser } from '../utils/auth.js'
+import { createTypewriter } from '../utils/typewriter.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -185,19 +186,15 @@ async function scrollToBottom() {
   }
 }
 
-// 打字机动画：单条消息逐字呈现（错误/排队告知等非流式文案用）
-let busyTimer = null
+// 打字机动画（重构 2026-09-07：抽至 utils/typewriter.js，行为不变——35ms/字）
+const typewriter = createTypewriter()
 function typewrite(msgIdx, text) {
-  if (busyTimer) { clearInterval(busyTimer); busyTimer = null }
   const msg = messages.value[msgIdx]
   msg.content = ''
-  let i = 0
-  busyTimer = setInterval(() => {
-    i += 1
-    msg.content = text.slice(0, i)
+  typewriter.start(text, (partial) => {
+    msg.content = partial
     scrollToBottom()
-    if (i >= text.length) { clearInterval(busyTimer); busyTimer = null }
-  }, 35)
+  })
 }
 
 function sendMessage() {
@@ -278,7 +275,7 @@ function submitFeedback(msgIdx) {
 }
 
 onUnmounted(() => {
-  if (busyTimer) clearInterval(busyTimer)
+  typewriter.stop()
   if (cancelSSE) cancelSSE()
 })
 </script>
