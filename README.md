@@ -93,13 +93,13 @@ BASE_URL=http://localhost:8088/api ADMIN_API_KEY=xxx bash scripts/e2e-smoke.sh
 
 | 变量 | 必填 | 说明 | 示例 |
 |---|---|---|---|
-| `OPENAI_API_KEY` | ✅ | 主模型 key（默认智谱 BigModel，glm-4-flash） | `xxxxxxxx.watMU...` |
-| `DASHSCOPE_API_KEY` | ✅ | 检索 embedding + 降级备模型（qwen-plus） | `sk-xxxx` |
+| `OPENAI_API_KEY` | ✅ | 主对话模型 key（OpenAI 兼容接口，模型由环境变量指定） | — |
+| `DASHSCOPE_API_KEY` | ✅ | 向量 embedding 与降级备模型共用 key | — |
 | `JWT_SECRET` | ✅ | JWT 签名密钥，**≥32 字符随机串**（缺失拒绝启动） | `openssl rand -hex 32` |
 | `MYSQL_PASSWORD` | ✅ | MySQL root 密码（首启创建） | `change-me` |
 | `PGVECTOR_PASSWORD` | ✅ | PostgreSQL 密码（首启创建） | `change-me` |
 | `ADMIN_API_KEY` | ✅ | 管理端点请求头 `X-Admin-Key` | `change-me` |
-| `OPENAI_MODEL` / `OPENAI_BASE_URL` | ⭕ | 覆盖主模型 / 端点 | `glm-4.7` |
+| `OPENAI_MODEL` / `OPENAI_BASE_URL` | ⭕ | 指定主模型 id / 服务端点 | `<model-id>` |
 | `APP_PORT` | ⭕ | 对外端口 | `8088` |
 
 ## 📚 文档
@@ -128,7 +128,7 @@ flowchart LR
   N --> V[(PG 16 + pgvector<br/>71 篇情感知识库)]
   A --> R[(Redis)]
   A -->|MCP / Streamable HTTP| M[mcp-server<br/>搜索/天气/网页/PDF]
-  A -->|降级链| F[主模型故障<br/>自动切 qwen-plus]
+  A -->|降级链| F[主模型故障<br/>自动切换备模型]
 ```
 
 - **路由**：前端不做"简单/困难"之分——`classify` 在服务端按意图分发，RAG / 工具 / 纯聊天对用户透明。

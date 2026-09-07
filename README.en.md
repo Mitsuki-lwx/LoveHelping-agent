@@ -95,13 +95,13 @@ BASE_URL=http://localhost:8088/api ADMIN_API_KEY=xxx bash scripts/e2e-smoke.sh
 
 | Variable | Required | Description | Example |
 |---|---|---|---|
-| `OPENAI_API_KEY` | ✅ | Primary LLM key (default Zhipu BigModel, glm-4-flash) | `xxxxxxxx.watMU...` |
-| `DASHSCOPE_API_KEY` | ✅ | Retrieval embedding + fallback model (qwen-plus) | `sk-xxxx` |
+| `OPENAI_API_KEY` | ✅ | Primary chat model key (OpenAI-compatible endpoint; model via env) | — |
+| `DASHSCOPE_API_KEY` | ✅ | Shared key for vector embedding and the fallback model | — |
 | `JWT_SECRET` | ✅ | JWT signing secret, **≥32 random chars** (startup refuses to boot without it) | `openssl rand -hex 32` |
 | `MYSQL_PASSWORD` | ✅ | MySQL root password (created on first boot) | `change-me` |
 | `PGVECTOR_PASSWORD` | ✅ | PostgreSQL password (created on first boot) | `change-me` |
 | `ADMIN_API_KEY` | ✅ | Admin endpoints, request header `X-Admin-Key` | `change-me` |
-| `OPENAI_MODEL` / `OPENAI_BASE_URL` | ⭕ | Override primary model / endpoint | `glm-4.7` |
+| `OPENAI_MODEL` / `OPENAI_BASE_URL` | ⭕ | Primary model id / service endpoint | `<model-id>` |
 | `APP_PORT` | ⭕ | Public port | `8088` |
 
 ## 📚 Documentation
@@ -130,7 +130,7 @@ flowchart LR
   N --> V[(PG 16 + pgvector<br/>71-doc relationship KB)]
   A --> R[(Redis)]
   A -->|MCP / Streamable HTTP| M[mcp-server<br/>search / weather / web / PDF]
-  A -->|fallback chain| F[primary model down<br/>auto-switch qwen-plus]
+  A -->|fallback chain| F[primary model down<br/>auto-switch to backup]
 ```
 
 - **Routing**: the frontend never asks "simple vs complex" — `classify` dispatches server-side by intent; RAG / tools / plain chat are invisible to the user.

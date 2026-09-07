@@ -7,19 +7,19 @@
 
 spring:
   ai:
-    # 主链路 LLM（与本地验证组合一致：智谱 BigModel OpenAI 兼容 + completions-path）。
-    # ⚠️ BigModel 端点形态特殊（/api/paas/v4/chat/completions），必须保留 completions-path，否则 404
+    # 主链路 LLM（OpenAI 兼容端点；部分网关端点形态特殊、需自定义 completions-path——
+    # ⚠️ 缺该路径会 404，按所选服务商形态配置）。
     openai:
       base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
-      api-key: ${OPENAI_API_KEY:}              # 必填：主模型 key（智谱 BigModel）
+      api-key: ${OPENAI_API_KEY:}              # 必填：主模型 key
       chat:
         completions-path: /chat/completions
         options:
-          model: ${OPENAI_MODEL:glm-4-flash}   # 生产默认 flash（快且稳；可 env 换 glm-4.7 等）
+          model: ${OPENAI_MODEL:}   # 主模型 id（由环境变量提供，无默认）
 
 app:
   llm:
-    # 主模型故障自动切原生 DashScopeChatModel(qwen-plus)（降级链，key=DASHSCOPE_API_KEY）
+    # 主模型故障自动切换原生备模型（降级链，key=DASHSCOPE_API_KEY 对应的向量/备服务）
     fallback-enabled: true
 
 logging:
