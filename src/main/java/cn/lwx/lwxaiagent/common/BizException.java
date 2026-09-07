@@ -35,6 +35,9 @@ public class BizException extends RuntimeException {  // 继承 RuntimeException
      */
     private final int code;
 
+    /** 可选附加数据（2026-09-07：如 4003 排队告知的 retryAfter/currentLoad，前端结构化使用） */
+    private final transient Object data;
+
     /**
      * 构造一个带自定义状态码和错误消息的业务异常
      *
@@ -42,8 +45,23 @@ public class BizException extends RuntimeException {  // 继承 RuntimeException
      * @param message 给用户看的错误提示文案
      */
     public BizException(int code, String message) {
-        super(message);   // 调用 RuntimeException 的构造器，设置异常的 detailMessage
-        this.code = code; // 附加业务状态码
+        this(code, message, null);
+    }
+
+    /**
+     * 构造带附加数据的业务异常（全局异常处理器会把 data 放入响应体）。
+     */
+    public BizException(int code, String message, Object data) {
+        super(message);
+        this.code = code;
+        this.data = data;
+    }
+
+    /**
+     * 获取附加数据（无则返回 null）。
+     */
+    public Object getData() {
+        return data;
     }
 
     /**

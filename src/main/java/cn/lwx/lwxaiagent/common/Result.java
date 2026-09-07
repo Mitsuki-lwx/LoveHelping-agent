@@ -68,6 +68,12 @@ public record Result<T>(int code, String message, T data) {
      * @param <T>     数据类型
      * @return Result 对象，data=null
      */
+    public static <T> Result<T> fail(int code, String message, Object data) {
+        @SuppressWarnings("unchecked")
+        T d = (T) data;
+        return new Result<>(code, message, d);
+    }
+
     public static <T> Result<T> fail(int code, String message) {
         return new Result<>(code, message, null);
     }

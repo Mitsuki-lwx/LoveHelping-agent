@@ -83,8 +83,21 @@ public class ChatEntry {
         rateLimiter.checkQuota(userId);
         // 全局并发闸门（OWASP LLM10）：在线请求同时超过 app.online.max-inflight 时
         // 直接给用户友好提示，避免 LLM 被打满（可用性 + 成本双重失控）
-        if (onlineLoad != null && !onlineLoad.enter()) {
-            throw new BizException(4003, "当前咨询比较多，稍等一下再问我会更好。");
+        boolean entered = onlineLoad != null && onlineLoad.enter();
+        if (!entered) {
+            // 排队告知（2026-09-07）：带当前负载与建议等待，前端可结构化展示/自动重试
+            double avgSec = onlineLoad.avgDurationMs() / 1000.0;
+            double effAvg = avgSec > 0.5 ? avgSec : 3.0; // 冷启动无样本时兜底 3s（sync 实测量级）
+            int retryAfter = Math.max(2, (int) Math.ceil(effAvg));
+            java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+            data.put("currentLoad", onlineLoad.inFlight());
+            data.put("maxLoad", onlineLoad.maxInFlight());
+            data.put("avgDurationSec", Math.round(effAvg * 10) / 10.0);
+            data.put("retryAfterSec", retryAfter);
+            throw new BizException(4003,
+                    "当前咨询较多（" + onlineLoad.maxInFlight() + " 路同时进行中，平均每轮约 "
+                            + (int) Math.ceil(effAvg) + " 秒）。建议 " + retryAfter + " 秒后再试，"
+                            + "或先换个话题聊聊～", data);
         }
 
         // ② 话术三级判定
@@ -165,8 +178,10 @@ public class ChatEntry {
         // ⑥ 后处理
         rateLimiter.increment(userId);
         // 在线在途计数随 SSE 生命周期回收（完成/取消/异常都会触发 doFinally）
+        final long startNanos = System.nanoTime();
         return new AgentResult.ShallowResult(flux.doFinally(sig -> {
             if (onlineLoad != null) {
+                onlineLoad.recordDuration((System.nanoTime() - startNanos) / 1_000_000L); // 排队等待估算样本
                 onlineLoad.exit();
             }
         }));

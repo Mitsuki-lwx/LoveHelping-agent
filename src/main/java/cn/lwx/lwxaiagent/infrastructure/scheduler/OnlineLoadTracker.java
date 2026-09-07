@@ -79,6 +79,28 @@ public class OnlineLoadTracker {
         return inFlight.get();
     }
 
+    /** 闸门上限（排队长度估算用） */
+    public int maxInFlight() {
+        return maxInFlight;
+    }
+
+    // ==================== 平均单请求耗时（EMA，排队等待估算用，2026-09-07） ====================
+    /** 平均完成时长 EMA（毫秒）。无样本时为 0 → 调用方用经验兜底值 */
+    private volatile double avgDurationMs = 0.0;
+    private static final double EMA_ALPHA = 0.2;
+
+    /** 请求完成时更新 EMA（enter 与 exit 跨线程，时长由调用方显式传入） */
+    public void recordDuration(long durationMs) {
+        if (durationMs <= 0) return;
+        double cur = avgDurationMs;
+        avgDurationMs = cur == 0.0 ? durationMs : (EMA_ALPHA * durationMs + (1 - EMA_ALPHA) * cur);
+    }
+
+    /** 平均单请求耗时（毫秒）；无样本返回 0 */
+    public double avgDurationMs() {
+        return avgDurationMs;
+    }
+
     /** 在线是否活跃（有在途请求，或 30s 内有过活动） */
     public boolean isOnlineActive() {
         try {

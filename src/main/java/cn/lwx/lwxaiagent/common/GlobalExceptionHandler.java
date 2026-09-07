@@ -124,8 +124,11 @@ public class GlobalExceptionHandler {
      * @return Result，code 取自异常的 code 字段，message 取自异常的 message
      */
     @ExceptionHandler(BizException.class)
-    public Result<Void> handleBiz(BizException e) {
-        log.warn("Biz exception: {}", e.getMessage());
+    public Result<Object> handleBiz(BizException e) {
+        log.warn("Biz exception: {} {}", e.getCode(), e.getMessage());
+        if (e.getData() != null) {
+            return Result.fail(e.getCode(), e.getMessage(), e.getData());
+        }
         return Result.fail(e.getCode(), e.getMessage());  // 将异常中的状态码和消息原样返回
     }
 
