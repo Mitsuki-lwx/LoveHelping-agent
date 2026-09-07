@@ -92,6 +92,25 @@ public class User {
     private Boolean enabled;
 
     /**
+     * 昵称（V18 个人中心），对应数据库列 {@code nickname}。
+     * <p>个人中心的展示名，可空——空时前端/后端兜底显示用户名。</p>
+     */
+    private String nickname;
+
+    /**
+     * 头像 emoji（V18 个人中心），对应数据库列 {@code avatar_emoji}。
+     * <p>轻量头像方案：emoji 字符（如 ❤️/🌙/🌸），空时兜底用户名首字符。</p>
+     */
+    @TableField("avatar_emoji")
+    private String avatarEmoji;
+
+    /**
+     * 个性签名（V18 个人中心），对应数据库列 {@code bio}。
+     * <p>一句话自我介绍，展示在个人中心。</p>
+     */
+    private String bio;
+
+    /**
      * 创建时间，对应数据库列 {@code created_at}。
      * <p>记录该用户账号的注册/创建时间戳。</p>
      */

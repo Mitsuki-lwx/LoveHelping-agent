@@ -10,7 +10,10 @@
         <router-link v-if="isAdminUser" to="/admin" class="nav-link admin-link">管理</router-link>
       </div>
       <div class="nav-right">
-        <span v-if="user" class="nav-user">{{ user.username }}</span>
+        <router-link v-if="user" to="/profile" class="nav-me" :title="'个人中心 · ' + (user.username || '')">
+          <span class="nav-avatar">{{ user.avatarEmoji || (user.username || '?').slice(0, 1).toUpperCase() }}</span>
+          <span class="nav-nick">{{ user.nickname || user.username }}</span>
+        </router-link>
         <button v-if="user" class="nav-logout" @click="logout">退出</button>
       </div>
     </nav>
@@ -21,14 +24,16 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getUser, removeToken, isAuthenticated } from './utils/auth.js'
 
 const router = useRouter()
 const route = useRoute()
 
-const user = computed(() => getUser())
+// user 改为 ref + 路由变化时刷新（2026-09-07：个人中心保存资料后导航昵称即时更新）
+const user = ref(getUser())
+watch(() => route.path, () => { user.value = getUser() }, { immediate: true })
 const isAdminUser = computed(() => user.value?.role === 'ADMIN')
 const showNav = computed(() => {
   return route.path !== '/login' && isAuthenticated()
@@ -101,9 +106,36 @@ function logout() {
   gap: 12px;
 }
 
-.nav-user {
+.nav-me {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  padding: 3px 10px 3px 4px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  transition: border-color 0.2s, transform 0.15s;
+}
+.nav-me:hover { border-color: var(--accent); transform: translateY(-1px); }
+.nav-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  color: var(--bg-primary);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.nav-nick {
   font-size: 13px;
   color: var(--text-secondary);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-logout {

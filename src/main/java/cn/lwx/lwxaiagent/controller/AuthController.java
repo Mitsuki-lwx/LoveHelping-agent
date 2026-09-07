@@ -240,15 +240,71 @@ public class AuthController {
      */
     @GetMapping("/me")
     public Map<String, Object> me() {
-        // 从 ThreadLocal 中获取当前登录用户的 ID
+        // 从 ThreadLocal 中获取当前登录用户的 ID（= 用户名）
         String userId = TenantContext.getUserId();
-        // 从 ThreadLocal 中获取当前用户的角色
-        String role = TenantContext.getRole();
-        // 如果用户 ID 为 null，说明未登录或 Token 无效
         if (userId == null) {
             return Map.of("success", false, "message", "未登录");
         }
-        return Map.of("success", true, "username", userId, "role", role != null ? role : "USER");
+        String role = TenantContext.getRole();
+        // V18：返回完整个人资料（昵称/头像 emoji/签名/注册时间/账号状态）
+        cn.lwx.lwxaiagent.entity.User profile = userService.findProfile(userId);
+        if (profile == null) {
+            return Map.of("success", true, "username", userId, "role", role != null ? role : "USER");
+        }
+        java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("success", true);
+        data.put("username", userId);
+        data.put("role", role != null ? role : "USER");
+        data.put("nickname", profile.getNickname());
+        data.put("avatarEmoji", profile.getAvatarEmoji());
+        data.put("bio", profile.getBio());
+        data.put("enabled", profile.getEnabled());
+        data.put("createdAt", profile.getCreatedAt() == null ? null : profile.getCreatedAt().toString());
+        return data;
+    }
+
+    /**
+     * <h3>更新个人资料（V18 个人中心）</h3>
+     * <p>body 可含：nickname / avatarEmoji / bio（均为可选，非空字段才更新）。</p>
+     */
+    @PutMapping("/profile")
+    public Map<String, Object> updateProfile(@RequestBody(required = false) Map<String, String> body) {
+        String userId = TenantContext.getUserId();
+        if (userId == null) {
+            throw new BizException(401, "未登录");
+        }
+        try {
+            Map<String, String> b = body == null ? Map.of() : body;
+            boolean changed = userService.updateProfile(userId,
+                    b.get("nickname"), b.get("avatarEmoji"), b.get("bio"));
+            return Map.of("success", true, "message", changed ? "资料已更新" : "没有需要更新的字段");
+        } catch (RuntimeException e) {
+            return Map.of("success", false, "message", e.getMessage());
+        }
+    }
+
+    /**
+     * <h3>修改密码（V18 个人中心）</h3>
+     * <p>body：oldPassword / newPassword。成功后建议前端引导重新登录。</p>
+     */
+    @PutMapping("/password")
+    public Map<String, Object> changePassword(@RequestBody(required = false) Map<String, String> body) {
+        String userId = TenantContext.getUserId();
+        if (userId == null) {
+            throw new BizException(401, "未登录");
+        }
+        try {
+            Map<String, String> b = body == null ? Map.of() : body;
+            String oldPwd = b.get("oldPassword");
+            String newPwd = b.get("newPassword");
+            if (oldPwd == null || oldPwd.isBlank() || newPwd == null || newPwd.isBlank()) {
+                return Map.of("success", false, "message", "旧密码与新密码都不能为空");
+            }
+            userService.changePassword(userId, oldPwd, newPwd);
+            return Map.of("success", true, "message", "密码已修改，请重新登录");
+        } catch (RuntimeException e) {
+            return Map.of("success", false, "message", e.getMessage());
+        }
     }
 
     /**

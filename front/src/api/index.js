@@ -106,6 +106,23 @@ export function getMe() {
   return apiClient.get('/auth/me')
 }
 
+// ===== 个人中心（V18 后端新增，2026-09-07） =====
+
+/** 更新资料：{nickname?, avatarEmoji?, bio?}（非空字段才更新） */
+export function updateProfileApi(payload) {
+  return apiClient.put('/auth/profile', payload)
+}
+
+/** 修改密码：{oldPassword, newPassword} */
+export function changePasswordApi(payload) {
+  return apiClient.put('/auth/password', payload)
+}
+
+/** 注销当前账号（级联删除全部数据，不可恢复） */
+export function deleteAccountApi() {
+  return apiClient.delete('/auth/account')
+}
+
 // ===== Chat (SSE) =====
 
 export function createLoveChatSSE(prompt, chatId, handlers) {

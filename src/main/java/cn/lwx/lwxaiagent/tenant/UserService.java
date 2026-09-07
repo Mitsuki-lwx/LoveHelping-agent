@@ -182,4 +182,71 @@ public class UserService {
         log.info("User logged in: username={}, tenant={}", username, user.getTenantId());
         return jwtTokenProvider.generateToken(user.getUsername(), user.getTenantId(), user.getRole());
     }
+
+    /**
+     * <h3>个人中心资料（V18）</h3>
+     * <p>按用户名取完整用户（含昵称/头像/签名），不存在返回 null。</p>
+     */
+    public User findProfile(String username) {
+        return userMapper.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+    }
+
+    /**
+     * <h3>更新个人资料（V18）</h3>
+     * <p>仅更新传入的非空字段：昵称/头像 emoji/签名。全部为空时直接返回（无写入）。</p>
+     *
+     * @return true=有更新；false=无可更新字段
+     */
+    public boolean updateProfile(String username, String nickname, String avatarEmoji, String bio) {
+        User user = userMapper.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        boolean changed = false;
+        if (nickname != null && !nickname.isBlank()) {
+            String v = nickname.trim();
+            user.setNickname(v.length() > 64 ? v.substring(0, 64) : v);
+            changed = true;
+        }
+        if (avatarEmoji != null && !avatarEmoji.isBlank()) {
+            String v = avatarEmoji.trim();
+            user.setAvatarEmoji(v.length() > 16 ? v.substring(0, 16) : v);
+            changed = true;
+        }
+        if (bio != null && !bio.isBlank()) {
+            String v = bio.trim();
+            user.setBio(v.length() > 200 ? v.substring(0, 200) : v);
+            changed = true;
+        }
+        if (changed) {
+            userMapper.updateById(user);
+        }
+        return changed;
+    }
+
+    /**
+     * <h3>修改密码（V18）</h3>
+     * <p>校验旧密码（BCrypt matches）→ 新密码长度 ≥ 8 且不同于旧密码 → 更新为 BCrypt 密文。</p>
+     */
+    public void changePassword(String username, String oldPassword, String newPassword) {
+        User user = userMapper.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        if (user == null) {
+            throw new RuntimeException("用户不存在");
+        }
+        if (oldPassword == null || !passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new RuntimeException("旧密码不正确");
+        }
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new RuntimeException("新密码长度至少 8 位");
+        }
+        if (newPassword.equals(oldPassword)) {
+            throw new RuntimeException("新密码不能与旧密码相同");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userMapper.updateById(user);
+        log.info("User changed password: username={}", username);
+    }
 }

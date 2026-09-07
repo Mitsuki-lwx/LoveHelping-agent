@@ -6,6 +6,7 @@ import LoveChat from '../views/LoveChat.vue'
 import Sandbox from '../views/Sandbox.vue'
 import MemoryArchive from '../views/MemoryArchive.vue'
 import History from '../views/History.vue'
+import Profile from '../views/Profile.vue'
 import Admin from '../views/Admin.vue'
 
 const routes = [
@@ -38,6 +39,12 @@ const routes = [
     path: '/memory',
     name: 'MemoryArchive',
     component: MemoryArchive,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: Profile,
     meta: { requiresAuth: true }
   },
   {
