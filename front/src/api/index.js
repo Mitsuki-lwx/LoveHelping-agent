@@ -40,41 +40,56 @@ function sseUrl(path) {
   return `${fullPath}${token ? sep + 'token=' + encodeURIComponent(token) : ''}`
 }
 
-function createSSE(url, { onMessage, onError, onComplete }) {
+function createSSE(url, { onMessage, onError, onComplete, onBusy }) {
+  // 2026-09-07：EventSource → fetch-stream。原 EventSource 无法读取 HTTP 错误响应体——
+  // 4003 排队告知（message/data）到不了前端，只能显示固定'连接失败'。
+  // fetch 版可读非 200 的 Result body：code==4003 且提供 onBusy → 结构化透传（打字机渲染）。
   const fullUrl = sseUrl(url)
-  const eventSource = new EventSource(fullUrl)
+  const controller = new AbortController()
 
-  eventSource.onmessage = (event) => {
+  const run = async () => {
     try {
-      if (event.data === '[DONE]') {
-        onComplete?.()
-        eventSource.close()
+      const resp = await fetch(fullUrl, {
+        headers: { Accept: 'text/event-stream' },
+        signal: controller.signal,
+      })
+      if (!resp.ok) {
+        let body = null
+        try { body = await resp.json() } catch (_) {}
+        if (body && body.code === 4003 && onBusy) {
+          onBusy(body)
+        } else {
+          onError?.(new Error((body && body.message) || ('HTTP ' + resp.status)))
+        }
         return
       }
-      if (event.data) {
-        onMessage?.(event.data)
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let idx
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx).trim()
+          buf = buf.slice(idx + 1)
+          if (!line.startsWith('data:')) continue
+          const data = line.slice(5).trim()
+          if (data === '[DONE]') { onComplete?.(); return }
+          if (data) onMessage?.(data)
+        }
       }
+      onComplete?.()
     } catch (e) {
-      console.error('SSE onmessage error:', e)
+      if (e.name !== 'AbortError') {
+        console.error('SSE fetch error:', e)
+        onError?.(e)
+      }
     }
   }
-
-  eventSource.onerror = () => {
-    try {
-      if (eventSource.readyState === EventSource.CLOSED) {
-        onComplete?.()
-      } else {
-        onError?.(new Error('SSE connection failed'))
-      }
-    } catch (e) {
-      console.error('SSE onerror handler error:', e)
-    }
-    eventSource.close()
-  }
-
-  return () => {
-    eventSource.close()
-  }
+  run()
+  return () => controller.abort()
 }
 
 // ===== Auth =====

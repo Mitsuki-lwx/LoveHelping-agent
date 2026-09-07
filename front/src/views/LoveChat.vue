@@ -185,6 +185,21 @@ async function scrollToBottom() {
   }
 }
 
+// 打字机动画：单条消息逐字呈现（错误/排队告知等非流式文案用）
+let busyTimer = null
+function typewrite(msgIdx, text) {
+  if (busyTimer) { clearInterval(busyTimer); busyTimer = null }
+  const msg = messages.value[msgIdx]
+  msg.content = ''
+  let i = 0
+  busyTimer = setInterval(() => {
+    i += 1
+    msg.content = text.slice(0, i)
+    scrollToBottom()
+    if (i >= text.length) { clearInterval(busyTimer); busyTimer = null }
+  }, 35)
+}
+
 function sendMessage() {
   const text = inputText.value.trim()
   if (!text) return
@@ -212,12 +227,18 @@ function sendMessage() {
       messages.value[aiMsgIdx].content += data
       scrollToBottom()
     },
-    onError() {
-      if (!messages.value[aiMsgIdx].content) {
-        messages.value[aiMsgIdx].content = '连接失败，请稍后重试。'
-      }
+    // 打字机渲染排队告知/错误（2026-09-07：'都要打字机效果'——非正常回复也逐字呈现）
+    onBusy(body) {
+      const text = (body && body.message) || '当前咨询较多，建议稍后再试。'
+      const retry = body && body.data && body.data.retryAfterSec
+      typewrite(aiMsgIdx, text + (retry ? `（约 ${retry} 秒后可重试）` : ''))
       loading.value = false
-      scrollToBottom()
+    },
+    onError(err) {
+      const text = (err && err.message && err.message !== 'Failed to fetch')
+        ? err.message : '连接失败，请稍后重试。'
+      typewrite(aiMsgIdx, text)
+      loading.value = false
     },
     onComplete() {
       if (!messages.value[aiMsgIdx].content) {
@@ -257,6 +278,7 @@ function submitFeedback(msgIdx) {
 }
 
 onUnmounted(() => {
+  if (busyTimer) clearInterval(busyTimer)
   if (cancelSSE) cancelSSE()
 })
 </script>

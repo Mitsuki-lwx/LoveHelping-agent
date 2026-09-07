@@ -158,6 +158,21 @@ function onScroll() {
   userScrolledAway = !isNearBottom
 }
 
+// 打字机动画（2026-09-07：排队告知/错误等非流式文案也逐字呈现）
+let busyTimer = null
+function typewrite(msgIdx, text) {
+  if (busyTimer) { clearInterval(busyTimer); busyTimer = null }
+  const msg = messages.value[msgIdx]
+  msg.content = ''
+  let i = 0
+  busyTimer = setInterval(() => {
+    i += 1
+    msg.content = text.slice(0, i)
+    scrollToBottom()
+    if (i >= text.length) { clearInterval(busyTimer); busyTimer = null }
+  }, 35)
+}
+
 async function scrollToBottom() {
   await nextTick()
   const el = messagesRef.value
@@ -189,6 +204,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (busyTimer) clearInterval(busyTimer)
   const el = messagesRef.value
   if (el) {
     el.removeEventListener('scroll', onScroll)
@@ -218,12 +234,17 @@ function sendMessage() {
       }
       scrollToBottom()
     },
-    onError() {
-      if (!messages.value[aiMsgIdx].content) {
-        messages.value[aiMsgIdx].content = '连接失败，请稍后重试。'
-      }
+    onBusy(body) {
+      const text = (body && body.message) || '当前咨询较多，建议稍后再试。'
+      const retry = body && body.data && body.data.retryAfterSec
+      typewrite(aiMsgIdx, text + (retry ? '（约 ' + retry + ' 秒后可重试）' : ''))
       loading.value = false
-      scrollToBottom()
+    },
+    onError(err) {
+      const text = (err && err.message && err.message !== 'Failed to fetch')
+        ? err.message : '连接失败，请稍后重试。'
+      typewrite(aiMsgIdx, text)
+      loading.value = false
     },
     onComplete() {
       if (!messages.value[aiMsgIdx].content) {
