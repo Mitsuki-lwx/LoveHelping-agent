@@ -1,10 +1,10 @@
 <template>
   <div class="login-page">
-    <div class="login-card">
+    <div class="login-card letter-card fold">
       <div class="login-header">
-        <div class="logo">💕</div>
-        <h1>LoveHelping</h1>
-        <p class="subtitle">{{ isLogin ? '登录后开始体验' : '注册一个新账号' }}</p>
+        <span class="logo-stamp anim-stamp">恋</span>
+        <h1 class="login-title hand">恋爱解忧所</h1>
+        <p class="subtitle">{{ isLogin ? '再回来，接着上一次的信写' : '开一个只属于你的信箱' }}</p>
       </div>
 
       <form @submit.prevent="submit">
@@ -79,109 +79,99 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  padding: 20px;
+  background:
+    radial-gradient(oklch(70% 0.02 78 / 0.18) 0.6px, transparent 0.8px),
+    radial-gradient(ellipse at 50% -10%, oklch(96% 0.025 78), transparent 55%),
+    var(--paper);
+  background-size: 21px 21px, auto, auto;
 }
-
 .login-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 40px;
-  width: 100%;
-  max-width: 400px;
-  box-shadow: 0 4px 24px rgba(232, 104, 128, 0.1);
+  width: min(400px, 94%);
+  padding: 40px 38px 30px;
+  animation: letter-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-
 .login-header {
-  text-align: center;
-  margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 26px;
 }
-
-.logo {
-  font-size: 48px;
-  margin-bottom: 8px;
+.logo-stamp {
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+  border-width: 2.5px;
+  margin-bottom: 4px;
 }
-
-.login-header h1 {
-  font-size: 24px;
-  color: var(--text-white);
-}
-
+.login-title { font-size: 26px; margin: 0; letter-spacing: 0.16em; }
 .subtitle {
-  color: var(--text-secondary);
-  font-size: 14px;
-  margin-top: 4px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--ink-faint);
+  letter-spacing: 0.06em;
+  margin: 0;
 }
-
-.field {
-  margin-bottom: 16px;
-}
-
+.field { margin-bottom: 18px; }
 .field label {
   display: block;
+  font-family: var(--font-hand);
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
+  letter-spacing: 0.12em;
   margin-bottom: 6px;
 }
-
 .field input {
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-size: 14px;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1.6px solid var(--ink-line);
+  padding: 8px 2px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.18s;
 }
-
-.field input:focus {
-  border-color: var(--accent);
-}
-
+.field input:focus { border-bottom-color: var(--wine); }
+.field input::placeholder { color: var(--ink-faint); }
 .error-msg {
-  color: #e74c3c;
+  color: var(--danger);
   font-size: 13px;
-  margin-bottom: 12px;
+  margin: 0 0 12px;
   text-align: center;
 }
-
 .submit-btn {
   width: 100%;
-  padding: 12px;
+  font-family: var(--font-hand);
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  color: oklch(98% 0.012 78);
+  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
   border: none;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
+  border-radius: 22px;
+  padding: 12px 0;
   cursor: pointer;
-  transition: background 0.2s;
+  margin-top: 8px;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s, opacity 0.15s;
+  box-shadow: 0 10px 20px -10px oklch(40% 0.1 25 / 0.6);
 }
-
-.submit-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.submit-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
+.submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 26px -12px oklch(40% 0.1 25 / 0.7); }
+.submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .switch-link {
-  text-align: center;
   margin-top: 20px;
-  font-size: 13px;
-  color: var(--text-secondary);
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--ink-soft);
 }
-
 .switch-link a {
-  color: var(--accent);
+  color: var(--wine-deep);
+  font-family: var(--font-hand);
+  font-size: 14px;
   text-decoration: none;
+  border-bottom: 1px dashed var(--wine);
+  margin-left: 4px;
 }
-
-.switch-link a:hover {
-  text-decoration: underline;
-}
+.switch-link a:hover { letter-spacing: 0.06em; }
 </style>

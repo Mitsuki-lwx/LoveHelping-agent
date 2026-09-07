@@ -1,22 +1,37 @@
+/* ============================================================
+   恋爱顾问 · 温暖手作信笺风 设计系统
+   2026-09-07（Impeccable 重构）—— 纸感 · 墨迹 · 手写信
+   设计原则：暖调纸张 + 墨棕文本 + 酒红点缀 + 楷体手写标题
+   ============================================================ */
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
+/* ---------- 色板（OKLCH，暖纸系） ---------- */
 :root {
-  --bg-primary: #fef6f8;
-  --bg-secondary: #ffffff;
-  --bg-chat: #fdf0f3;
-  --bg-user-msg: #f5a0b0;
-  --bg-ai-msg: #ffffff;
-  --text-primary: #3d2a33;
-  --text-secondary: #9a7a88;
-  --text-white: #2d1b24;
-  --accent: #e86880;
-  --accent-hover: #d45a6e;
-  --border-color: #f0e0e6;
-  --input-bg: #ffffff;
+  /* 纸 */
+  --paper: oklch(96.5% 0.014 78);            /* 页面米纸底 */
+  --paper-deep: oklch(92.5% 0.02 78);         /* 深一档（边缘/条纹） */
+  --paper-card: oklch(99% 0.006 78);          /* 信纸白 */
+  --paper-card-warm: oklch(98.2% 0.012 78);   /* 微暖信纸 */
+  /* 墨 */
+  --ink: oklch(30% 0.028 62);                 /* 正文棕墨（非纯黑） */
+  --ink-soft: oklch(46% 0.02 62);             /* 次级墨 */
+  --ink-faint: oklch(60% 0.018 62);           /* 弱墨（时间/占位） */
+  --ink-line: oklch(78% 0.024 62);            /* 墨线/边框 */
+  /* 酒红（品牌/你寄出的信） */
+  --wine: oklch(50% 0.11 25);
+  --wine-deep: oklch(39% 0.09 25);
+  --wine-soft: oklch(92% 0.03 25);            /* 晕染浅底 */
+  /* 语义 */
+  --danger: oklch(50% 0.17 27);
+  --ok: oklch(55% 0.12 150);
+  /* 字体 */
+  --font-hand: 'Kaiti SC', 'KaiTi', 'STKaiti', 'DFKai-SB', '楷体', Georgia, 'Times New Roman', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
 }
 
 html, body {
@@ -26,9 +41,13 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: var(--font-body);
+  background: var(--paper);
+  color: var(--ink);
+  /* 极轻纸纤维点阵（性能友好：静态图、细粒度） */
+  background-image: radial-gradient(oklch(70% 0.02 78 / 0.16) 0.6px, transparent 0.8px);
+  background-size: 21px 21px;
+  line-height: 1.6;
 }
 
 #app {
@@ -42,46 +61,203 @@ body {
   flex-direction: column;
 }
 
+::selection {
+  background: var(--wine-soft);
+}
+
+/* ---------- 旧变量兼容映射（重构过渡期：App 导航/ManusChat/Admin 仍引用旧名） ---------- */
+:root {
+  --bg-primary: var(--paper);
+  --bg-secondary: var(--paper-card);
+  --bg-chat: var(--paper);
+  --bg-user-msg: var(--wine);
+  --bg-ai-msg: var(--paper-card);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-soft);
+  --text-white: var(--ink);
+  --accent: var(--wine);
+  --accent-hover: var(--wine-deep);
+  --border-color: var(--ink-line);
+  --input-bg: var(--paper-card);
+}
+
+/* ---------- 手写（楷体）标题 ---------- */
+.hand {
+  font-family: var(--font-hand);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+/* ---------- 墨线分割（带小图章） ---------- */
+.ink-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.9em;
+  color: var(--ink-faint);
+  border: none;
+}
+.ink-divider::before,
+.ink-divider::after {
+  content: '';
+  flex: 1;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--ink-line), transparent);
+}
+
+/* ---------- 圆形图章（手作印泥感） ---------- */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: 50%;
+  border: 2px dashed var(--wine);
+  color: var(--wine);
+  transform: rotate(-10deg);
+  background: transparent;
+  font-size: 0.9em;
+  user-select: none;
+}
+
+/* ---------- 信纸卡片（可带折角） ---------- */
+.letter-card {
+  background: var(--paper-card);
+  border: 1px solid var(--ink-line);
+  border-radius: 6px;
+  box-shadow: 0 1px 0 oklch(50% 0.02 62 / 0.08), 0 10px 26px -14px oklch(35% 0.04 62 / 0.4);
+  position: relative;
+}
+/* 右上折角（信封开启感） */
+.letter-card.fold::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-style: solid;
+  border-width: 0 17px 17px 0;
+  border-color: transparent var(--paper-deep) transparent transparent;
+  border-radius: 0 6px 0 0;
+}
+
+/* ---------- 手写按钮（墨描边 + 按压微沉） ---------- */
+.btn-hand {
+  font-family: var(--font-hand);
+  font-size: 1.02rem;
+  letter-spacing: 0.05em;
+  color: var(--ink);
+  background: var(--paper-card);
+  border: 1.5px solid var(--ink-soft);
+  border-radius: 10px 12px 9px 11px;   /* 手写不规则圆角 */
+  padding: 0.55em 1.5em;
+  cursor: pointer;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s, border-color 0.16s, background 0.16s;
+}
+.btn-hand:hover {
+  border-color: var(--wine);
+  color: var(--wine-deep);
+  transform: translateY(-1px) rotate(-0.4deg);
+  box-shadow: 0 6px 14px -8px oklch(40% 0.1 25 / 0.5);
+}
+.btn-hand:active {
+  transform: translateY(1px) scale(0.98);
+}
+.btn-hand.primary {
+  background: var(--wine);
+  border-color: var(--wine);
+  color: oklch(98% 0.01 78);
+}
+.btn-hand.primary:hover {
+  background: var(--wine-deep);
+  border-color: var(--wine-deep);
+  color: oklch(99% 0.01 78);
+}
+
+/* ---------- 信纸输入（下划线式，聚焦墨线压深） ---------- */
+.input-letter {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 1.6px solid var(--ink-line);
+  border-radius: 0;
+  padding: 0.4em 0.2em;
+  outline: none;
+  transition: border-color 0.18s;
+}
+.input-letter::placeholder { color: var(--ink-faint); }
+.input-letter:focus { border-bottom-color: var(--wine); }
+
+/* ---------- 进场动效（纸落感：ease-out-quart 系） ---------- */
+@keyframes letter-in {
+  0% { opacity: 0; transform: translateY(14px) scale(0.985) rotate(0.4deg); }
+  100% { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes stamp-drop {
+  0% { opacity: 0; transform: rotate(-20deg) scale(1.6); }
+  60% { transform: rotate(-8deg) scale(0.94); }
+  100% { opacity: 1; transform: rotate(-10deg) scale(1); }
+}
+.anim-letter-in { animation: letter-in 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.anim-fade-in { animation: fade-in 0.3s ease-out both; }
+.anim-stamp { animation: stamp-drop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* ---------- 聊天 markdown 渲染（纸面文字排版） ---------- */
 .chat-messages h3 {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text-white);
+  color: var(--ink);
   margin: 12px 0 4px;
 }
-
 .chat-messages h2 {
   font-size: 17px;
   font-weight: 700;
-  color: var(--text-white);
+  color: var(--ink);
   margin: 16px 0 6px;
 }
-
 .chat-messages h1 {
   font-size: 19px;
   font-weight: 700;
-  color: var(--text-white);
+  color: var(--ink);
   margin: 20px 0 8px;
 }
-
 .chat-messages hr {
   border: none;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px dashed var(--ink-line);
   margin: 12px 0;
 }
-
-.chat-messages strong {
-  color: var(--text-white);
-  font-weight: 600;
-}
-
-.chat-messages em {
-  font-style: italic;
-}
-
+.chat-messages strong { color: var(--ink); font-weight: 700; }
+.chat-messages em { font-style: italic; }
 .chat-messages code {
-  background: var(--input-bg);
+  background: var(--paper-deep);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 13px;
-  font-family: monospace;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  color: var(--wine-deep);
 }
+.chat-messages pre {
+  background: var(--paper-deep);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--ink-line);
+  margin: 8px 0;
+}
+.chat-messages pre code { background: transparent; color: var(--ink); padding: 0; }
+.chat-messages ul, .chat-messages ol { padding-left: 1.4em; margin: 6px 0; }
+.chat-messages blockquote {
+  border-left: 3px solid var(--ink-line);
+  padding-left: 0.9em;
+  color: var(--ink-soft);
+  margin: 8px 0;
+  font-family: var(--font-hand);
+}
+.chat-messages a { color: var(--wine-deep); text-decoration: underline dotted; }
+.chat-messages img { max-width: 100%; border-radius: 6px; }

@@ -1,9 +1,15 @@
 <template>
   <div class="chat-page">
     <div class="chat-header">
-      <button class="back-btn" @click="goHome">← 返回</button>
-      <span class="header-title">恋爱全能帮</span>
-      <button class="new-chat-btn" @click="newChat" title="新建对话">＋ 新对话</button>
+      <button class="back-btn" @click="goHome">←</button>
+      <div class="letterhead">
+        <span class="letterhead-stamp anim-stamp">帮</span>
+        <div class="letterhead-titles">
+          <h1 class="letterhead-title hand">恋爱全能帮</h1>
+          <span class="letterhead-sub">— 想得到，也做得到 —</span>
+        </div>
+      </div>
+      <button class="new-chat-btn btn-hand" @click="newChat" title="新建对话">✎ 新一封信</button>
     </div>
 
     <div class="chat-messages" ref="messagesRef">
@@ -289,6 +295,58 @@ function submitFeedback(msgIdx) {
 }
 </script>
 
+<style scoped>
+/* ===== 信头（与 LoveChat 同语言，2026-09-07） ===== */
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 22px 12px;
+  flex-shrink: 0;
+  border-bottom: 1.5px solid var(--ink-line);
+  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
+  box-shadow: 0 8px 18px -16px oklch(35% 0.04 62 / 0.5);
+  position: relative;
+  z-index: 2;
+}
+.letterhead { display: flex; align-items: center; gap: 12px; }
+.letterhead-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: 2px dashed var(--wine);
+  color: var(--wine-deep);
+  font-family: var(--font-hand);
+  font-size: 20px;
+  font-weight: 700;
+  transform: rotate(-10deg);
+  background: var(--paper-card);
+  flex-shrink: 0;
+}
+.letterhead-titles { display: flex; flex-direction: column; line-height: 1.15; }
+.letterhead-title { font-size: 22px; margin: 0; letter-spacing: 0.14em; }
+.letterhead-sub {
+  font-family: var(--font-hand);
+  font-size: 11px;
+  color: var(--ink-faint);
+  letter-spacing: 0.2em;
+  margin-top: 2px;
+}
+.back-btn {
+  font-family: var(--font-hand);
+  font-size: 20px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 50%;
+}
+.back-btn:hover { background: var(--paper-deep); transform: translateX(-2px); }
+.new-chat-btn { font-size: 13.5px; }
 <style scoped>
 .chat-page {
   height: 100%;

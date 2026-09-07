@@ -1,8 +1,8 @@
 <template>
   <div class="history-page">
     <div class="page-header">
-      <button class="back-btn" @click="$router.push('/')">← 返回</button>
-      <span class="page-title">对话历史</span>
+      <button class="back-btn" @click="$router.push('/')">←</button>
+      <span class="page-title hand">对话历史 · 旧信存档</span>
       <span class="count-badge" v-if="conversations.length">{{ conversations.length }} 条</span>
     </div>
 
@@ -118,73 +118,142 @@ onMounted(load)
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg-chat);
+  background: var(--paper);
 }
-
 .page-header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 16px 24px; background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px 14px;
+  flex-shrink: 0;
+  border-bottom: 1.5px solid var(--ink-line);
+  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
 }
-
 .back-btn {
-  background: none; border: none; color: var(--text-secondary);
-  font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  font-family: var(--font-hand);
+  font-size: 20px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 50%;
 }
-.back-btn:hover { color: var(--text-white); background: var(--input-bg); }
-
-.page-title { font-size: 16px; font-weight: 600; color: var(--text-white); }
-.count-badge { font-size: 12px; color: var(--text-secondary); background: var(--input-bg); padding: 2px 10px; border-radius: 10px; }
-
+.back-btn:hover { background: var(--paper-deep); transform: translateX(-2px); }
+.page-title { font-size: 21px; letter-spacing: 0.12em; flex: 1; }
+.count-badge {
+  font-family: var(--font-hand);
+  font-size: 12px;
+  color: var(--wine-deep);
+  background: var(--wine-soft);
+  border: 1px dashed var(--wine);
+  border-radius: 12px;
+  padding: 3px 10px;
+  transform: rotate(-2deg);
+}
 .tabs {
-  display: flex; gap: 0; padding: 12px 24px 0;
-  background: var(--bg-secondary); border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  padding: 12px 22px 0;
+  flex-shrink: 0;
 }
 .tab {
-  padding: 8px 20px; border: none; background: none;
-  color: var(--text-secondary); font-size: 13px; cursor: pointer;
-  border-bottom: 2px solid transparent; transition: all 0.2s;
+  font-family: var(--font-hand);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1.4px solid var(--ink-line);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: all 0.18s;
+  transform: translateY(1px);
 }
-.tab:hover { color: var(--text-white); }
-.tab-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-
-.content { flex: 1; overflow-y: auto; padding: 16px 24px; max-width: 700px; width: 100%; margin: 0 auto; }
-
-.loading-state, .empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 200px; color: var(--text-secondary);
+.tab:hover { color: var(--wine-deep); }
+.tab-active {
+  background: var(--paper-card);
+  border-color: var(--wine);
+  color: var(--wine-deep);
+  font-weight: 700;
+  transform: translateY(0);
 }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
-
-.conv-list { display: flex; flex-direction: column; gap: 6px; }
+.content { flex: 1; overflow-y: auto; padding: 18px 22px 24px; }
+.loading-state, .empty-state { text-align: center; padding: 60px 0; color: var(--ink-faint); }
+.empty-icon { font-size: 40px; margin-bottom: 10px; }
+.empty-state p { font-family: var(--font-hand); font-size: 15px; }
+.conv-list { display: flex; flex-direction: column; gap: 12px; }
 .conv-card {
-  display: flex; align-items: center; justify-content: space-between;
-  background: var(--bg-secondary); border: 1px solid var(--border-color);
-  border-radius: 12px; padding: 14px 16px; cursor: pointer; transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: var(--paper-card);
+  border: 1px solid var(--ink-line);
+  border-left: 3px solid var(--wine);
+  border-radius: 8px;
+  padding: 15px 18px;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s, border-color 0.2s;
+  animation: letter-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.conv-card:hover { border-color: var(--accent); box-shadow: 0 2px 12px rgba(232, 104, 128, 0.08); }
-
-.conv-info { flex: 1; min-width: 0; }
-.conv-title { font-size: 14px; color: var(--text-primary); font-weight: 500; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-meta { font-size: 12px; color: var(--text-secondary); }
-.sep { margin: 0 4px; }
-.conv-actions { flex-shrink: 0; margin-left: 12px; }
+.conv-card:hover {
+  transform: translateX(3px);
+  border-color: var(--wine);
+  box-shadow: 0 10px 22px -14px oklch(40% 0.1 25 / 0.4);
+}
+.conv-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 5px; }
+.conv-meta { font-size: 12px; color: var(--ink-faint); font-family: var(--font-hand); letter-spacing: 0.04em; }
+.sep { margin: 0 6px; }
+.conv-actions { flex-shrink: 0; }
 .action-btn {
-  background: none; border: 1px solid transparent; cursor: pointer;
-  font-size: 16px; padding: 4px 8px; border-radius: 6px; opacity: 0.4;
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  opacity: 0.55;
+  transition: opacity 0.15s, transform 0.15s;
 }
-.action-btn:hover { opacity: 1; background: var(--input-bg); }
-
+.action-btn:hover { opacity: 1; transform: scale(1.12); }
+/* 删除确认弹层 */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-  display: flex; align-items: center; justify-content: center; z-index: 100;
+  position: fixed;
+  inset: 0;
+  background: oklch(28% 0.02 62 / 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(2px);
 }
-.modal { background: var(--bg-secondary); border-radius: 16px; width: 90%; max-width: 380px; padding: 32px; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-.modal h3 { font-size: 18px; color: var(--text-white); margin-bottom: 12px; }
-.modal p { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
-.confirm-actions { display: flex; gap: 12px; justify-content: center; }
-.cancel-btn { padding: 8px 20px; border: 1px solid var(--border-color); border-radius: 8px; background: transparent; color: var(--text-primary); cursor: pointer; font-size: 13px; }
-.cancel-btn:hover { background: var(--input-bg); }
-.delete-btn { padding: 8px 20px; border: none; border-radius: 8px; background: #e74c3c; color: #fff; cursor: pointer; font-size: 13px; }
-.delete-btn:hover { background: #c0392b; }
+.modal {
+  background: var(--paper-card);
+  border: 1px solid var(--ink-line);
+  border-radius: 8px;
+  padding: 26px 30px;
+  width: min(340px, 90%);
+  animation: letter-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.modal h3 { font-family: var(--font-hand); font-size: 19px; letter-spacing: 0.1em; margin-bottom: 10px; color: var(--ink); }
+.modal p { font-size: 14px; color: var(--ink-soft); margin-bottom: 20px; }
+.confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.confirm-btn {
+  font-family: var(--font-hand);
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  border-radius: 14px 10px 13px 9px;
+  padding: 8px 18px;
+  cursor: pointer;
+  border: 1.4px solid var(--ink-line);
+  background: var(--paper-card);
+  color: var(--ink);
+  transition: transform 0.15s, border-color 0.15s;
+}
+.confirm-btn:hover { transform: translateY(-1px); border-color: var(--wine); color: var(--wine-deep); }
+.confirm-btn.danger { background: var(--wine); border-color: var(--wine); color: oklch(98% 0.012 78); }
+.confirm-btn.danger:hover { background: var(--wine-deep); }
+.cancel-btn:hover { transform: translateY(-1px); }
 </style>

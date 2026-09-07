@@ -1,21 +1,42 @@
 <template>
   <div class="chat-page">
     <div class="chat-header">
-      <button class="back-btn" @click="goHome">← 返回</button>
-      <span class="header-title">AI 恋爱专家</span>
-      <button class="new-chat-btn" @click="newChat" title="新建对话">＋ 新对话</button>
+      <button class="back-btn" @click="goHome">←</button>
+      <div class="letterhead">
+        <span class="letterhead-stamp anim-stamp">恋</span>
+        <div class="letterhead-titles">
+          <h1 class="letterhead-title hand">恋爱解忧信</h1>
+          <span class="letterhead-sub">— 收信 · 回信 · 替你慢慢想 —</span>
+        </div>
+      </div>
+      <button class="new-chat-btn btn-hand" @click="newChat" title="新建对话">✎ 新一封信</button>
     </div>
 
     <div class="chat-messages" ref="messagesRef">
       <div v-if="messages.length === 0" class="empty-state">
-        <div class="empty-icon">💕</div>
-        <p>你好！我是你的 AI 恋爱专家，<br>有什么情感问题可以向我倾诉~</p>
+        <div class="empty-letter letter-card fold anim-letter-in">
+          <div class="empty-letter-head">
+            <span class="empty-letter-stamp stamp">心</span>
+            <p class="hand empty-letter-title">写信给我吧</p>
+          </div>
+          <p class="empty-letter-body">
+            说不出口的、想不通的、放不下的……<br>都可以写在这里。我会认真地读，慢慢地回。
+          </p>
+          <div class="empty-quicks">
+            <button class="quick-ask btn-hand" @click="quickAsk('最近和对象总是因为小事冷战，我该怎么办？')">💬 总是冷战怎么办？</button>
+            <button class="quick-ask btn-hand" @click="quickAsk('怎么判断对方是不是真的喜欢我？')">💬 TA 真的喜欢我吗？</button>
+            <button class="quick-ask btn-hand" @click="quickAsk('分手后还是放不下，怎么走出来？')">💬 分手后走不出来</button>
+          </div>
+        </div>
       </div>
       <div
         v-for="(msg, idx) in messages"
         :key="idx"
-        :class="['message', msg.role === 'user' ? 'message-user' : 'message-ai']"
+        :class="['message anim-letter-in', msg.role === 'user' ? 'message-user' : 'message-ai']"
       >
+        <div v-if="msg.role === 'ai'" class="message-sender">
+          <span class="msg-stamp-mini">回</span><span class="msg-sender-name hand">恋恋</span>
+        </div>
         <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
         <div v-if="msg.role === 'ai' && !loading" class="vote-row">
           <button
@@ -48,11 +69,11 @@
     </div>
 
     <div class="chat-input-area">
-      <div class="input-wrapper">
+      <div class="input-wrapper letter-card">
         <input
           v-model="inputText"
           class="chat-input"
-          placeholder="请输入你的问题..."
+          placeholder="写下你的心事……"
           @keydown.enter="sendMessage"
           :disabled="loading"
         />
@@ -65,9 +86,10 @@
           📖
         </button>
         <button class="send-btn" @click="sendMessage" :disabled="loading || !inputText.trim()">
-          发送
+          <span class="send-ink">寄出</span>
         </button>
       </div>
+      <p class="input-hint">按 Enter 寄出 · AI 回信需要一点时间，请耐心等一等</p>
     </div>
   </div>
 </template>
@@ -146,6 +168,12 @@ let cancelSSE = null
 
 function goHome() {
   router.push('/')
+}
+
+/** 空态引导：一键填入问题并寄出 */
+function quickAsk(text) {
+  inputText.value = text
+  sendMessage()
 }
 
 /** Load existing conversation messages */
@@ -285,383 +313,344 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--bg-chat);
+  background: transparent;
 }
 
+/* ---------- 信头 ---------- */
 .chat-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.back-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 14px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.back-btn:hover {
-  color: var(--text-white);
-  background: var(--input-bg);
-}
-
-.header-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-white);
-}
-
-.new-chat-btn {
-  margin-left: auto;
-  background: none;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 12px;
-  padding: 4px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.new-chat-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.chat-messages {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 3px;
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-  text-align: center;
-  line-height: 1.8;
-}
-
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.message {
-  max-width: 75%;
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.message-user {
-  align-self: flex-end;
-}
-
-.message-ai {
-  align-self: flex-start;
-}
-
-.message-content {
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.message-user .message-content {
-  background: var(--bg-user-msg);
-  color: var(--text-white);
-  border-bottom-right-radius: 4px;
-}
-
-.message-ai .message-content {
-  background: var(--bg-ai-msg);
-  color: var(--text-primary);
-  border-bottom-left-radius: 4px;
-}
-
-.typing-dots {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.dot {
-  animation: blink 1.4s infinite;
-  font-size: 20px;
-  line-height: 1;
-}
-
-.dot:nth-child(2) { animation-delay: 0.2s; }
-.dot:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes blink {
-  0%, 80%, 100% { opacity: 0; }
-  40% { opacity: 1; }
-}
-
-.chat-input-area {
-  padding: 16px 24px;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.input-wrapper {
-  display: flex;
-  gap: 12px;
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.chat-input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.chat-input:focus {
-  border-color: var(--accent);
-}
-
-.chat-input:disabled {
-  opacity: 0.6;
-}
-
-.chat-input::placeholder {
-  color: var(--text-secondary);
-}
-
-.rag-toggle {
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  background: var(--input-bg);
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
-  opacity: 0.5;
-}
-.rag-toggle.active {
-  opacity: 1;
-  border-color: var(--accent);
-  background: rgba(99, 102, 241, 0.1);
-}
-
-.send-btn {
-  padding: 12px 24px;
-  border: none;
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--text-white);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-
-.send-btn:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.pdf-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 12px 16px;
-  margin: 8px 0;
-}
-
-.pdf-card-info {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  padding: 14px 22px 12px;
+  flex-shrink: 0;
+  border-bottom: 1.5px solid var(--ink-line);
+  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
+  box-shadow: 0 8px 18px -16px oklch(35% 0.04 62 / 0.5);
+  position: relative;
+  z-index: 2;
 }
-
-.pdf-card-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-primary);
-  word-break: break-all;
-}
-
-.pdf-card-actions {
+.letterhead {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+}
+.letterhead-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid var(--wine);
+  border-style: dashed;
+  color: var(--wine-deep);
+  font-family: var(--font-hand);
+  font-size: 20px;
+  font-weight: 700;
+  transform: rotate(-10deg);
+  background: var(--paper-card);
   flex-shrink: 0;
 }
-
-.pdf-btn {
-  display: inline-block;
-  padding: 6px 16px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background 0.2s;
-  border: none;
+.letterhead-titles { display: flex; flex-direction: column; line-height: 1.15; }
+.letterhead-title {
+  font-size: 22px;
+  margin: 0;
+  letter-spacing: 0.14em;
 }
-
-.pdf-btn-preview {
-  background: var(--accent);
-  color: var(--text-white);
-}
-
-.pdf-btn-preview:hover {
-  background: var(--accent-hover);
-}
-
-.pdf-btn-download {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-}
-
-.pdf-btn-download:hover {
-  background: var(--input-bg);
-  color: var(--text-primary);
-}
-
-.msg-link {
-  color: var(--accent);
-  text-decoration: underline;
-}
-
-.step-badge {
-  display: inline-block;
-  padding: 1px 10px;
-  border-radius: 10px;
+.letterhead-sub {
+  font-family: var(--font-hand);
   font-size: 11px;
-  font-weight: 600;
-  margin-right: 6px;
-  letter-spacing: 0.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.2em;
+  margin-top: 2px;
+}
+.back-btn {
+  font-family: var(--font-hand);
+  font-size: 20px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 50%;
+  transition: background 0.15s, transform 0.15s;
+}
+.back-btn:hover { background: var(--paper-deep); transform: translateX(-2px); }
+
+/* ---------- 消息区（信纸横格） ---------- */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 26px clamp(14px, 5vw, 40px) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* 极淡信纸横线（回信纸的横格） */
+  background-image: repeating-linear-gradient(
+    transparent 0, transparent 35px,
+    oklch(70% 0.02 78 / 0.13) 35px, oklch(70% 0.02 78 / 0.13) 36px
+  );
+  scroll-behavior: smooth;
+}
+.chat-messages::-webkit-scrollbar { width: 9px; }
+.chat-messages::-webkit-scrollbar-thumb {
+  background: var(--ink-line);
+  border-radius: 8px;
+  border: 2px solid var(--paper);
 }
 
-.step-think {
-  background: #f0e0e6;
-  color: #8a5a6a;
+/* ---------- 消息（AI = 收到的回信；user = 你寄出的信） ---------- */
+.message {
+  display: flex;
+  flex-direction: column;
+  max-width: min(88%, 680px);
 }
+.message-user { align-self: flex-end; align-items: flex-end; }
+.message-ai { align-self: flex-start; align-items: flex-start; }
 
-.step-result {
-  background: var(--accent);
-  color: var(--text-white);
+.message-sender {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 5px 6px;
 }
+.msg-stamp-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.4px solid var(--wine);
+  color: var(--wine-deep);
+  font-family: var(--font-hand);
+  font-size: 11px;
+  font-weight: 700;
+  transform: rotate(-8deg);
+  background: var(--paper-card);
+}
+.msg-sender-name { font-size: 13px; color: var(--ink-soft); letter-spacing: 0.12em; }
 
+.message-content {
+  padding: 13px 18px 13px;
+  font-size: 15px;
+  line-height: 1.85;
+  word-break: break-word;
+  position: relative;
+}
+.message-ai .message-content {
+  background: var(--paper-card);
+  border: 1px solid var(--ink-line);
+  border-radius: 4px 14px 14px 14px;
+  box-shadow: 0 1px 0 oklch(50% 0.02 62 / 0.07), 0 8px 18px -14px oklch(35% 0.04 62 / 0.45);
+}
+.message-ai .message-content::before {
+  content: '';
+  position: absolute;
+  left: -1px; top: -1px;
+  width: 34px; height: 34px;
+  border-top: 2px solid var(--wine);
+  border-left: 2px solid var(--wine);
+  border-radius: 4px 0 0 0;
+  opacity: 0.55;
+}
+.message-user .message-content {
+  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
+  color: oklch(98% 0.012 78);
+  border-radius: 14px 4px 14px 14px;
+  box-shadow: 0 10px 22px -14px oklch(40% 0.1 25 / 0.6);
+}
+.message-user .message-content :deep(strong),
+.message-user .message-content :deep(h1),
+.message-user .message-content :deep(h2),
+.message-user .message-content :deep(h3) { color: oklch(99% 0.01 78); }
+.message-user .message-content :deep(a) { color: oklch(94% 0.06 78); }
+
+/* ---------- 投票行 ---------- */
 .vote-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-  padding-left: 16px;
+  gap: 5px;
+  margin-top: 8px;
+  padding-left: 8px;
+  opacity: 0.72;
+  transition: opacity 0.18s;
 }
-
+.message-ai:hover .vote-row { opacity: 1; }
 .vote-btn {
-  background: none;
+  background: transparent;
   border: 1px solid transparent;
-  cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   padding: 2px 6px;
-  border-radius: 6px;
-  opacity: 0.4;
-  transition: all 0.2s;
-  line-height: 1;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s;
 }
-
-.vote-btn:hover {
-  opacity: 0.8;
-  background: var(--input-bg);
-}
-
-.vote-active-like {
-  opacity: 1;
-  border-color: #22c55e;
-  background: rgba(34, 197, 94, 0.1);
-}
-
-.vote-active-dislike {
-  opacity: 1;
-  border-color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
-}
-
+.vote-btn:hover { transform: scale(1.2) rotate(-4deg); background: var(--paper-deep); }
+.vote-active-like { background: oklch(90% 0.05 150 / 0.5) !important; }
+.vote-active-dislike { background: oklch(90% 0.05 27 / 0.45) !important; }
 .feedback-input {
-  flex: 1;
-  max-width: 200px;
-  padding: 4px 8px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--input-bg);
-  color: var(--text-primary);
-  font-size: 12px;
+  border: none;
+  border-bottom: 1.4px solid var(--ink-line);
+  background: transparent;
+  font-size: 13px;
+  color: var(--ink);
   outline: none;
+  width: 180px;
+  padding: 2px 4px;
+}
+.feedback-input::placeholder { color: var(--ink-faint); }
+.feedback-input:focus { border-bottom-color: var(--wine); }
+
+/* ---------- 打字中（墨点） ---------- */
+.typing-dots { display: inline-flex; gap: 3px; padding: 2px 4px; }
+.typing-dots .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--wine);
+  display: inline-block;
+  animation: dot-bounce 1.1s ease-in-out infinite;
+}
+.typing-dots .dot:nth-child(2) { animation-delay: 0.16s; }
+.typing-dots .dot:nth-child(3) { animation-delay: 0.32s; }
+@keyframes dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-5px); opacity: 1; }
 }
 
-.feedback-input:focus {
-  border-color: var(--accent);
+/* ---------- 空状态：一封待写的信 ---------- */
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0;
+}
+.empty-letter {
+  width: min(440px, 92%);
+  padding: 30px 32px 26px;
+  background: var(--paper-card);
+  text-align: center;
+}
+.empty-letter-head { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 14px; }
+.empty-letter-stamp {
+  width: 40px; height: 40px;
+  font-size: 18px;
+  border: 2px dashed var(--wine);
+}
+.empty-letter-title {
+  font-size: 24px;
+  letter-spacing: 0.18em;
+  margin: 0;
+}
+.empty-letter-body {
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  line-height: 2;
+  margin-bottom: 20px;
+}
+.empty-quicks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+.quick-ask {
+  font-size: 14px;
+  text-align: center;
+  padding: 0.55em 1em;
+  opacity: 0.9;
 }
 
-.step-bullet {
-  color: var(--text-secondary);
-  font-size: 10px;
-  margin-right: 6px;
+/* ---------- 输入区 ---------- */
+.chat-input-area {
+  flex-shrink: 0;
+  padding: 12px 20px 14px;
+  border-top: 1.5px solid var(--ink-line);
+  background: linear-gradient(0deg, var(--paper), oklch(99% 0.006 78));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 780px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 10px 12px 10px 20px;
+  border-radius: 26px;
+}
+.chat-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 15.5px;
+  color: var(--ink);
+  min-width: 0;
+}
+.chat-input::placeholder { color: var(--ink-faint); font-family: var(--font-hand); letter-spacing: 0.06em; }
+.chat-input:disabled { opacity: 0.6; }
+.rag-toggle {
+  border: 1px solid var(--ink-line);
+  background: var(--paper-card);
+  border-radius: 50%;
+  width: 38px; height: 38px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+  flex-shrink: 0;
+}
+.rag-toggle:hover { transform: rotate(-8deg) scale(1.06); }
+.rag-toggle.active {
+  background: var(--wine-soft);
+  border-color: var(--wine);
+  box-shadow: 0 0 0 3px oklch(92% 0.03 25 / 0.6);
+}
+.send-btn {
+  border: none;
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
+  color: oklch(98% 0.012 78);
+  font-family: var(--font-hand);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  padding: 0.55em 1.5em;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s, opacity 0.15s;
+  box-shadow: 0 8px 16px -10px oklch(40% 0.1 25 / 0.65);
+}
+.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 20px -10px oklch(40% 0.1 25 / 0.7); }
+.send-btn:active:not(:disabled) { transform: translateY(1px) scale(0.97); }
+.send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.input-hint {
+  max-width: 780px;
+  margin: 0 auto;
+  width: 100%;
+  font-family: var(--font-hand);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+  text-align: center;
 }
 </style>
 
 <!-- Non-scoped: these must apply to v-html rendered content -->
 <style>
 .think-text {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 12.5px;
+  color: var(--ink-faint);
 }
 .pdf-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  background: var(--paper-card-warm);
+  border: 1px dashed var(--ink-line);
+  border-radius: 8px;
   padding: 12px 16px;
-  margin: 8px 0;
+  margin: 10px 0;
 }
 .pdf-card-info {
   display: flex;
@@ -671,67 +660,53 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .pdf-card-name {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13px;
-  color: var(--text-primary);
+  color: var(--ink);
   word-break: break-all;
 }
-.pdf-card-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
+.pdf-card-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .pdf-btn {
   display: inline-block;
   padding: 6px 16px;
-  border-radius: 6px;
+  border-radius: 14px 10px 13px 9px;
   font-size: 13px;
-  font-weight: 500;
   text-decoration: none;
   cursor: pointer;
-  transition: background 0.2s;
   border: none;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s;
+  font-family: var(--font-hand);
 }
-.pdf-btn-preview {
-  background: var(--accent);
-  color: var(--text-white);
-}
-.pdf-btn-preview:hover {
-  background: var(--accent-hover);
-}
+.pdf-btn:hover { transform: translateY(-1px); }
+.pdf-btn-preview { background: var(--wine); color: oklch(98% 0.012 78); }
+.pdf-btn-preview:hover { background: var(--wine-deep); }
 .pdf-btn-download {
   background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
+  color: var(--ink-soft);
+  border: 1.4px solid var(--ink-line);
 }
-.pdf-btn-download:hover {
-  background: var(--input-bg);
-  color: var(--text-primary);
-}
-.msg-link {
-  color: var(--accent);
-  text-decoration: underline;
-}
+.pdf-btn-download:hover { background: var(--paper-deep); color: var(--ink); }
+.msg-link { color: var(--wine-deep); text-decoration: underline dotted; }
 .step-badge {
   display: inline-block;
   padding: 1px 10px;
   border-radius: 10px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   margin-right: 6px;
   letter-spacing: 0.5px;
 }
 .step-think {
-  background: #f0e0e6;
-  color: #8a5a6a;
+  background: var(--wine-soft);
+  color: var(--wine-deep);
 }
 .step-result {
-  background: var(--accent);
-  color: var(--text-white);
+  background: var(--wine);
+  color: oklch(98% 0.012 78);
 }
 .step-bullet {
-  color: var(--text-secondary);
-  font-size: 10px;
+  color: var(--wine);
+  font-size: 11px;
   margin-right: 6px;
 }
 </style>
