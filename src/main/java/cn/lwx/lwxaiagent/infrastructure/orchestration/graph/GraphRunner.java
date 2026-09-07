@@ -43,17 +43,23 @@ public class GraphRunner {
     private final GraphObservability observability;
     private final org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter;
     private final io.micrometer.tracing.Tracer tracer;
+    /** 图执行线程池（2026-09-07：脱离 ForkJoinPool.commonPool——原 supplyAsync 无显式 executor，
+     *  与闸门 max-inflight=8 同量级且不可配，调高闸门会先爆 commonPool；显式池与闸门解耦可调） */
+    private final java.util.concurrent.Executor graphExecutor;
     private final ConcurrentHashMap<String, CompletableFuture<?>> activeRuns = new ConcurrentHashMap<>();
 
     public GraphRunner(OrchestrationGraph orchestrationGraph,
                        ChatMemoryFactory chatMemoryFactory,
                        GraphObservability observability,
                        org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter,
-                       io.micrometer.tracing.Tracer tracer) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
+                       io.micrometer.tracing.Tracer tracer,
+                       @org.springframework.beans.factory.annotation.Qualifier("graphExecutor")
+                       java.util.concurrent.Executor graphExecutor) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
         this.graph = orchestrationGraph.compile();
         this.chatMemoryFactory = chatMemoryFactory;
         this.observability = observability;
         this.langfuseReporter = langfuseReporter;
+        this.graphExecutor = graphExecutor;
         this.tracer = tracer;
     }
 
@@ -61,6 +67,7 @@ public class GraphRunner {
     public CompletableFuture<Map<String, Object>> runAsync(Map<String, Object> input, String threadId) {
         injectHistory(input, threadId);
         CompletableFuture<Map<String, Object>> future = CompletableFuture.supplyAsync(() -> {
+            // 显式图线程池执行（graphExecutor）——不再占用 JVM 共享 commonPool
             // 全链路 trace 串联：恢复 HTTP 入口 span 的 trace 上下文（异步线程丢失请求作用域，
             // 导致 LLM/embedding generation 变成孤立 root trace——见 2026-08-31 全链路测评）
             io.micrometer.tracing.Span pipelineSpan = startPipelineSpan(input, threadId);
@@ -92,7 +99,7 @@ public class GraphRunner {
             } finally {
                 pipelineSpan.end();
             }
-        });
+        }, graphExecutor);
         activeRuns.put(threadId, future);
         future.whenComplete((r, ex) -> activeRuns.remove(threadId));
         return future;
