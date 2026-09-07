@@ -19,15 +19,15 @@ spring:
     exclude:
       - org.springframework.ai.model.deepseek.autoconfigure.DeepSeekChatAutoConfiguration  # 应用名称（注册到服务发现/监控时使用）
 
-  # 激活的配置 profile —— 指向 application-local.yml（本地开发环境配置）
+  # 激活的配置 profile —— 默认 local（开发）；容器/生产由 SPRING_PROFILES_ACTIVE=prod 覆盖
   profiles:
-    active: local
+    active: ${SPRING_PROFILES_ACTIVE:local}
 
   # ======================== MySQL 主数据源 ========================
   # 存储用户、知识条目、投票记录、技能等业务数据
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver  # MySQL JDBC 驱动（cj 版本支持 MySQL 8.x）
-    url: jdbc:mysql://localhost:3306/agentdb?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/agentdb?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     # URL 参数说明：
     #   useUnicode=true            —— 启用 Unicode 字符集
     #   characterEncoding=utf-8    —— 使用 UTF-8 编码（支持中文）
@@ -67,7 +67,8 @@ spring:
           connections:
             # 自研 MCP Server（独立进程，Streamable HTTP）：搜索/天气/图片/网页抓取/约会方案
             lwx-agent-mcp:
-              url: http://localhost:8125/mcp
+              # 2026-09-07 发布化：host 可由 MCP_SERVER_URL 覆盖（compose 内=http://mcp-server:8125/mcp）
+              url: ${MCP_SERVER_URL:http://localhost:8125/mcp}
         # amap-maps（高德地图）暂停：npx stdio 模式无法独立部署（会随主应用拉起并可能拖死启动），
         # 待确认其 SSE 支持后恢复（ADR-2 原则：工具面故障不放大为应用故障）。
         # stdio:
@@ -227,7 +228,7 @@ app:
   pgvector:
     datasource:
       driver-class-name: org.postgresql.Driver        # PostgreSQL JDBC 驱动
-      url: jdbc:postgresql://localhost:5432/postgres   # PostgreSQL 连接地址
+      url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/postgres   # PostgreSQL 连接地址
       username: postgres
       password: ${PGVECTOR_PASSWORD:}                  # 从环境变量读取
 

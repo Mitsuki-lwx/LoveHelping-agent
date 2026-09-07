@@ -1,0 +1,29 @@
+# 构建/依赖产物
+target/
+**/target/
+front/node_modules/
+front/dist/
+
+# VCS / IDE
+.git/
+.gitignore
+.idea/
+*.iml
+.vscode/
+
+# 本地密钥与环境（用 .env.example 作模板，真 .env 不提交）
+.env
+.env.local
+
+# 日志与临时
+*.log
+/tmp/
+
+# 用户备份/本地缓存（勿入镜像）
+target_lockbak*/
+.graphify/
+.workbuddy/
+
+# 测试资产（镜像不需要）
+scripts/
+docs/

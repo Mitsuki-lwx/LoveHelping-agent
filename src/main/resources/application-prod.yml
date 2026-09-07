@@ -1,0 +1,34 @@
+# ============================================================
+# application-prod.yml —— 生产/容器 profile（2026-09-07 V1 发布）
+# 激活：SPRING_PROFILES_ACTIVE=prod（docker-compose 已设，勿再用 local——local 含明文密钥与本地路径）
+# 原则：本文件不落任何明文密钥，全部 ${ENV} 注入；默认值仅指向与本地验证一致的公开形态。
+# 密钥清单见仓库根 .env.example / docs/10-部署发布.md。
+# ============================================================
+
+spring:
+  ai:
+    # 主链路 LLM（与本地验证组合一致：智谱 BigModel OpenAI 兼容 + completions-path）。
+    # ⚠️ BigModel 端点形态特殊（/api/paas/v4/chat/completions），必须保留 completions-path，否则 404
+    openai:
+      base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      api-key: ${OPENAI_API_KEY:}              # 必填：主模型 key（智谱 BigModel）
+      chat:
+        completions-path: /chat/completions
+        options:
+          model: ${OPENAI_MODEL:glm-4-flash}   # 生产默认 flash（快且稳；可 env 换 glm-4.7 等）
+
+app:
+  llm:
+    # 主模型故障自动切原生 DashScopeChatModel(qwen-plus)（降级链，key=DASHSCOPE_API_KEY）
+    fallback-enabled: true
+
+logging:
+  level:
+    root: INFO
+    cn.lwx.lwxaiagent: INFO          # 业务包 INFO（去掉 local 的检索/追踪 DEBUG 噪声）
+
+# trace 导出默认关闭：无 collector 时避免 HttpExporter ERROR 风暴（见 MEMORY Langfuse 教训）。
+# 需要链路追踪时：management.tracing.enabled=true + management.otlp.tracing.endpoint=真实 collector
+management:
+  tracing:
+    enabled: false
