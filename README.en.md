@@ -18,7 +18,7 @@
 <h1 align="center">💌 LoveHelping</h1>
 
 <p align="center">
-  <b>An AI companion that actually listens — and gives you a straight answer when it matters.</b><br/>
+  <b>An AI companionship service built on Spring AI — relationship knowledge QA, communication rehearsal, cross-session memory personalization.</b><br/>
   For the thoughts that keep you up at night · the words you can't say · the relationships you can't let go of — every one deserves a letter of its own.
 </p>
 
@@ -29,7 +29,7 @@
   <a href="#-quality--evaluation">Quality</a>
 </p>
 
-> LoveHelping is built on **Spring AI + multi-agent orchestration**: domain questions are answered from a curated knowledge base, task-style questions are auto-routed to agent tools, and emotional-crisis signals are caught by safety guardrails. Production-ready out of the box: `docker compose up -d` and you're live.
+> LoveHelping is built on **Spring AI + stateful graph orchestration**: intent is routed server-side (RAG knowledge QA / Agent tool tasks / plain chat), content safety is enforced by three-tier guardrails, and LLM failures fail over through a fallback chain. Evaluation and ops assets ship with the repo — `docker compose up -d` brings up the full stack.
 
 ---
 
@@ -38,11 +38,11 @@
 | | | |
 |---|---|---|
 | 💌 **Relationship counseling** | 🧭 **Auto-routing — no "easy/hard" split** | 🎭 **Role-play studio** |
-| RAG over a curated 71-doc relationship library with **hybrid retrieval** (jieba tokenizer + RRF, plus pgvector semantic) — answers cite their sources | One graph dispatches everything: small talk / knowledge QA / tool tasks (`OrchestrationGraph`). The user just **"writes a letter"** | 8 preset personas + custom personality & relationship stage — **rehearse what you want to say** before you say it (the persona even has its own memory) |
+| RAG over a curated 71-doc relationship library with **hybrid retrieval** (jieba tokenizer + RRF plus pgvector semantic recall); answers include source references and scores | One graph dispatches everything: small talk / knowledge QA / tool tasks (`OrchestrationGraph`). The user just **"writes a letter"** | 8 preset personas plus custom personality / relationship-stage sessions for conversation rehearsal; each persona keeps an isolated memory context |
 | 🧠 **Long-term memory archive** | 🛡️ **Three-tier safety guardrails** | 🔧 **Agent tool surface** |
-| Preferences & experiences distill into memory cards — review / **correct / delete** anytime; the AI grows to know you | Manipulation (PUA) detection · 24/7 crisis-keyword referral · late-night emotional brake — companionship with clear boundaries | Search / weather / web fetch / PDF / date ideas on an isolated MCP process — **tool failures don't cascade** |
-| 🎮 **Typewriter UX end-to-end** | 🔁 **Self-evolution** | 🐳 **One-command deploy** |
-| Not just answers — queue notices ("wait ~N s") and errors also render letter-by-letter; a warm letter-paper UI from home to profile | A reflection scheduler reviews conversations and versioned-prompts / skills (evolution_skill) | `Dockerfile × 2 + docker-compose`: MySQL / pgvector / Redis / MCP / App in one command |
+| Facts distilled from conversations into memory entries (category / confidence), human-editable (**review / correct / delete**); personalization accumulates across sessions | Manipulation (PUA) detection · 24/7 crisis-keyword referral · late-night emotional brake — companionship with clear boundaries | Search / weather / web fetch / PDF / date ideas on an isolated MCP process — **tool failures don't cascade** |
+| 🎮 **SSE streaming & queue UX** | 🔁 **Self-evolution** | 🐳 **One-command deploy** |
+| Token-level streaming over SSE; when the concurrency gate trips, a 4003 queue notice returns an estimated `retryAfterSec`; error paths use the same response contract | A reflection scheduler reviews conversations and versioned-prompts / skills (evolution_skill) | `Dockerfile × 2 + docker-compose`: MySQL / pgvector / Redis / MCP / App in one command |
 | 🏠 **Profile** | 📚 **History archive** | 🖼 **Letter-paper design** |
 | emoji avatar · nickname · bio · password change · account deletion | Review & continue past conversations | Handwritten-feel typography (KaiTi stack) & paper textures across all pages |
 
@@ -52,8 +52,8 @@
 
 | Entry | What it is | Route |
 |---|---|---|
-| 📮 The Letterbox | Unified conversation (auto-routing, typewriter + queue notice) | `/love-chat` |
-| 🎭 Role-play Studio | Rehearse with a custom persona + manage that persona's memory | `/sandbox` |
+| 📮 The Letterbox | Unified conversation entry (auto-routing; SSE streaming + queue notice) | `/love-chat` |
+| 🎭 Role-play Studio | Sandbox sessions: persona-driven conversation rehearsal + per-session memory | `/sandbox` |
 | 🧠 Memory Archive | What the AI remembers about you: category / confidence / corrections | `/memory` |
 | 🏠 My Corner | emoji avatar · nickname · bio · password · account deletion | `/profile` |
 | 📚 Old Letters | Past conversations — revisit or continue | `/history` |
@@ -157,7 +157,7 @@ All automation assets ship with the repo (`scripts/`):
 - 🎯 **Retrieval eval**: 45 ground-truth cases — production baseline **Recall 1.00 / MRR 0.911**
 - 🧪 **Answer eval**: 16 golden × 3 rounds (multi-hop expectations included)
 - 🤖 **Agent eval**: 6 classes × 3-layer boundaries (tool calls / off-domain / content safety) all pass
-- 🚀 **E2E smoke**: 18 items (register → SSE typewriter → RAG → Agent → guardrails → fallback) one-command regression
+- 🚀 **E2E smoke**: 18 items (register → SSE chat → RAG → Agent → guardrails → fallback) one-command regression
 - ⚡ **Capacity, measured**: 40 concurrent, zero 429s (no vendor hard limit); gate default 24 in-flight (P95 ≈3.5 s sweet spot); 50 SSE long-lived connections, zero drops
 
 ### Engineering & Ops (enterprise hardening, 2026-09-07)
@@ -179,7 +179,7 @@ All automation assets ship with the repo (`scripts/`):
 │   ├── sandbox/  memory/    # Role-play studio / memory distillation
 │   ├── harness/             # Guardrails (governance), observability, eval
 │   └── controller/          # REST + SSE API (/api prefix)
-├── front/src               # Vue 3 frontend (letter-paper UI)
+├── front/src               # Vue 3 frontend (paper-texture theme UI)
 ├── mcp-server/             # Isolated tool process (own Docker build)
 ├── scripts/                # Eval / smoke / load-test assets
 ├── docs/                   # Product → architecture → ADR → deploy decision trail
