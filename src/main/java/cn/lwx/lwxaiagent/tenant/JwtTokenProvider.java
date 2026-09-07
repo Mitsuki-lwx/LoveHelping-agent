@@ -91,14 +91,23 @@ public class JwtTokenProvider {
 
     /**
      * JWT 签名密钥的原始字符串。
-     * 从配置文件中的 {@code jwt.secret} 项读取，默认值仅用于开发环境。
-     *
-     * <p><b>安全提醒</b>：HMAC-SHA256 要求密钥长度至少为 256 位（32 字节）。
-     * 如果提供的密钥不足 32 字节，JJWT 库会抛出 {@link io.jsonwebtoken.security.WeakKeyException}。
-     * 默认值 "lwx-ai-agent-secret-key-need-at-least-32-chars" 恰好满足 32 字节的最低要求。</p>
+     * 从配置 {@code jwt.secret}（环境变量 {@code JWT_SECRET}）读取，<b>无默认值</b>——
+     * 2026-09-07 安全修复：原硬编码默认密钥公开在源码（知源码即可伪造任意 token），
+     * 现改为 fail-fast——未配置或 <32 字符时启动抛异常拒绝服务（见 {@link #validateSecret()}）。
+     * 开发环境密钥在 application-local.yml（不入 git）。
      */
-    @Value("${jwt.secret:lwx-ai-agent-secret-key-need-at-least-32-chars}")
+    @Value("${jwt.secret:}")
     private String secret;
+
+    /** 启动强校验：缺失/过短即拒绝启动（杜绝用弱/公开密钥签发 token 的服务） */
+    @jakarta.annotation.PostConstruct
+    public void validateSecret() {
+        if (secret == null || secret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                    "jwt.secret 未配置或不足 32 字节——拒绝启动（生产必须设 JWT_SECRET 环境变量，"
+                            + "开发见 application-local.yml jwt.secret）。");
+        }
+    }
 
     /**
      * JWT 的有效期（毫秒）。
