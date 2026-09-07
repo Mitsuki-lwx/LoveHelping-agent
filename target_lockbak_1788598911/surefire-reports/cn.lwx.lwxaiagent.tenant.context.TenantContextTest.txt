@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: cn.lwx.lwxaiagent.tenant.context.TenantContextTest
+-------------------------------------------------------------------------------
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in cn.lwx.lwxaiagent.tenant.context.TenantContextTest

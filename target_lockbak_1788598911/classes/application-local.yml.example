@@ -1,0 +1,35 @@
+# ==========================================================================
+# application-local.yml 模板 —— 复制为 application-local.yml 并填入真实值
+# 该文件已在 .gitignore 中排除，不会被提交到 Git
+# ==========================================================================
+
+spring:
+  datasource:
+    password: your_mysql_password
+  ai:
+    dashscope:
+      api-key: sk-xxx                        # DashScope embedding API key
+      chat:
+        options:
+          model: glm-5.2
+    deepseek:
+      api-key: sk-xxx                        # DeepSeek chat API key
+      chat:
+        options:
+          model: deepseek-v4-flash
+
+app:
+  pgvector:
+    datasource:
+      password: your_pg_password
+
+search-api:
+  api-key: your_search_api_key               # 搜索 API key
+
+jwt:
+  secret: lwx-ai-agent-secret-key-need-at-least-32-chars  # 改为随机字符串
+
+# 可选：OTLP 遥测导出
+# management:
+#   tracing:
+#     enabled: false

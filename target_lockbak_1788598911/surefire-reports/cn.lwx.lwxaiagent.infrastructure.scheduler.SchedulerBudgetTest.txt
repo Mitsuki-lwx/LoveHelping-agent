@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: cn.lwx.lwxaiagent.infrastructure.scheduler.SchedulerBudgetTest
+-------------------------------------------------------------------------------
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.022 s -- in cn.lwx.lwxaiagent.infrastructure.scheduler.SchedulerBudgetTest

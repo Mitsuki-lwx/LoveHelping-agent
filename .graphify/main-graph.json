@@ -1,0 +1,5447 @@
+{
+  "root": "src\\main\\java",
+  "files": 155,
+  "total_lines": 17168,
+  "languages": {
+    "java": 155
+  },
+  "functions_total": 649,
+  "nodes": [
+    {
+      "id": "cn/lwx/lwxaiagent/LwxAiAgentApplication.java",
+      "lang": "java",
+      "lines": 50,
+      "functions": [
+        "main"
+      ],
+      "classes": [
+        "LwxAiAgentApplication",
+        "作为配置源"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/admin/AdminController.java",
+      "lang": "java",
+      "lines": 93,
+      "functions": [
+        "AdminController",
+        "runGoldenSet",
+        "canaryStatus",
+        "vectorizeApprovedSkills",
+        "ragRetrieve"
+      ],
+      "classes": [
+        "AdminController"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/admin/GoldenSetRunner.java",
+      "lang": "java",
+      "lines": 119,
+      "functions": [
+        "GoldenSetRunner",
+        "run",
+        "callChat",
+        "judge",
+        "loadCases",
+        "GoldenCase",
+        "CaseResult",
+        "GoldenReport"
+      ],
+      "classes": [
+        "GoldenSetRunner"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/admin/PromptVersionService.java",
+      "lang": "java",
+      "lines": 93,
+      "functions": [
+        "PromptVersionService",
+        "init",
+        "detectOrCreateVersion",
+        "getCurrentVersion",
+        "getContent"
+      ],
+      "classes": [
+        "PromptVersionService"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/canary/CanaryConfig.java",
+      "lang": "java",
+      "lines": 33,
+      "functions": [
+        "getPercentage",
+        "setPercentage",
+        "isCanary"
+      ],
+      "classes": [
+        "CanaryConfig"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/canary/CanaryContext.java",
+      "lang": "java",
+      "lines": 24,
+      "functions": [
+        "set",
+        "isCanary",
+        "clear",
+        "setBucket",
+        "getBucket",
+        "clearBucket"
+      ],
+      "classes": [
+        "CanaryContext"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/canary/CanaryInterceptor.java",
+      "lang": "java",
+      "lines": 47,
+      "functions": [
+        "CanaryInterceptor",
+        "preHandle",
+        "afterCompletion"
+      ],
+      "classes": [
+        "CanaryInterceptor"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/common/BizException.java",
+      "lang": "java",
+      "lines": 68,
+      "functions": [
+        "BizException",
+        "BizException",
+        "getCode"
+      ],
+      "classes": [
+        "BizException"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/common/GlobalExceptionHandler.java",
+      "lang": "java",
+      "lines": 163,
+      "functions": [
+        "handleValidation",
+        "handleBind",
+        "handleDataIntegrity",
+        "handleBiz",
+        "handleMissingParam",
+        "handleUnknown"
+      ],
+      "classes": [
+        "GlobalExceptionHandler"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/common/Result.java",
+      "lang": "java",
+      "lines": 102,
+      "functions": [
+        "ok",
+        "ok",
+        "fail",
+        "fail",
+        "error"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/config/ChatModelConfig.java",
+      "lang": "java",
+      "lines": 44,
+      "functions": [
+        "primaryChatModel"
+      ],
+      "classes": [
+        "ChatModelConfig"
+      ],
+      "imports": [
+        "cn",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/config/CorsConfig.java",
+      "lang": "java",
+      "lines": 87,
+      "functions": [
+        "addCorsMappings",
+        "addResourceHandlers"
+      ],
+      "classes": [
+        "CorsConfig"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/config/EmbeddingModelConfig.java",
+      "lang": "java",
+      "lines": 27,
+      "functions": [
+        "primaryEmbeddingModel"
+      ],
+      "classes": [
+        "EmbeddingModelConfig"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/config/PgvectorProperties.java",
+      "lang": "java",
+      "lines": 56,
+      "functions": [],
+      "classes": [
+        "PgvectorProperties"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/config/RedisConfig.java",
+      "lang": "java",
+      "lines": 80,
+      "functions": [
+        "stringRedisTemplate",
+        "StringRedisTemplate",
+        "redisTemplate"
+      ],
+      "classes": [
+        "RedisConfig"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/config/SPAFallbackConfig.java",
+      "lang": "java",
+      "lines": 66,
+      "functions": [
+        "addViewControllers"
+      ],
+      "classes": [
+        "SPAFallbackConfig"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/constant/FileConstant.java",
+      "lang": "java",
+      "lines": 27,
+      "functions": [],
+      "classes": [],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/AiController.java",
+      "lang": "java",
+      "lines": 264,
+      "functions": [
+        "AiController",
+        "chatSync",
+        "chatSse",
+        "chatSseEmitter",
+        "chatSseWithRAG",
+        "bridgeToEmitter",
+        "doChatWithLoveManus",
+        "bridgeToEmitter",
+        "bridgeToEmitter",
+        "stopLoveManus",
+        "parseMediaIds"
+      ],
+      "classes": [
+        "AiController"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "lang": "java",
+      "lines": 281,
+      "functions": [
+        "register",
+        "login",
+        "me",
+        "deleteAccount",
+        "BizException",
+        "deleteAccountByAdmin"
+      ],
+      "classes": [
+        "AuthController"
+      ],
+      "imports": [
+        "cn",
+        "io",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/InsightController.java",
+      "lang": "java",
+      "lines": 70,
+      "functions": [
+        "InsightController",
+        "analyze",
+        "analyzeMedia",
+        "history",
+        "get",
+        "delete"
+      ],
+      "classes": [
+        "InsightController"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/MediaController.java",
+      "lang": "java",
+      "lines": 119,
+      "functions": [
+        "MediaController",
+        "upload",
+        "BizException",
+        "BizException",
+        "BizException",
+        "BizException",
+        "BizException",
+        "BizException",
+        "requireUserId",
+        "BizException",
+        "extractExt"
+      ],
+      "classes": [
+        "MediaController"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "javax",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/MemoryController.java",
+      "lang": "java",
+      "lines": 354,
+      "functions": [
+        "MemoryController",
+        "checkOwnership",
+        "BizException",
+        "registerConversation",
+        "BizException",
+        "listConversations",
+        "listAllConversations",
+        "getHistory",
+        "getCount",
+        "clearHistory",
+        "feedback",
+        "BizException"
+      ],
+      "classes": [
+        "MemoryController"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/MemoryFactsController.java",
+      "lang": "java",
+      "lines": 78,
+      "functions": [
+        "MemoryFactsController",
+        "listFacts",
+        "updateFact",
+        "BizException",
+        "BizException",
+        "BizException",
+        "deleteFact",
+        "BizException",
+        "requireUserId",
+        "BizException"
+      ],
+      "classes": [
+        "MemoryFactsController"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/SandboxController.java",
+      "lang": "java",
+      "lines": 208,
+      "functions": [
+        "SandboxController",
+        "create",
+        "reset",
+        "delete",
+        "chat",
+        "BizException",
+        "chunk",
+        "injectMemory",
+        "injectMemories",
+        "listMemories",
+        "updateMemory",
+        "deleteMemory"
+      ],
+      "classes": [
+        "SandboxController"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/controller/VoteController.java",
+      "lang": "java",
+      "lines": 73,
+      "functions": [
+        "VoteController",
+        "vote",
+        "auditSkill",
+        "BizException",
+        "BizException"
+      ],
+      "classes": [
+        "VoteController"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/AgentTask.java",
+      "lang": "java",
+      "lines": 64,
+      "functions": [],
+      "classes": [
+        "AgentTask"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/ConversationSummary.java",
+      "lang": "java",
+      "lines": 33,
+      "functions": [],
+      "classes": [
+        "ConversationSummary"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/EvolutionSkill.java",
+      "lang": "java",
+      "lines": 162,
+      "functions": [
+        "EvolutionSkill",
+        "EvolutionSkill"
+      ],
+      "classes": [
+        "EvolutionSkill"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/GuardrailEvent.java",
+      "lang": "java",
+      "lines": 40,
+      "functions": [],
+      "classes": [
+        "GuardrailEvent"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/GuardrailRule.java",
+      "lang": "java",
+      "lines": 43,
+      "functions": [],
+      "classes": [
+        "GuardrailRule"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/InsightRecord.java",
+      "lang": "java",
+      "lines": 30,
+      "functions": [],
+      "classes": [
+        "InsightRecord"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/KnowledgeEntry.java",
+      "lang": "java",
+      "lines": 186,
+      "functions": [
+        "KnowledgeEntry",
+        "KnowledgeEntry"
+      ],
+      "classes": [
+        "KnowledgeEntry"
+      ],
+      "imports": [
+        "com",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/KnowledgeVote.java",
+      "lang": "java",
+      "lines": 128,
+      "functions": [
+        "KnowledgeVote",
+        "KnowledgeVote"
+      ],
+      "classes": [
+        "KnowledgeVote"
+      ],
+      "imports": [
+        "com",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/Message.java",
+      "lang": "java",
+      "lines": 59,
+      "functions": [],
+      "classes": [
+        "Message"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/MessageMedia.java",
+      "lang": "java",
+      "lines": 48,
+      "functions": [],
+      "classes": [
+        "MessageMedia"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/RelationshipProfile.java",
+      "lang": "java",
+      "lines": 35,
+      "functions": [],
+      "classes": [
+        "RelationshipProfile"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/SandboxMemory.java",
+      "lang": "java",
+      "lines": 41,
+      "functions": [],
+      "classes": [
+        "SandboxMemory"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/SandboxPersona.java",
+      "lang": "java",
+      "lines": 40,
+      "functions": [],
+      "classes": [
+        "SandboxPersona"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/SandboxSession.java",
+      "lang": "java",
+      "lines": 47,
+      "functions": [],
+      "classes": [
+        "SandboxSession"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/User.java",
+      "lang": "java",
+      "lines": 145,
+      "functions": [
+        "User",
+        "User",
+        "isAdmin",
+        "isUser"
+      ],
+      "classes": [
+        "User"
+      ],
+      "imports": [
+        "com",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/entity/UserMemory.java",
+      "lang": "java",
+      "lines": 70,
+      "functions": [],
+      "classes": [
+        "UserMemory"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/ReflectionScheduler.java",
+      "lang": "java",
+      "lines": 199,
+      "functions": [
+        "ReflectionScheduler",
+        "scanAndReflect",
+        "findReadySessions",
+        "TIMESTAMPDIFF",
+        "TIMESTAMPDIFF"
+      ],
+      "classes": [
+        "ReflectionScheduler"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/SessionTracker.java",
+      "lang": "java",
+      "lines": 64,
+      "functions": [
+        "SessionTracker",
+        "onMessageSent"
+      ],
+      "classes": [
+        "SessionTracker"
+      ],
+      "imports": [
+        "cn",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/SkillIngestor.java",
+      "lang": "java",
+      "lines": 96,
+      "functions": [
+        "ingest",
+        "vectorize",
+        "vectorizeAllApproved"
+      ],
+      "classes": [
+        "SkillIngestor"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/SkillReflector.java",
+      "lang": "java",
+      "lines": 384,
+      "functions": [
+        "SkillReflector",
+        "reflect",
+        "doReflect",
+        "formatConversation",
+        "formatVotes",
+        "SkillReflectionOutput",
+        "SkillReflectionResult",
+        "likes",
+        "dislikes"
+      ],
+      "classes": [
+        "SkillReflector"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/SkillRetriever.java",
+      "lang": "java",
+      "lines": 167,
+      "functions": [
+        "SkillRetriever",
+        "retrieveAsContext",
+        "search"
+      ],
+      "classes": [
+        "SkillRetriever"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/config/EvolutionConfig.java",
+      "lang": "java",
+      "lines": 112,
+      "functions": [
+        "evolutionExecutor",
+        "skillReflector",
+        "SkillReflector"
+      ],
+      "classes": [
+        "EvolutionConfig"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/evolution/config/EvolutionProperties.java",
+      "lang": "java",
+      "lines": 137,
+      "functions": [],
+      "classes": [
+        "EvolutionProperties"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/harness/MyLoggerAdvisor.java",
+      "lang": "java",
+      "lines": 143,
+      "functions": [
+        "getName",
+        "getOrder",
+        "adviseCall",
+        "adviseStream",
+        "ChatClientMessageAggregator",
+        "logRequest",
+        "logResponse"
+      ],
+      "classes": [
+        "MyLoggerAdvisor"
+      ],
+      "imports": [
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/harness/governance/GuardrailAdvisor.java",
+      "lang": "java",
+      "lines": 190,
+      "functions": [
+        "GuardrailAdvisor",
+        "getName",
+        "getOrder",
+        "adviseCall",
+        "fallbackResponse",
+        "fallbackResponse",
+        "adviseStream",
+        "ChatClientMessageAggregator",
+        "recordEvent",
+        "sha256",
+        "getUserText",
+        "getOutputText",
+        "truncate",
+        "fallbackResponse",
+        "ChatClientResponse"
+      ],
+      "classes": [
+        "GuardrailAdvisor"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/harness/governance/GuardrailResult.java",
+      "lang": "java",
+      "lines": 104,
+      "functions": [
+        "GuardrailResult",
+        "pass",
+        "GuardrailResult",
+        "block",
+        "GuardrailResult",
+        "vagueHint",
+        "GuardrailResult"
+      ],
+      "classes": [],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/harness/governance/GuardrailRuleService.java",
+      "lang": "java",
+      "lines": 96,
+      "functions": [
+        "GuardrailRuleService",
+        "CompiledRule",
+        "load",
+        "CompiledRule",
+        "Verdict",
+        "check",
+        "Verdict",
+        "Verdict",
+        "matchesEmotionBrake",
+        "ruleCount"
+      ],
+      "classes": [
+        "GuardrailRuleService"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/harness/governance/OutputGuardrail.java",
+      "lang": "java",
+      "lines": 195,
+      "functions": [
+        "check"
+      ],
+      "classes": [
+        "OutputGuardrail"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/harness/observability/ObservabilityConfig.java",
+      "lang": "java",
+      "lines": 98,
+      "functions": [
+        "init"
+      ],
+      "classes": [
+        "ObservabilityConfig"
+      ],
+      "imports": [
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/EncryptionService.java",
+      "lang": "java",
+      "lines": 176,
+      "functions": [
+        "EncryptionService",
+        "encrypt",
+        "RuntimeException",
+        "decrypt",
+        "String",
+        "hmac",
+        "sha256",
+        "bytesToHex",
+        "deriveKey",
+        "RuntimeException",
+        "sha256",
+        "bytesToHex",
+        "bytesToHex"
+      ],
+      "classes": [
+        "EncryptionService"
+      ],
+      "imports": [
+        "java",
+        "javax",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "lang": "java",
+      "lines": 61,
+      "functions": [
+        "AgentGuardrailInterceptor",
+        "getName",
+        "interceptToolCall"
+      ],
+      "classes": [
+        "AgentGuardrailInterceptor"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "io",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/ai/AgentMetricsInterceptor.java",
+      "lang": "java",
+      "lines": 63,
+      "functions": [
+        "AgentMetricsInterceptor",
+        "getName",
+        "interceptModel"
+      ],
+      "classes": [
+        "AgentMetricsInterceptor"
+      ],
+      "imports": [
+        "com",
+        "io",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "lang": "java",
+      "lines": 293,
+      "functions": [
+        "LlmGateway",
+        "call",
+        "BizException",
+        "BizException",
+        "callWithRetry",
+        "EmptyContentException",
+        "isRetryable",
+        "retryDelayMs",
+        "isEmptyResponse",
+        "stream",
+        "getDefaultOptions",
+        "recordUsage",
+        "recordCall",
+        "sleepQuietly"
+      ],
+      "classes": [
+        "LlmGateway",
+        "EmptyContentException"
+      ],
+      "imports": [
+        "cn",
+        "io",
+        "java",
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGatewayProperties.java",
+      "lang": "java",
+      "lines": 27,
+      "functions": [],
+      "classes": [
+        "LlmGatewayProperties",
+        "Retry"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/ai/VisionChatClient.java",
+      "lang": "java",
+      "lines": 93,
+      "functions": [
+        "VisionChatClient",
+        "chat"
+      ],
+      "classes": [
+        "VisionChatClient"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/ai/VisionPort.java",
+      "lang": "java",
+      "lines": 27,
+      "functions": [
+        "chat"
+      ],
+      "classes": [],
+      "imports": [
+        "java"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseProperties.java",
+      "lang": "java",
+      "lines": 40,
+      "functions": [
+        "isEnabled",
+        "getEnabled",
+        "setEnabled",
+        "getPublicKey",
+        "setPublicKey",
+        "getSecretKey",
+        "setSecretKey",
+        "getHost",
+        "setHost"
+      ],
+      "classes": [
+        "LangfuseProperties"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseReporter.java",
+      "lang": "java",
+      "lines": 110,
+      "functions": [
+        "LangfuseReporter",
+        "report"
+      ],
+      "classes": [
+        "LangfuseReporter"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentDefinition.java",
+      "lang": "java",
+      "lines": 31,
+      "functions": [
+        "AgentDefinition",
+        "general",
+        "AgentDefinition"
+      ],
+      "classes": [],
+      "imports": [
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentRegistry.java",
+      "lang": "java",
+      "lines": 46,
+      "functions": [
+        "AgentRegistry",
+        "init",
+        "register",
+        "get",
+        "getDefault"
+      ],
+      "classes": [
+        "AgentRegistry"
+      ],
+      "imports": [
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentResult.java",
+      "lang": "java",
+      "lines": 20,
+      "functions": [
+        "ShallowResult",
+        "DeepResult"
+      ],
+      "classes": [],
+      "imports": [
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilityRouter.java",
+      "lang": "java",
+      "lines": 78,
+      "functions": [
+        "needTools",
+        "hasToolIntent",
+        "hasToolIntent",
+        "isAdviceRequest",
+        "isOffTopic",
+        "isSimpleQuestion"
+      ],
+      "classes": [
+        "CapabilityRouter"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilitySet.java",
+      "lang": "java",
+      "lines": 41,
+      "functions": [
+        "CapabilitySet",
+        "plain",
+        "CapabilitySet",
+        "isEnhanced"
+      ],
+      "classes": [],
+      "imports": [
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatEntry.java",
+      "lang": "java",
+      "lines": 268,
+      "functions": [
+        "ChatEntry",
+        "chat",
+        "chat",
+        "chat",
+        "BizException",
+        "guardrailCheck",
+        "BizException",
+        "BizException",
+        "BizException",
+        "isPromptLeakProbe",
+        "isLateNight",
+        "recordChatRequest",
+        "chunk"
+      ],
+      "classes": [
+        "ChatEntry"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatExecutor.java",
+      "lang": "java",
+      "lines": 290,
+      "functions": [
+        "emojis",
+        "questions",
+        "tool",
+        "ChatExecutor",
+        "MyLoggerAdvisor",
+        "execute",
+        "execute",
+        "issuePrompt",
+        "issuePrompt",
+        "sliceTiers",
+        "parseTier",
+        "AdviceTier",
+        "AdviceTier",
+        "toAdviceJson",
+        "AdviceTier",
+        "assembleContext"
+      ],
+      "classes": [
+        "ChatExecutor"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/StreamRegistry.java",
+      "lang": "java",
+      "lines": 197,
+      "functions": [
+        "StreamRegistry",
+        "register",
+        "unregister",
+        "get",
+        "enableMarkerStripping",
+        "markToolsStreamed",
+        "toolsStreamed",
+        "appendReasoning",
+        "append",
+        "flush",
+        "streamed",
+        "cancel",
+        "emit"
+      ],
+      "classes": [
+        "StreamRegistry",
+        "StreamSink"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org",
+        "reactor"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphCheckpointConfig.java",
+      "lang": "java",
+      "lines": 36,
+      "functions": [
+        "graphRedisSaver"
+      ],
+      "classes": [
+        "GraphCheckpointConfig"
+      ],
+      "imports": [
+        "com",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphNodes.java",
+      "lang": "java",
+      "lines": 32,
+      "functions": [
+        "GraphNodes"
+      ],
+      "classes": [
+        "GraphNodes"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphObservability.java",
+      "lang": "java",
+      "lines": 99,
+      "functions": [
+        "GraphObservability",
+        "execute",
+        "routeHit",
+        "simpleHit",
+        "traceLog",
+        "appendPath",
+        "apply"
+      ],
+      "classes": [
+        "GraphObservability"
+      ],
+      "imports": [
+        "com",
+        "io",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphRunner.java",
+      "lang": "java",
+      "lines": 179,
+      "functions": [
+        "GraphRunner",
+        "runAsync",
+        "IllegalStateException",
+        "run",
+        "runAsync",
+        "stop",
+        "extract",
+        "injectHistory",
+        "persistConversation"
+      ],
+      "classes": [
+        "GraphRunner"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphStateKeys.java",
+      "lang": "java",
+      "lines": 53,
+      "functions": [
+        "GraphStateKeys"
+      ],
+      "classes": [
+        "GraphStateKeys"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/OrchestrationGraph.java",
+      "lang": "java",
+      "lines": 206,
+      "functions": [
+        "OrchestrationGraph",
+        "build",
+        "classify",
+        "classifyInner",
+        "hasMedia",
+        "category",
+        "apply",
+        "apply",
+        "n",
+        "edge"
+      ],
+      "classes": [
+        "OrchestrationGraph"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org",
+        "static"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentLlmNode.java",
+      "lang": "java",
+      "lines": 154,
+      "functions": [
+        "AgentLlmNode",
+        "apply",
+        "hasToolCall",
+        "systemPrompt",
+        "resolveTool",
+        "maxSteps"
+      ],
+      "classes": [
+        "AgentLlmNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "lang": "java",
+      "lines": 108,
+      "functions": [
+        "AgentToolNode",
+        "apply",
+        "brief"
+      ],
+      "classes": [
+        "AgentToolNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "io",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/CheckNode.java",
+      "lang": "java",
+      "lines": 49,
+      "functions": [
+        "CheckNode",
+        "apply"
+      ],
+      "classes": [
+        "CheckNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/GraphVisionNode.java",
+      "lang": "java",
+      "lines": 79,
+      "functions": [
+        "GraphVisionNode",
+        "apply",
+        "if"
+      ],
+      "classes": [
+        "GraphVisionNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/NormalChatNode.java",
+      "lang": "java",
+      "lines": 91,
+      "functions": [
+        "NormalChatNode",
+        "apply",
+        "stripAdviceMarker",
+        "adviceTiersJson",
+        "str",
+        "str",
+        "str",
+        "bool"
+      ],
+      "classes": [
+        "NormalChatNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/OffTopicNode.java",
+      "lang": "java",
+      "lines": 43,
+      "functions": [
+        "OffTopicNode",
+        "apply"
+      ],
+      "classes": [
+        "OffTopicNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/QuickAnswerNode.java",
+      "lang": "java",
+      "lines": 49,
+      "functions": [
+        "QuickAnswerNode",
+        "apply"
+      ],
+      "classes": [
+        "QuickAnswerNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/SandboxChatNode.java",
+      "lang": "java",
+      "lines": 59,
+      "functions": [
+        "SandboxChatNode",
+        "apply"
+      ],
+      "classes": [
+        "SandboxChatNode"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/AgentToolPolicy.java",
+      "lang": "java",
+      "lines": 60,
+      "functions": [
+        "AgentToolPolicy",
+        "filter",
+        "getAllowlist"
+      ],
+      "classes": [
+        "AgentToolPolicy"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/ToolCapability.java",
+      "lang": "java",
+      "lines": 28,
+      "functions": [
+        "ToolCapability"
+      ],
+      "classes": [
+        "ToolCapability"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/ToolResolver.java",
+      "lang": "java",
+      "lines": 66,
+      "functions": [
+        "ToolResolver",
+        "resolve"
+      ],
+      "classes": [
+        "ToolResolver"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/scheduler/OnlineLoadTracker.java",
+      "lang": "java",
+      "lines": 99,
+      "functions": [
+        "OnlineLoadTracker",
+        "enter",
+        "exit",
+        "inFlight",
+        "isOnlineActive",
+        "touch"
+      ],
+      "classes": [
+        "OnlineLoadTracker"
+      ],
+      "imports": [
+        "io",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerBudget.java",
+      "lang": "java",
+      "lines": 207,
+      "functions": [
+        "SchedulerBudget",
+        "permitted",
+        "backoffAllowsRun",
+        "allowance",
+        "consume",
+        "recordOutcome",
+        "currentBackoffMultiplier",
+        "currentBackoffMultiplier",
+        "maxRunMs",
+        "refill",
+        "skipped"
+      ],
+      "classes": [
+        "SchedulerBudget"
+      ],
+      "imports": [
+        "io",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerProperties.java",
+      "lang": "java",
+      "lines": 55,
+      "functions": [],
+      "classes": [
+        "SchedulerProperties",
+        "SchedulerSpec",
+        "IdleBackoff"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/AgentTaskMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/ConversationSummaryMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/EvolutionSkillMapper.java",
+      "lang": "java",
+      "lines": 107,
+      "functions": [
+        "countBySessionId",
+        "insertSkipMark",
+        "findActiveByTenant",
+        "findActiveByTenantAndMinScore"
+      ],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/GuardrailEventMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/GuardrailRuleMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/InsightRecordMapper.java",
+      "lang": "java",
+      "lines": 10,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/KnowledgeEntryMapper.java",
+      "lang": "java",
+      "lines": 95,
+      "functions": [
+        "countBySessionId",
+        "findActiveExperiences",
+        "findActiveCasesByLabel"
+      ],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/KnowledgeVoteMapper.java",
+      "lang": "java",
+      "lines": 65,
+      "functions": [
+        "findBySessionId"
+      ],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/MessageMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/MessageMediaMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/RelationshipProfileMapper.java",
+      "lang": "java",
+      "lines": 10,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/SandboxMemoryMapper.java",
+      "lang": "java",
+      "lines": 10,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/SandboxPersonaMapper.java",
+      "lang": "java",
+      "lines": 10,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/SandboxSessionMapper.java",
+      "lang": "java",
+      "lines": 10,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/UserMapper.java",
+      "lang": "java",
+      "lines": 64,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/mapper/UserMemoryMapper.java",
+      "lang": "java",
+      "lines": 13,
+      "functions": [],
+      "classes": [],
+      "imports": [
+        "cn",
+        "com",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/ChatMemoryFactory.java",
+      "lang": "java",
+      "lines": 101,
+      "functions": [
+        "ChatMemoryFactory",
+        "create",
+        "create",
+        "createForAgent",
+        "create",
+        "create",
+        "MessageChatMemory"
+      ],
+      "classes": [
+        "ChatMemoryFactory"
+      ],
+      "imports": [
+        "cn",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/Desensitizer.java",
+      "lang": "java",
+      "lines": 32,
+      "functions": [
+        "Desensitizer",
+        "mask"
+      ],
+      "classes": [
+        "Desensitizer"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/MemoryExtractionScheduler.java",
+      "lang": "java",
+      "lines": 142,
+      "functions": [
+        "MemoryExtractionScheduler",
+        "scanAndExtract",
+        "runLifecycle",
+        "extractOne",
+        "findCandidates",
+        "MAX",
+        "findUserId"
+      ],
+      "classes": [
+        "MemoryExtractionScheduler"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/MemoryExtractor.java",
+      "lang": "java",
+      "lines": 141,
+      "functions": [
+        "MemoryExtractor",
+        "ExtractionResult",
+        "FactCandidate",
+        "extract",
+        "ExtractionResult",
+        "ExtractionResult",
+        "clampConfidence",
+        "ExtractionResult",
+        "ExtractionResult",
+        "buildPrompt",
+        "normalizeCategory",
+        "switch",
+        "clampConfidence",
+        "MemoryOutput",
+        "FactCandidateRaw"
+      ],
+      "classes": [
+        "MemoryExtractor"
+      ],
+      "imports": [
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/MemoryService.java",
+      "lang": "java",
+      "lines": 255,
+      "functions": [
+        "MemoryService",
+        "getOwnerUserId",
+        "decryptContent",
+        "getMessageCount",
+        "registerConversation",
+        "user_conversations",
+        "listUserConversations",
+        "JOIN",
+        "COUNT",
+        "listAllConversations",
+        "COUNT",
+        "MIN",
+        "feedbackMessage",
+        "BizException",
+        "BizException",
+        "BizException",
+        "clearHistory"
+      ],
+      "classes": [
+        "MemoryService"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/MemoryStore.java",
+      "lang": "java",
+      "lines": 326,
+      "functions": [
+        "MemoryStore",
+        "saveExtraction",
+        "retrieveAsContext",
+        "retrieveAsContext",
+        "listFacts",
+        "updateFact",
+        "deleteFact",
+        "runLifecycle"
+      ],
+      "classes": [
+        "MemoryStore"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/MemoryVectorStore.java",
+      "lang": "java",
+      "lines": 78,
+      "functions": [
+        "MemoryVectorStore",
+        "addMemory",
+        "searchMemory"
+      ],
+      "classes": [
+        "MemoryVectorStore"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/MessageChatMemory.java",
+      "lang": "java",
+      "lines": 118,
+      "functions": [
+        "MessageChatMemory",
+        "add",
+        "clear",
+        "textOf",
+        "roleOf",
+        "switch",
+        "roleOf",
+        "decryptContent"
+      ],
+      "classes": [
+        "MessageChatMemory"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/memory/config/MemoryProperties.java",
+      "lang": "java",
+      "lines": 111,
+      "functions": [],
+      "classes": [
+        "MemoryProperties"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/KnowledgeBaseIncrementalSync.java",
+      "lang": "java",
+      "lines": 74,
+      "functions": [
+        "SyncResult",
+        "sync",
+        "SyncResult",
+        "queryHash",
+        "insertDoc"
+      ],
+      "classes": [
+        "KnowledgeBaseIncrementalSync"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/LoveAppDocumentLoader.java",
+      "lang": "java",
+      "lines": 213,
+      "functions": [
+        "LoveAppDocumentLoader",
+        "loadMarkdowns",
+        "mergeByFile",
+        "mergeByFile",
+        "hash"
+      ],
+      "classes": [
+        "LoveAppDocumentLoader"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/MyKeywordEnricher.java",
+      "lang": "java",
+      "lines": 106,
+      "functions": [
+        "enrichDocuments"
+      ],
+      "classes": [
+        "MyKeywordEnricher"
+      ],
+      "imports": [
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/MyTokenTextSplitter.java",
+      "lang": "java",
+      "lines": 139,
+      "functions": [
+        "splitDocuments",
+        "splitCustomized"
+      ],
+      "classes": [
+        "MyTokenTextSplitter"
+      ],
+      "imports": [
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "lang": "java",
+      "lines": 298,
+      "functions": [
+        "ParentChildDocumentRetriever",
+        "retrieve",
+        "logRetrieved",
+        "hybridRetrieve",
+        "keywordSearch",
+        "extractKeywords",
+        "toParent",
+        "totalScore"
+      ],
+      "classes": [
+        "ParentChildDocumentRetriever",
+        "RankedDoc"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "javax",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/ParentChildDocumentTransformer.java",
+      "lang": "java",
+      "lines": 96,
+      "functions": [
+        "apply",
+        "splitOverlap",
+        "splitSentences"
+      ],
+      "classes": [
+        "ParentChildDocumentTransformer"
+      ],
+      "imports": [
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "lang": "java",
+      "lines": 256,
+      "functions": [
+        "PgVectorVectorStore",
+        "ParentChildDocumentTransformer"
+      ],
+      "classes": [
+        "PgVectorVectorStoreConfig"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "javax",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/QueryRewriter.java",
+      "lang": "java",
+      "lines": 139,
+      "functions": [
+        "QueryRewriter",
+        "transform",
+        "Query",
+        "doRewrite",
+        "transform",
+        "containsCjk"
+      ],
+      "classes": [
+        "QueryRewriter"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/RagAdvisorConfig.java",
+      "lang": "java",
+      "lines": 50,
+      "functions": [
+        "RagAdvisorConfig",
+        "retrievalAugmentationAdvisor"
+      ],
+      "classes": [
+        "RagAdvisorConfig"
+      ],
+      "imports": [
+        "cn",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/rerank/DocumentReranker.java",
+      "lang": "java",
+      "lines": 23,
+      "functions": [
+        "rerank"
+      ],
+      "classes": [],
+      "imports": [
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/rerank/LlmDocumentReranker.java",
+      "lang": "java",
+      "lines": 120,
+      "functions": [
+        "LlmDocumentReranker",
+        "rerank",
+        "buildPrompt",
+        "parseIndices",
+        "applyOrder",
+        "truncate"
+      ],
+      "classes": [
+        "LlmDocumentReranker"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/rerank/RerankDocumentPostProcessor.java",
+      "lang": "java",
+      "lines": 52,
+      "functions": [
+        "RerankDocumentPostProcessor",
+        "process"
+      ],
+      "classes": [
+        "RerankDocumentPostProcessor"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/rag/rerank/RerankProperties.java",
+      "lang": "java",
+      "lines": 63,
+      "functions": [
+        "isEnabled",
+        "setEnabled",
+        "getTopN",
+        "setTopN",
+        "getTopK",
+        "setTopK",
+        "getMode",
+        "setMode",
+        "getMaxCandidateChars",
+        "setMaxCandidateChars"
+      ],
+      "classes": [
+        "RerankProperties"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalProperties.java",
+      "lang": "java",
+      "lines": 184,
+      "functions": [
+        "getType",
+        "setType",
+        "getHybrid",
+        "setHybrid",
+        "getEs",
+        "setEs",
+        "getMilvus",
+        "setMilvus",
+        "getRrf",
+        "setRrf",
+        "getUris",
+        "setUris",
+        "getIndex",
+        "setIndex",
+        "getHost",
+        "setHost",
+        "getPort",
+        "setPort",
+        "getCollectionName",
+        "setCollectionName",
+        "getVectorDim",
+        "setVectorDim",
+        "getK",
+        "setK",
+        "getTopK",
+        "setTopK"
+      ],
+      "classes": [
+        "HybridRetrievalProperties",
+        "Hybrid",
+        "Es",
+        "Milvus",
+        "Rrf"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalService.java",
+      "lang": "java",
+      "lines": 157,
+      "functions": [
+        "HybridRetrievalService",
+        "search",
+        "doSearch",
+        "vectorSearch",
+        "keywordSearch",
+        "Document",
+        "totalScore"
+      ],
+      "classes": [
+        "HybridRetrievalService",
+        "RankedDoc"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "javax",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/retrieval/RetrieverType.java",
+      "lang": "java",
+      "lines": 86,
+      "functions": [],
+      "classes": [],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/AgentTaskScheduler.java",
+      "lang": "java",
+      "lines": 34,
+      "functions": [
+        "AgentTaskScheduler",
+        "compensateStale"
+      ],
+      "classes": [
+        "AgentTaskScheduler"
+      ],
+      "imports": [
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/AgentTaskService.java",
+      "lang": "java",
+      "lines": 150,
+      "functions": [
+        "AgentTaskService",
+        "submit",
+        "start",
+        "succeed",
+        "fail",
+        "cancel",
+        "compensateStaleTasks",
+        "get"
+      ],
+      "classes": [
+        "AgentTaskService"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/ChatService.java",
+      "lang": "java",
+      "lines": 44,
+      "functions": [
+        "ChatService",
+        "getAgentTask",
+        "stopAgent"
+      ],
+      "classes": [
+        "ChatService"
+      ],
+      "imports": [
+        "cn",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/DeleteService.java",
+      "lang": "java",
+      "lines": 106,
+      "functions": [
+        "DeleteService",
+        "deleteUserData"
+      ],
+      "classes": [
+        "DeleteService"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/EvolutionService.java",
+      "lang": "java",
+      "lines": 151,
+      "functions": [
+        "EvolutionService",
+        "vote",
+        "VoteRequest"
+      ],
+      "classes": [
+        "EvolutionService"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/InsightService.java",
+      "lang": "java",
+      "lines": 209,
+      "functions": [
+        "InsightService",
+        "analyze",
+        "BizException",
+        "BizException",
+        "analyzeFromMedia",
+        "BizException",
+        "BizException",
+        "if",
+        "saveRecord",
+        "listRecords",
+        "getRecord",
+        "deleteRecord",
+        "extractJson",
+        "containsDiagnosticTerms"
+      ],
+      "classes": [
+        "InsightService"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/RateLimiter.java",
+      "lang": "java",
+      "lines": 204,
+      "functions": [
+        "RateLimiter",
+        "checkQuota",
+        "increment",
+        "key",
+        "ttlUntilEndOfDay"
+      ],
+      "classes": [
+        "RateLimiter"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/SandboxDriftDetector.java",
+      "lang": "java",
+      "lines": 48,
+      "functions": [
+        "SandboxDriftDetector",
+        "onDrift",
+        "resetDrift"
+      ],
+      "classes": [
+        "SandboxDriftDetector"
+      ],
+      "imports": [
+        "cn",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/service/SandboxService.java",
+      "lang": "java",
+      "lines": 298,
+      "functions": [
+        "SandboxService",
+        "createSession",
+        "BizException",
+        "BizException",
+        "getSession",
+        "BizException",
+        "BizException",
+        "getPersona",
+        "buildSandboxPrompt",
+        "touchSession",
+        "resetSession",
+        "deleteSession",
+        "listUserSessions",
+        "listPersonas",
+        "injectMemory",
+        "injectMemories",
+        "listMemories",
+        "updateMemory",
+        "deleteMemory",
+        "buildSandboxPrompt"
+      ],
+      "classes": [
+        "SandboxService"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/AdminGuard.java",
+      "lang": "java",
+      "lines": 47,
+      "functions": [
+        "check",
+        "BizException",
+        "isAdminKeyValid"
+      ],
+      "classes": [
+        "AdminGuard"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "lang": "java",
+      "lines": 296,
+      "functions": [
+        "init",
+        "generateToken",
+        "parseToken",
+        "injectContext",
+        "validateToken"
+      ],
+      "classes": [
+        "JwtTokenProvider"
+      ],
+      "imports": [
+        "cn",
+        "io",
+        "jakarta",
+        "java",
+        "javax",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/UserService.java",
+      "lang": "java",
+      "lines": 186,
+      "functions": [
+        "UserService",
+        "register",
+        "RuntimeException",
+        "login",
+        "RuntimeException"
+      ],
+      "classes": [
+        "UserService"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/config/SecurityConfig.java",
+      "lang": "java",
+      "lines": 172,
+      "functions": [
+        "addInterceptors"
+      ],
+      "classes": [
+        "SecurityConfig"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/context/TenantContext.java",
+      "lang": "java",
+      "lines": 190,
+      "functions": [
+        "set",
+        "getTenantId",
+        "getUserId",
+        "getRole",
+        "clear"
+      ],
+      "classes": [
+        "TenantContext"
+      ],
+      "imports": []
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/filter/TenantFilter.java",
+      "lang": "java",
+      "lines": 141,
+      "functions": [
+        "doFilterInternal"
+      ],
+      "classes": [
+        "TenantFilter"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tenant/interceptor/TenantInterceptor.java",
+      "lang": "java",
+      "lines": 227,
+      "functions": [
+        "preHandle",
+        "afterCompletion"
+      ],
+      "classes": [
+        "TenantInterceptor"
+      ],
+      "imports": [
+        "cn",
+        "io",
+        "jakarta",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/FileOperationTool.java",
+      "lang": "java",
+      "lines": 118,
+      "functions": [
+        "readFile",
+        "writeFile"
+      ],
+      "classes": [
+        "FileOperationTool"
+      ],
+      "imports": [
+        "cn",
+        "org",
+        "static"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/KnowledgeSearchTool.java",
+      "lang": "java",
+      "lines": 92,
+      "functions": [
+        "searchKnowledge"
+      ],
+      "classes": [
+        "KnowledgeSearchTool"
+      ],
+      "imports": [
+        "cn",
+        "jakarta",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/PDFGenerationTool.java",
+      "lang": "java",
+      "lines": 517,
+      "functions": [
+        "generatePDF",
+        "sanitizeContent",
+        "extractTitle",
+        "renderMarkdown"
+      ],
+      "classes": [
+        "PDFGenerationTool"
+      ],
+      "imports": [
+        "cn",
+        "com",
+        "java",
+        "lombok",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/ResourceDownloadTool.java",
+      "lang": "java",
+      "lines": 301,
+      "functions": [
+        "downloadResource",
+        "downloadSingle",
+        "downloadImages",
+        "downloadSingle",
+        "extractOrigin"
+      ],
+      "classes": [
+        "ResourceDownloadTool"
+      ],
+      "imports": [
+        "cn",
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/TerminalOperationTool.java",
+      "lang": "java",
+      "lines": 154,
+      "functions": [
+        "executeTerminalCommand"
+      ],
+      "classes": [
+        "TerminalOperationTool"
+      ],
+      "imports": [
+        "java",
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/TerminateTool.java",
+      "lang": "java",
+      "lines": 85,
+      "functions": [
+        "doTerminate"
+      ],
+      "classes": [
+        "TerminateTool"
+      ],
+      "imports": [
+        "org"
+      ]
+    },
+    {
+      "id": "cn/lwx/lwxaiagent/tools/ToolRegistration.java",
+      "lang": "java",
+      "lines": 171,
+      "functions": [
+        "allTools"
+      ],
+      "classes": [
+        "ToolRegistration"
+      ],
+      "imports": [
+        "java",
+        "lombok",
+        "org"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "cn/lwx/lwxaiagent/LwxAiAgentApplication.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/AdminController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/AdminController.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/AdminController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/AdminController.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/AdminController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/GoldenSetRunner.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/GoldenSetRunner.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/GoldenSetRunner.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/GoldenSetRunner.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/GoldenSetRunner.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/PromptVersionService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/PromptVersionService.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/PromptVersionService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/admin/PromptVersionService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/canary/CanaryConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/canary/CanaryInterceptor.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/canary/CanaryInterceptor.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/canary/CanaryInterceptor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/canary/CanaryInterceptor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/common/GlobalExceptionHandler.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/common/GlobalExceptionHandler.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/common/GlobalExceptionHandler.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/ChatModelConfig.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/ChatModelConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/CorsConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/EmbeddingModelConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/PgvectorProperties.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/PgvectorProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/RedisConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/config/SPAFallbackConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AiController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AiController.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AiController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AiController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AiController.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/AuthController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/InsightController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/InsightController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/InsightController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MediaController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MediaController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MediaController.java",
+      "to": "javax",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MediaController.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MediaController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MemoryController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MemoryController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MemoryController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MemoryFactsController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MemoryFactsController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/MemoryFactsController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/SandboxController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/SandboxController.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/SandboxController.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/SandboxController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/SandboxController.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/VoteController.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/VoteController.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/VoteController.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/controller/VoteController.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/AgentTask.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/AgentTask.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/AgentTask.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/ConversationSummary.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/ConversationSummary.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/ConversationSummary.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/EvolutionSkill.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/EvolutionSkill.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/EvolutionSkill.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/GuardrailEvent.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/GuardrailEvent.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/GuardrailEvent.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/GuardrailRule.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/GuardrailRule.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/GuardrailRule.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/InsightRecord.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/InsightRecord.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/InsightRecord.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/KnowledgeEntry.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/KnowledgeEntry.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/KnowledgeVote.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/KnowledgeVote.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/Message.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/Message.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/Message.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/MessageMedia.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/MessageMedia.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/MessageMedia.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/RelationshipProfile.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/RelationshipProfile.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/RelationshipProfile.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxMemory.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxMemory.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxMemory.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxPersona.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxPersona.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxPersona.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxSession.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxSession.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/SandboxSession.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/User.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/User.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/UserMemory.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/UserMemory.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/entity/UserMemory.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/ReflectionScheduler.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/ReflectionScheduler.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/ReflectionScheduler.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/ReflectionScheduler.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/ReflectionScheduler.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SessionTracker.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SessionTracker.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SessionTracker.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillIngestor.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillIngestor.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillIngestor.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillIngestor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillIngestor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillReflector.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillReflector.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillReflector.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillReflector.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillReflector.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillRetriever.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillRetriever.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillRetriever.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/SkillRetriever.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/config/EvolutionConfig.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/config/EvolutionConfig.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/config/EvolutionConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/config/EvolutionProperties.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/evolution/config/EvolutionProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/MyLoggerAdvisor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/MyLoggerAdvisor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/MyLoggerAdvisor.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailAdvisor.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailAdvisor.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailAdvisor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailAdvisor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailAdvisor.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailRuleService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailRuleService.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailRuleService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailRuleService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/GuardrailRuleService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/OutputGuardrail.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/OutputGuardrail.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/governance/OutputGuardrail.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/observability/ObservabilityConfig.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/observability/ObservabilityConfig.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/harness/observability/ObservabilityConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/EncryptionService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/EncryptionService.java",
+      "to": "javax",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/EncryptionService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/EncryptionService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentGuardrailInterceptor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentMetricsInterceptor.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentMetricsInterceptor.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentMetricsInterceptor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/AgentMetricsInterceptor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGatewayProperties.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/LlmGatewayProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/VisionChatClient.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/VisionChatClient.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/VisionChatClient.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/VisionChatClient.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/ai/VisionPort.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseProperties.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseReporter.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseReporter.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/observability/LangfuseReporter.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentDefinition.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentDefinition.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentRegistry.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentRegistry.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentRegistry.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentRegistry.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentResult.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/AgentResult.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilityRouter.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilityRouter.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilityRouter.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilitySet.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/CapabilitySet.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatEntry.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatEntry.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatEntry.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatEntry.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatEntry.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatExecutor.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatExecutor.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatExecutor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatExecutor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/ChatExecutor.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/StreamRegistry.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/StreamRegistry.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/StreamRegistry.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/StreamRegistry.java",
+      "to": "reactor",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphCheckpointConfig.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphCheckpointConfig.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphCheckpointConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphObservability.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphObservability.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphObservability.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphObservability.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphObservability.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphRunner.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphRunner.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphRunner.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphRunner.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/GraphRunner.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/OrchestrationGraph.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/OrchestrationGraph.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/OrchestrationGraph.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/OrchestrationGraph.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/OrchestrationGraph.java",
+      "to": "static",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentLlmNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentLlmNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentLlmNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentLlmNode.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentLlmNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/AgentToolNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/CheckNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/CheckNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/CheckNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/CheckNode.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/CheckNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/GraphVisionNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/GraphVisionNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/GraphVisionNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/GraphVisionNode.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/GraphVisionNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/NormalChatNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/NormalChatNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/NormalChatNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/NormalChatNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/OffTopicNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/OffTopicNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/OffTopicNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/OffTopicNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/QuickAnswerNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/QuickAnswerNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/QuickAnswerNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/QuickAnswerNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/SandboxChatNode.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/SandboxChatNode.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/SandboxChatNode.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/SandboxChatNode.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/graph/node/SandboxChatNode.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/AgentToolPolicy.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/AgentToolPolicy.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/AgentToolPolicy.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/ToolResolver.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/ToolResolver.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/ToolResolver.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/orchestration/tools/ToolResolver.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/OnlineLoadTracker.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/OnlineLoadTracker.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/OnlineLoadTracker.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/OnlineLoadTracker.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerBudget.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerBudget.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerBudget.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerBudget.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerProperties.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/infrastructure/scheduler/SchedulerProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/AgentTaskMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/AgentTaskMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/AgentTaskMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/ConversationSummaryMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/ConversationSummaryMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/ConversationSummaryMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/EvolutionSkillMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/EvolutionSkillMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/EvolutionSkillMapper.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/EvolutionSkillMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/GuardrailEventMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/GuardrailEventMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/GuardrailEventMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/GuardrailRuleMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/GuardrailRuleMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/GuardrailRuleMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/InsightRecordMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/InsightRecordMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/InsightRecordMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeEntryMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeEntryMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeEntryMapper.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeEntryMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeVoteMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeVoteMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeVoteMapper.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/KnowledgeVoteMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/MessageMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/MessageMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/MessageMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/MessageMediaMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/MessageMediaMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/MessageMediaMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/RelationshipProfileMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/RelationshipProfileMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/RelationshipProfileMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxMemoryMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxMemoryMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxMemoryMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxPersonaMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxPersonaMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxPersonaMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxSessionMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxSessionMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/SandboxSessionMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/UserMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/UserMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/UserMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/UserMemoryMapper.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/UserMemoryMapper.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/mapper/UserMemoryMapper.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/ChatMemoryFactory.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/ChatMemoryFactory.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractionScheduler.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractionScheduler.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractionScheduler.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractionScheduler.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractor.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractor.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryExtractor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryService.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryStore.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryStore.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryStore.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryStore.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryStore.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryVectorStore.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryVectorStore.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryVectorStore.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MemoryVectorStore.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MessageChatMemory.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MessageChatMemory.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MessageChatMemory.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MessageChatMemory.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/MessageChatMemory.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/config/MemoryProperties.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/memory/config/MemoryProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/KnowledgeBaseIncrementalSync.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/KnowledgeBaseIncrementalSync.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/KnowledgeBaseIncrementalSync.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/LoveAppDocumentLoader.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/LoveAppDocumentLoader.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/LoveAppDocumentLoader.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/MyKeywordEnricher.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/MyKeywordEnricher.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/MyKeywordEnricher.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/MyKeywordEnricher.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/MyTokenTextSplitter.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/MyTokenTextSplitter.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "to": "javax",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentRetriever.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentTransformer.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/ParentChildDocumentTransformer.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "to": "javax",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/PgVectorVectorStoreConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/QueryRewriter.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/QueryRewriter.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/RagAdvisorConfig.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/RagAdvisorConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/DocumentReranker.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/DocumentReranker.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/LlmDocumentReranker.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/LlmDocumentReranker.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/LlmDocumentReranker.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/RerankDocumentPostProcessor.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/RerankDocumentPostProcessor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/RerankDocumentPostProcessor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/rag/rerank/RerankProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalProperties.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalService.java",
+      "to": "javax",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/retrieval/HybridRetrievalService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskScheduler.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskScheduler.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskService.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/AgentTaskService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/ChatService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/ChatService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/ChatService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/DeleteService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/DeleteService.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/DeleteService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/DeleteService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/DeleteService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/EvolutionService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/EvolutionService.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/EvolutionService.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/EvolutionService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/EvolutionService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/InsightService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/InsightService.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/InsightService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/InsightService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/InsightService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/RateLimiter.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/RateLimiter.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/RateLimiter.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxDriftDetector.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxDriftDetector.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxDriftDetector.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxService.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/service/SandboxService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/AdminGuard.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/AdminGuard.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/AdminGuard.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "javax",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/JwtTokenProvider.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/UserService.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/UserService.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/UserService.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/UserService.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/UserService.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/config/SecurityConfig.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/config/SecurityConfig.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/config/SecurityConfig.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/config/SecurityConfig.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/filter/TenantFilter.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/filter/TenantFilter.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/filter/TenantFilter.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/filter/TenantFilter.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/filter/TenantFilter.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/interceptor/TenantInterceptor.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/interceptor/TenantInterceptor.java",
+      "to": "io",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/interceptor/TenantInterceptor.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/interceptor/TenantInterceptor.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tenant/interceptor/TenantInterceptor.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/FileOperationTool.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/FileOperationTool.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/FileOperationTool.java",
+      "to": "static",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/KnowledgeSearchTool.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/KnowledgeSearchTool.java",
+      "to": "jakarta",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/KnowledgeSearchTool.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/KnowledgeSearchTool.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/KnowledgeSearchTool.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/PDFGenerationTool.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/PDFGenerationTool.java",
+      "to": "com",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/PDFGenerationTool.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/PDFGenerationTool.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/PDFGenerationTool.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/ResourceDownloadTool.java",
+      "to": "cn",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/ResourceDownloadTool.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/ResourceDownloadTool.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/TerminalOperationTool.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/TerminalOperationTool.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/TerminateTool.java",
+      "to": "org",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/ToolRegistration.java",
+      "to": "java",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/ToolRegistration.java",
+      "to": "lombok",
+      "type": "import"
+    },
+    {
+      "from": "cn/lwx/lwxaiagent/tools/ToolRegistration.java",
+      "to": "org",
+      "type": "import"
+    }
+  ]
+}
