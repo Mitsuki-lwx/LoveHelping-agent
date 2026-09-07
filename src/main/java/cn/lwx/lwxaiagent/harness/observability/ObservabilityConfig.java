@@ -90,8 +90,37 @@ public class ObservabilityConfig {
         if (otlpEndpoint.isBlank()) {
             log.warn("OTLP endpoint not configured — no traces exported.");
             log.warn("Set management.otlp.tracing.endpoint in application-local.yml");
-        } else {
-            log.info("OpenTelemetry tracing enabled → exporting to {}", otlpEndpoint);
+            return;
+        }
+        log.info("OpenTelemetry tracing enabled → exporting to {}", otlpEndpoint);
+        probeEndpoint(otlpEndpoint);
+    }
+
+    /**
+     * OTLP 端点启动可达性探测（2026-09-07，大规模可观测测试教训代码化）：
+     * 端点指向不可达服务（如 WSL2 里 Langfuse 漂移后的旧 IP）时，此前静默丢 span 且每 15s
+     * 打导出 ERROR。现启动即探测：连不上 → WARN 明确提示（避免"追踪未生效而不自知"），
+     * 并给出禁用姿势（endpoint 键整个移除——留空值会因 exporter 构建失败导致启动崩溃）。
+     */
+    private void probeEndpoint(String endpoint) {
+        try {
+            java.net.URL url = new java.net.URL(endpoint);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(3000);
+            conn.setReadTimeout(3000);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            try (java.io.OutputStream os = conn.getOutputStream()) {
+                os.write("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode(); // 4xx/5xx 也说明可达（服务在响应）
+            log.info("OTLP endpoint reachable (HTTP {})", code);
+            conn.disconnect();
+        } catch (Exception e) {
+            log.warn("OTLP endpoint unreachable: {} — trace export will FAIL and retry every ~15s. "
+                    + "Check the collector/Langfuse is running; disable export by REMOVING the "
+                    + "management.otlp.tracing.endpoint key entirely (an empty value crashes startup). {}", 
+                    otlpEndpoint, e.getMessage());
         }
     }
 }
