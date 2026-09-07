@@ -58,8 +58,5 @@ public class SPAFallbackConfig implements WebMvcConfigurer {
         registry.addViewController("/{path:[a-zA-Z][a-zA-Z\\d-]*}")
                 .setViewName("forward:/index.html");
 
-        // 规则2：匹配多层嵌套路径（如 /user/profile、/order/detail/123），转发到 index.html
-        registry.addViewController("/{path:[a-zA-Z][a-zA-Z\\d-]*}/**")
-                .setViewName("forward:/index.html");
     }
 }
