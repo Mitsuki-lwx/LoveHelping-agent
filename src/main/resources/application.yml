@@ -117,6 +117,9 @@ spring:
 
 # ======================== 监控与链路追踪 ========================
 # Spring Boot Actuator + Micrometer Tracing
+sentry:
+  dsn: ${SENTRY_DSN:}    # 错误追踪（2026-09-07）：空=不初始化；填 DSN 即启用自动上报
+
 management:
   tracing:
     enabled: true                # 启用链路追踪
