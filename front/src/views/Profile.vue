@@ -168,6 +168,8 @@ async function saveProfile() {
       })
       profileMsg.value = d.message || '已保存'
       profileMsgErr.value = false
+      // 通知顶部导航即时刷新（同页保存无路由变化，watch 不触发）
+      window.dispatchEvent(new CustomEvent('lh:user-updated'))
     } else {
       profileMsg.value = (d && d.message) || '保存失败'
       profileMsgErr.value = true

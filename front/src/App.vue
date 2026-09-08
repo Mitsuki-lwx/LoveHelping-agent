@@ -24,16 +24,19 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getUser, removeToken, isAuthenticated } from './utils/auth.js'
 
 const router = useRouter()
 const route = useRoute()
 
-// user 改为 ref + 路由变化时刷新（2026-09-07：个人中心保存资料后导航昵称即时更新）
+// user 改为 ref + 路由变化/资料保存事件时刷新（2026-09-07：个人中心保存后导航即时更新）
 const user = ref(getUser())
 watch(() => route.path, () => { user.value = getUser() }, { immediate: true })
+function refreshUser() { user.value = getUser() }
+onMounted(() => window.addEventListener('lh:user-updated', refreshUser))
+onUnmounted(() => window.removeEventListener('lh:user-updated', refreshUser))
 const isAdminUser = computed(() => user.value?.role === 'ADMIN')
 const showNav = computed(() => {
   return route.path !== '/login' && isAuthenticated()
