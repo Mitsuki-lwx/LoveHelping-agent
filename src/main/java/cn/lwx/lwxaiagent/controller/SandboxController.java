@@ -29,14 +29,30 @@ public class SandboxController {
     private final cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService;
 
     private final cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService;
+    private final cn.lwx.lwxaiagent.service.SandboxReviewService reviewService;
 
     public SandboxController(SandboxService sandboxService, GraphRunner graphRunner,
                              cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService,
-                             cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService) {
+                             cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService,
+                             cn.lwx.lwxaiagent.service.SandboxReviewService reviewService) {
         this.sandboxService = sandboxService;
         this.graphRunner = graphRunner;
         this.guardrailRuleService = guardrailRuleService;
         this.taViewService = taViewService;
+        this.reviewService = reviewService;
+    }
+
+    /** 演练复盘（2026-09-08 产品闭环 ③）：旁观教练点评这场演练。 */
+    @AuditLog("sandbox_review")
+    @PostMapping("/{id}/review")
+    public Result<Map<String, Object>> review(@PathVariable Long id) {
+        if (TenantContext.getUserId() == null) return Result.error("未登录");
+        var r = reviewService.review(id, TenantContext.getUserId());
+        return Result.ok(Map.of(
+                "summary", r.summary() == null ? "" : r.summary(),
+                "good", r.good() == null ? "" : r.good(),
+                "risk", r.risk() == null ? "" : r.risk(),
+                "better", r.better() == null ? "" : r.better()));
     }
 
     // ==================== 会话管理 ====================

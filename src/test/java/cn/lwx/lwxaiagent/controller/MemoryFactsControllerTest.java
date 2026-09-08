@@ -19,6 +19,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
@@ -41,6 +42,40 @@ class MemoryFactsControllerTest {
     @AfterEach
     void clean() {
         TenantContext.clear();
+    }
+
+    // ================= ⑤ 手动添加（2026-09-08） =================
+
+    @Test
+    void addFact_notLoggedIn_returns401() throws Exception {
+        mockMvc.perform(post("/memory/facts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"我希望被直球安慰\"}"))
+                .andExpect(jsonPath("$.code").value(401));
+    }
+
+    @Test
+    void addFact_success_returnsAdded() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+        when(memoryStore.addUserFact(eq("u1"), eq("偏好"), eq("我希望被直球安慰"))).thenReturn(88L);
+
+        mockMvc.perform(post("/memory/facts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"我希望被直球安慰\",\"category\":\"偏好\"}"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data").value("added"));
+    }
+
+    @Test
+    void addFact_duplicate_returns400() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+        when(memoryStore.addUserFact(eq("u1"), eq("偏好"), eq("重复内容"))).thenReturn(null);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/memory/facts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"重复内容\",\"category\":\"偏好\"}"))
+                .andExpect(jsonPath("$.code").value(400));
     }
 
     @Test

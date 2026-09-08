@@ -261,6 +261,35 @@ public class MemoryStore {
      * 用户编辑事实：校验归属，更新内容并转正（编辑 = 最高置信的纠错信号）。
      * @return true=成功；false=不存在或不属于该用户
      */
+    /**
+     * 用户手动添加一条事实（2026-09-08 产品闭环 ⑤）：「我希望你怎么回我」类偏好直录。
+     * 与自动萃取同表同态（ACTIVE/置信度 10/edited），检索路径无需区分来源。
+     * @return 新建行 id；同内容已存在（去重）时返回 null
+     */
+    public Long addUserFact(String userId, String category, String content) {
+        if (content == null || content.isBlank()) return null;
+        String text = content.trim();
+        if (text.length() > 500) text = text.substring(0, 500);
+        LambdaQueryWrapper<UserMemory> q = new LambdaQueryWrapper<UserMemory>()
+                .eq(UserMemory::getUserId, userId)
+                .eq(UserMemory::getContent, text)
+                .in(UserMemory::getStatus, "ACTIVE", "CANDIDATE");
+        if (memoryMapper.selectCount(q) > 0) return null;
+        UserMemory m = new UserMemory();
+        m.setUserId(userId);
+        m.setCategory(category == null || category.isBlank() ? "其它" : category);
+        m.setContent(Desensitizer.mask(text));
+        m.setConfidence(10);
+        m.setStatus("ACTIVE");
+        m.setSourceConversationId(null);
+        m.setHitCount(0);
+        m.setVersion(1);
+        m.setEdited(true);
+        m.setTtlDays(180);
+        memoryMapper.insert(m);
+        return m.getId();
+    }
+
     public boolean updateFact(String userId, Long id, String content) {
         UserMemory m = memoryMapper.selectById(id);
         if (m == null || !userId.equals(m.getUserId())) {

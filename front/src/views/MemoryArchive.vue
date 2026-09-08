@@ -10,6 +10,27 @@
         </div>
       </div>
       <button class="refresh-btn btn-hand" @click="load">↻ 刷新</button>
+      <button class="btn-hand" @click="showAdd = !showAdd">＋ 添加一条</button>
+    </div>
+
+    <!-- ⑤ 手动添加（2026-09-08）：告诉 AI 你的偏好/底线 -->
+    <div v-if="showAdd" class="add-fact letter-card">
+      <div class="add-fact-row">
+        <select v-model="addCategory" class="add-cat">
+          <option>偏好</option><option>经历</option><option>底线</option><option>其它</option>
+        </select>
+        <input
+          v-model="addContent"
+          class="add-input"
+          placeholder="例如：我希望被直球安慰，别绕弯子…"
+          maxlength="500"
+          @keydown.enter="submitAdd"
+        />
+        <button class="btn-hand primary" :disabled="!addContent.trim() || adding" @click="submitAdd">
+          {{ adding ? '添加中…' : '添加' }}
+        </button>
+      </div>
+      <p v-if="addMsg" class="add-msg" :class="{ err: addMsgErr }">{{ addMsg }}</p>
     </div>
 
     <div class="mem-body">
@@ -71,10 +92,36 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getMyMemoryFacts, updateMemoryFact, deleteMemoryFact } from '../api/index.js'
+import { getMyMemoryFacts, updateMemoryFact, deleteMemoryFact, addMemoryFact } from '../api/index.js'
 
 const router = useRouter()
 const facts = ref([])
+
+/* ⑤ 手动添加（2026-09-08） */
+const showAdd = ref(false)
+const addCategory = ref('偏好')
+const addContent = ref('')
+const adding = ref(false)
+const addMsg = ref('')
+const addMsgErr = ref(false)
+
+async function submitAdd() {
+  if (!addContent.value.trim()) return
+  adding.value = true
+  addMsg.value = ''
+  try {
+    await addMemoryFact(addContent.value.trim(), addCategory.value)
+    addMsg.value = '已添加——之后写信时 AI 会记得'
+    addMsgErr.value = false
+    addContent.value = ''
+    await load()
+  } catch (e) {
+    addMsg.value = e.response?.data?.message || '添加失败，稍后再试'
+    addMsgErr.value = true
+  } finally {
+    adding.value = false
+  }
+}
 const loading = ref(false)
 const editingId = ref(null)
 const editText = ref('')
@@ -178,4 +225,15 @@ onMounted(load)
 .mem-act { background: transparent; border: none; cursor: pointer; font-family: var(--font-hand); font-size: 12.5px; color: var(--ink-soft); padding: 3px 8px; border-radius: 8px; transition: all 0.14s; }
 .mem-act:hover { background: var(--paper-deep); color: oklch(45% 0.1 160); }
 .mem-act-del:hover { color: var(--danger); background: oklch(94% 0.05 27); }
+
+/* ---- 手动添加（2026-09-08 产品闭环 ⑤） ---- */
+.add-fact { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--wine); }
+.add-fact-row { display: flex; gap: 8px; align-items: center; }
+.add-cat {
+  border: 1.2px solid var(--ink-line); border-radius: 8px; padding: 7px 8px;
+  font-size: 13px; background: var(--paper-card-warm); color: var(--ink-soft);
+}
+.add-input { flex: 1; border: 1.2px solid var(--ink-line); border-radius: 8px; padding: 7px 10px; font-size: 13px; background: var(--paper-card-warm); }
+.add-msg { margin-top: 8px; font-size: 12.5px; color: var(--teal-deep, #0f6e56); }
+.add-msg.err { color: var(--wine-deep); }
 </style>

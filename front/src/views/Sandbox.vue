@@ -76,6 +76,7 @@
             </div>
             <div class="sb-chat-tools">
               <button class="sb-tool" @click="resetSession">⟲ 重来</button>
+              <button class="sb-tool" :disabled="reviewing" @click="runReview">{{ reviewing ? '复盘中…' : '📋 复盘' }}</button>
               <button class="sb-tool" @click="toggleMemories">📒 记忆</button>
               <button class="sb-tool danger" @click="removeSession">🗑 删除</button>
             </div>
@@ -99,6 +100,18 @@
       </main>
     </div>
 
+      <!-- ③ 演练复盘卡（2026-09-08） -->
+      <div v-if="reviewResult" class="sb-review letter-card anim-letter-in">
+        <div class="sb-review-head">
+          <span class="sb-review-title">📋 演练复盘</span>
+          <button class="sb-tool" @click="reviewResult = null">✕</button>
+        </div>
+        <p class="sb-review-summary">{{ reviewResult.summary }}</p>
+        <p v-if="reviewResult.good" class="sb-review-line good">✅ {{ reviewResult.good }}</p>
+        <p v-if="reviewResult.risk" class="sb-review-line risk">⚠️ {{ reviewResult.risk }}</p>
+        <p v-if="reviewResult.better" class="sb-review-line better">💬 试试这么说：{{ reviewResult.better }}</p>
+        <p class="sb-review-note">复盘基于这场演练的对话——练完看一眼，下次开口更有底。</p>
+      </div>
     <div v-if="memOpen && currentSession" class="sb-mem-drawer letter-card anim-letter-in">
       <div class="sb-mem-head">
         <span class="hand">TA 记住了什么</span>
@@ -132,8 +145,7 @@ import { useRouter } from 'vue-router'
 import {
   listSandboxPersonas, listSandboxSessions, sandboxCreate,
   sandboxReset, sandboxDelete, createSandboxChatSSE,
-  listSandboxMemories, addSandboxMemory, deleteSandboxMemory
-} from '../api/index.js'
+  listSandboxMemories, addSandboxMemory, deleteSandboxMemory, sandboxReview } from '../api/index.js'
 
 const router = useRouter()
 const personas = ref([])
@@ -197,6 +209,29 @@ async function startCustom() {
     openSession(res.data?.data?.sandboxId)
   } catch (e) { alert('开场失败：' + (e.response?.data?.message || e.message)) }
 }
+/* ============ 演练复盘（2026-09-08 产品闭环 ③） ============ */
+const reviewing = ref(false)
+const reviewResult = ref(null)
+
+async function runReview() {
+  if (!currentId.value || reviewing.value) return
+  reviewing.value = true
+  try {
+    const res = await sandboxReview(currentId.value)
+    const body = res.data
+    if (body?.code !== 200) {
+      // 业务失败（如"演练对话太短"）：Result{code,message} 走 HTTP 200，需按 code 判断
+      reviewResult.value = { summary: body?.message || '复盘失败，稍后再试', good: '', risk: '', better: '' }
+    } else {
+      reviewResult.value = body.data || {}
+    }
+  } catch (e) {
+    reviewResult.value = { summary: e.response?.data?.message || '复盘失败，稍后再试', good: '', risk: '', better: '' }
+  } finally {
+    reviewing.value = false
+  }
+}
+
 async function resetSession() {
   if (!currentId.value) return
   if (!confirm('重置后这场的记忆和对话会清空，确定？')) return
@@ -382,4 +417,15 @@ async function delMemory(memId) {
 .sb-mem-add .sb-input { flex: 1; font-size: 13.5px; }
 .sb-mem-type-select { width: 96px; flex-shrink: 0; font-family: var(--font-hand); font-size: 13px; }
 .sb-mem-go { font-size: 13px; padding: 0.5em 1em; flex-shrink: 0; }
+
+/* ---- 演练复盘（2026-09-08 产品闭环 ③） ---- */
+.sb-review { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--wine); }
+.sb-review-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sb-review-title { font-family: var(--font-hand); font-size: 14px; color: var(--ink); }
+.sb-review-summary { font-size: 13.5px; color: var(--ink); line-height: 1.6; margin: 4px 0 8px; }
+.sb-review-line { font-size: 13px; line-height: 1.6; margin: 6px 0; padding: 6px 10px; border-radius: 8px; }
+.sb-review-line.good { background: rgba(99,153,34,0.1); }
+.sb-review-line.risk { background: rgba(163,45,45,0.08); }
+.sb-review-line.better { background: var(--paper-deep); }
+.sb-review-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 8px; }
 </style>

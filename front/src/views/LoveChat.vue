@@ -147,7 +147,7 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages, sandboxTaView, listSandboxPersonas, listActionItems, createActionItemFromReply, doneActionItem, removeActionItem } from '../api/index.js'
+import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages, sandboxTaView, listSandboxPersonas, listActionItems, createActionItemFromReply, doneActionItem, removeActionItem, reportSentiment } from '../api/index.js'
 import { saveLocalConversation } from '../utils/history.js'
 import { getUser } from '../utils/auth.js'
 import { createTypewriter } from '../utils/typewriter.js'
@@ -402,6 +402,9 @@ function sendMessage() {
       scrollToBottom()
       // ② 行动卡：回信落定后，从三牌建议抽一条可跟踪的行动
       maybeCreateActionItem(messages.value[aiMsgIdx].content)
+      // ④ 情绪时间线：上报本轮用户消息打分（V1 主路径）
+      const firstUser = [...messages.value].find(m => m.role === 'user')
+      if (firstUser?.content) reportSentiment(chatId.value, firstUser.content)
     }
   })
 }

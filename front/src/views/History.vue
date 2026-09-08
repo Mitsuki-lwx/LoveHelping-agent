@@ -11,6 +11,34 @@
       <button :class="['tab', activeTab === 'manus' ? 'tab-active' : '']" @click="switchTab('manus')">🤖 恋爱全能帮</button>
     </div>
 
+    <!-- ④ 情绪时间线（2026-09-08）：让用户看见自己在变好 -->
+    <div v-if="sentiment.length > 1" class="sentiment-card letter-card">
+      <div class="sentiment-head">
+        <span class="sentiment-title">🌱 你的情绪轨迹</span>
+        <span class="sentiment-sub">按对话记录的情绪走向 · 仅供参考</span>
+      </div>
+      <svg class="sentiment-svg" :viewBox="'0 0 ' + sentimentWidth + ' 120'" preserveAspectRatio="none">
+        <line :x1="0" :y1="60" :x2="sentimentWidth" y2="60" stroke="rgba(0,0,0,0.08)" stroke-width="1" stroke-dasharray="4 4" />
+        <polyline
+          :points="sentimentPoints"
+          fill="none"
+          stroke="#993C1D"
+          stroke-width="2"
+          stroke-linejoin="round"
+          stroke-linecap="round"
+        />
+        <circle
+          v-for="(p, i) in sentimentDots"
+          :key="i"
+          :cx="p.x" :cy="p.y" r="3.5"
+          :fill="p.score >= 1 ? '#639922' : p.score <= -1 ? '#A32D2D' : '#888780'"
+        />
+      </svg>
+      <p class="sentiment-caption" v-if="sentimentTrend">
+        {{ sentimentTrend }}
+      </p>
+    </div>
+
     <div class="content">
       <div v-if="loading" class="loading-state">加载中...</div>
 
@@ -52,9 +80,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { listConversations, clearConversation } from '../api/index.js'
+import { listConversations, clearConversation, sentimentTimeline } from '../api/index.js'
 
 const router = useRouter()
 const conversations = ref([])
@@ -110,6 +138,41 @@ async function doDelete() {
   }
 }
 
+/* ============ 情绪时间线（2026-09-08 产品闭环 ④） ============ */
+const sentiment = ref([])
+const sentimentWidth = 560
+
+async function loadSentiment() {
+  try {
+    const res = await sentimentTimeline()
+    sentiment.value = res.data?.data || []
+  } catch (e) { sentiment.value = [] }
+}
+
+const sentimentDots = computed(() => {
+  const n = sentiment.value.length
+  if (n < 2) return []
+  return sentiment.value.map((s, i) => ({
+    x: Math.round(20 + (sentimentWidth - 40) * (i / (n - 1))),
+    y: Math.round(60 - s.score * 22),
+    score: s.score,
+  }))
+})
+
+const sentimentPoints = computed(() =>
+  sentimentDots.value.map(p => p.x + ',' + p.y).join(' '))
+
+const sentimentTrend = computed(() => {
+  const n = sentiment.value.length
+  if (n < 2) return ''
+  const first = sentiment.value[0].score
+  const last = sentiment.value[n - 1].score
+  if (last > first) return '和最开始比，最近的你在往上走 🌱'
+  if (last < first) return '最近有点沉——没关系，写封信说说'
+  return '情绪还算平稳——有想说的随时写下来'
+})
+
+onMounted(() => { loadSentiment() })
 onMounted(load)
 </script>
 
@@ -256,4 +319,12 @@ onMounted(load)
 .confirm-btn.danger { background: var(--wine); border-color: var(--wine); color: oklch(98% 0.012 78); }
 .confirm-btn.danger:hover { background: var(--wine-deep); }
 .cancel-btn:hover { transform: translateY(-1px); }
+
+/* ---- 情绪时间线（2026-09-08 产品闭环 ④） ---- */
+.sentiment-card { margin: 12px 0 4px; padding: 12px 16px; border-left: 3px solid var(--wine); }
+.sentiment-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+.sentiment-title { font-family: var(--font-hand); font-size: 14px; color: var(--ink); }
+.sentiment-sub { font-size: 11.5px; color: var(--ink-faint); }
+.sentiment-svg { width: 100%; height: 120px; display: block; }
+.sentiment-caption { font-size: 12.5px; color: var(--ink-soft); margin-top: 6px; }
 </style>

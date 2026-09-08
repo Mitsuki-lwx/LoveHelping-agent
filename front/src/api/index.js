@@ -190,6 +190,9 @@ export function listSandboxPersonas() {
 export function listSandboxSessions(channel = 'REALISTIC') {
   return apiClient.get('/sandbox/list', { params: { channel } })
 }
+export function addMemoryFact(content, category) {
+  return apiClient.post('/memory/facts', { content, category })
+}
 export function listActionItems() {
   return apiClient.get('/action-items')
 }
@@ -204,6 +207,15 @@ export function removeActionItem(id) {
 }
 export function sandboxTaView(body) {
   return apiClient.post('/sandbox/ta-view', body)   // {personaId?, customTraits?, message}
+}
+export function sentimentTimeline() {
+  return apiClient.get('/sentiment/timeline')
+}
+export function reportSentiment(chatId, text) {
+  return apiClient.post('/sentiment/score', { chatId, text })
+}
+export function sandboxReview(id) {
+  return apiClient.post(`/sandbox/${id}/review`)
 }
 export function sandboxReset(id) {
   return apiClient.post(`/sandbox/${id}/reset`)

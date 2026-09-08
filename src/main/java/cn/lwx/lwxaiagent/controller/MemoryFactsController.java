@@ -57,6 +57,18 @@ public class MemoryFactsController {
         return Result.ok("updated");
     }
 
+    /** 手动添加一条记忆（2026-09-08 产品闭环 ⑤）："我希望你怎么回我"类偏好直录。 */
+    @cn.lwx.lwxaiagent.audit.AuditLog("memory_add")
+    @PostMapping
+    public Result<String> addFact(@RequestBody Map<String, String> body) {
+        String content = body.get("content");
+        Long id = memoryStore.addUserFact(requireUserId(), body.get("category"), content);
+        if (id == null) {
+            throw new BizException(400, "内容为空或已存在相同记忆");
+        }
+        return Result.ok("added");
+    }
+
     /**
      * 删除一条事实。
      */

@@ -49,6 +49,8 @@ class SandboxControllerTest {
     private GuardrailRuleService guardrailRuleService;
     @MockBean
     private cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService;
+    @MockBean
+    private cn.lwx.lwxaiagent.service.SandboxReviewService reviewService;
 
     @AfterEach
     void clean() {
