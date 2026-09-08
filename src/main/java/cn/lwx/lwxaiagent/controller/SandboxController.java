@@ -28,11 +28,15 @@ public class SandboxController {
     private final GraphRunner graphRunner;
     private final cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService;
 
+    private final cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService;
+
     public SandboxController(SandboxService sandboxService, GraphRunner graphRunner,
-                             cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService) {
+                             cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService,
+                             cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService) {
         this.sandboxService = sandboxService;
         this.graphRunner = graphRunner;
         this.guardrailRuleService = guardrailRuleService;
+        this.taViewService = taViewService;
     }
 
     // ==================== 会话管理 ====================
@@ -83,6 +87,27 @@ public class SandboxController {
         if (userId == null) return Result.error("未登录");
         sandboxService.deleteSession(id, userId);
         return Result.ok("ok");
+    }
+
+    /**
+     * TA 视角推演（2026-09-08 产品闭环 ①）：以指定人格推演"TA 会怎么回这句话"。
+     * 一次性推演，不落库会话；走 L3 护栏 + 主备降级链。
+     */
+    @AuditLog("sandbox_ta_view")
+    @PostMapping("/ta-view")
+    public Result<Map<String, Object>> taView(@RequestBody Map<String, Object> body) {
+        if (TenantContext.getUserId() == null) return Result.error("未登录");
+        Long personaId = body.get("personaId") != null
+                ? ((Number) body.get("personaId")).longValue() : null;
+        String customTraits = (String) body.get("customTraits");
+        String message = (String) body.get("message");
+        if ((personaId == null) && (customTraits == null || customTraits.isBlank())) {
+            throw new BizException(400, "请选择一个人设或填写自定义特征");
+        }
+        var r = taViewService.taView(personaId, customTraits, message);
+        return Result.ok(Map.of("personaName", r.personaName(),
+                "reply", r.reply() == null ? "" : r.reply(),
+                "insight", r.insight() == null ? "" : r.insight()));
     }
 
     // ==================== 沙盘对话 ====================

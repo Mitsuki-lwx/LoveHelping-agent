@@ -82,14 +82,57 @@
         </button>
       </div>
       <p class="input-hint">按 Enter 寄出 · AI 回信需要一点时间，请耐心等一等</p>
+
+      <!-- ① TA 视角推演（2026-09-08）：用沙盘人格预演「TA 会怎么回这句」 -->
+      <div class="ta-view-bar">
+        <button class="ta-view-btn" @click="openTaView" :disabled="loading || taLoading">
+          {{ taLoading ? '推演中…' : '🔮 TA 视角' }}
+        </button>
+        <span class="ta-view-hint">用 TA 的身份，回你这句</span>
+      </div>
+
+      <!-- 人设选择弹层 -->
+      <div v-if="taPickerOpen" class="ta-picker letter-card">
+        <div class="ta-picker-head">
+          <span class="ta-picker-title">选一个 TA</span>
+          <button class="ta-close" @click="taPickerOpen = false">✕</button>
+        </div>
+        <div class="ta-persona-grid">
+          <button
+            v-for="p in taPersonas"
+            :key="p.id"
+            class="ta-persona"
+            :class="{ active: taPersonaId === p.id }"
+            @click="taPersonaId = p.id; taCustom = ''"
+          >{{ p.name }}</button>
+        </div>
+        <input
+          v-model="taCustom"
+          class="ta-custom-input"
+          placeholder="或自己写：性格 / 说话方式（选它则不选上面）"
+        />
+        <button class="btn-hand primary ta-go" :disabled="!canTaView" @click="runTaView">开始推演</button>
+      </div>
+
+      <!-- 推演结果卡 -->
+      <div v-if="taResult" class="ta-result letter-card">
+        <div class="ta-result-head">
+          <span class="ta-avatar">T</span>
+          <span class="ta-name">{{ taResult.personaName }}</span>
+          <button class="ta-close" @click="taResult = null">✕</button>
+        </div>
+        <p class="ta-reply">「{{ taResult.reply }}」</p>
+        <p v-if="taResult.insight" class="ta-insight">👀 {{ taResult.insight }}</p>
+        <p class="ta-disclaimer">这是按人设推演的可能反应，不是 TA 的真实想法——可以用来练手，别当成答案。</p>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages } from '../api/index.js'
+import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages, sandboxTaView, listSandboxPersonas } from '../api/index.js'
 import { saveLocalConversation } from '../utils/history.js'
 import { getUser } from '../utils/auth.js'
 import { createTypewriter } from '../utils/typewriter.js'
@@ -155,6 +198,53 @@ const voteStates = ref({})
 const showFeedback = ref(null)
 const feedbackText = ref('')
 let cancelSSE = null
+
+/* ============ TA 视角推演（2026-09-08 产品闭环 ①） ============ */
+const taPickerOpen = ref(false)
+const taPersonas = ref([])
+const taPersonaId = ref(null)
+const taCustom = ref('')
+const taLoading = ref(false)
+const taResult = ref(null)
+
+/** 取最后一条用户消息作为推演素材（没写过则用输入框内容） */
+function taSourceText() {
+  const mine = [...messages.value].reverse().find(m => m.role === 'user')
+  return (inputText.value && inputText.value.trim()) ? inputText.value.trim() : (mine?.content || '')
+}
+
+const canTaView = computed(() => taSourceText().length > 0)
+
+async function openTaView() {
+  if (taPersonas.value.length === 0) {
+    try {
+      const res = await listSandboxPersonas()
+      taPersonas.value = res.data?.data || []
+    } catch (e) { /* 弹层内列表为空时可用自定义特征 */ }
+  }
+  if (!taPersonaId.value && taPersonas.value.length) taPersonaId.value = taPersonas.value[0].id
+  taPickerOpen.value = true
+}
+
+async function runTaView() {
+  const message = taSourceText()
+  if (!message) return
+  taLoading.value = true
+  try {
+    const body = taCustom.value.trim()
+      ? { customTraits: taCustom.value.trim(), message }
+      : { personaId: taPersonaId.value, message }
+    const res = await sandboxTaView(body)
+    const d = res.data?.data || {}
+    taResult.value = { personaName: d.personaName || 'TA', reply: d.reply || '', insight: d.insight || '' }
+    taPickerOpen.value = false
+  } catch (e) {
+    taResult.value = { personaName: 'TA', reply: e.response?.data?.message || '推演失败，稍后再试', insight: '' }
+    taPickerOpen.value = false
+  } finally {
+    taLoading.value = false
+  }
+}
 
 function goHome() {
   router.push('/')
@@ -612,6 +702,61 @@ onUnmounted(() => {
   letter-spacing: 0.1em;
   text-align: center;
 }
+
+/* ---- TA 视角推演（2026-09-08） ---- */
+.ta-view-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ta-view-btn {
+  background: var(--paper-card);
+  border: 1.4px dashed var(--ink-line);
+  border-radius: 14px 10px 13px 9px;
+  padding: 6px 14px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, color 0.15s;
+}
+.ta-view-btn:hover:not(:disabled) { border-color: var(--wine); color: var(--wine-deep); transform: translateY(-1px); }
+.ta-view-btn:disabled { opacity: 0.5; cursor: default; }
+.ta-view-hint { font-size: 12px; color: var(--ink-faint); }
+.ta-picker { margin-top: 10px; padding: 12px 14px; }
+.ta-picker-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ta-picker-title { font-family: var(--font-hand); font-size: 14px; color: var(--ink); }
+.ta-close { background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 13px; }
+.ta-persona-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.ta-persona {
+  border: 1.2px solid var(--ink-line);
+  background: transparent;
+  border-radius: 12px 8px 11px 7px;
+  padding: 5px 12px;
+  font-family: var(--font-hand);
+  font-size: 13px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.ta-persona.active { background: var(--wine-soft); border-color: var(--wine); color: var(--wine-deep); }
+.ta-custom-input {
+  width: 100%;
+  border: 1.2px solid var(--ink-line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  background: var(--paper-card-warm);
+  margin-bottom: 10px;
+}
+.ta-go { width: 100%; padding: 8px; }
+.ta-result { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--wine); }
+.ta-result-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ta-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: linear-gradient(180deg, var(--accent), var(--accent-hover));
+  color: var(--bg-primary); font-size: 12px;
+}
+.ta-name { font-family: var(--font-hand); font-size: 14px; color: var(--ink); }
+.ta-reply { font-size: 14px; color: var(--ink); line-height: 1.7; margin: 4px 0 6px; }
+.ta-insight { font-size: 12.5px; color: var(--ink-soft); background: var(--paper-deep); padding: 6px 10px; border-radius: 8px; }
+.ta-disclaimer { font-size: 11.5px; color: var(--ink-faint); margin-top: 8px; }
 </style>
 
 <!-- Non-scoped: these must apply to v-html rendered content -->

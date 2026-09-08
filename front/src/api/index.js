@@ -190,6 +190,9 @@ export function listSandboxPersonas() {
 export function listSandboxSessions(channel = 'REALISTIC') {
   return apiClient.get('/sandbox/list', { params: { channel } })
 }
+export function sandboxTaView(body) {
+  return apiClient.post('/sandbox/ta-view', body)   // {personaId?, customTraits?, message}
+}
 export function sandboxReset(id) {
   return apiClient.post(`/sandbox/${id}/reset`)
 }

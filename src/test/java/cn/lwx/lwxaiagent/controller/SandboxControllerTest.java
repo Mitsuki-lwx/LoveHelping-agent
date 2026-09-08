@@ -4,6 +4,7 @@ import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphRunner;
 import cn.lwx.lwxaiagent.service.SandboxService;
+import cn.lwx.lwxaiagent.service.SandboxTaViewService;
 import cn.lwx.lwxaiagent.tenant.JwtTokenProvider;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
@@ -45,6 +47,8 @@ class SandboxControllerTest {
     private GraphRunner graphRunner;
     @MockBean
     private GuardrailRuleService guardrailRuleService;
+    @MockBean
+    private cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService;
 
     @AfterEach
     void clean() {
@@ -110,6 +114,42 @@ class SandboxControllerTest {
         mockMvc.perform(get("/sandbox/personas"))
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").isArray());
+    }
+
+    // ================= TA 视角推演（2026-09-08 产品闭环 ①） =================
+
+    @Test
+    void taView_notLoggedIn_returnsError() throws Exception {
+        mockMvc.perform(post("/sandbox/ta-view")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"personaId\":1,\"message\":\"在吗\"}"))
+                .andExpect(jsonPath("$.code").value(500))
+                .andExpect(jsonPath("$.message").value("未登录"));
+    }
+
+    @Test
+    void taView_withoutPersona_returns400() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+
+        mockMvc.perform(post("/sandbox/ta-view")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"在吗\"}"))
+                .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    void taView_success_returnsReplyAndInsight() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+        when(taViewService.taView(eq(1L), any(), eq("我今天没回你消息")))
+                .thenReturn(new SandboxTaViewService.TaViewResult("小傲娇", "哼，谁在乎你啊。", "嘴硬，其实在意"));
+
+        mockMvc.perform(post("/sandbox/ta-view")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"personaId\":1,\"message\":\"我今天没回你消息\"}"))
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.personaName").value("小傲娇"))
+                .andExpect(jsonPath("$.data.reply").value("哼，谁在乎你啊。"))
+                .andExpect(jsonPath("$.data.insight").value("嘴硬，其实在意"));
     }
 
     @Test
