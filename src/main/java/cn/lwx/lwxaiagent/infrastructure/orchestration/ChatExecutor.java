@@ -34,6 +34,8 @@ public class ChatExecutor {
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     private final org.springframework.beans.factory.ObjectProvider<org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor> ragAdvisor;
+    /** 行动卡（V21 产品闭环 ②）：未完成行动项注入上下文，实现"上次那件事试了吗" */
+    private final cn.lwx.lwxaiagent.service.ActionItemService actionItemService;
 
     /** 话术三级（FR-CORE-01）SSE 结构化事件标记：流末尾 append，SSE 桥接识别后剥离 */
     public static final String ADVICE_EVENT_MARKER = "@@ADVICE@@";
@@ -129,7 +131,9 @@ public class ChatExecutor {
                         SkillRetriever skillRetriever,
                         io.micrometer.core.instrument.MeterRegistry meterRegistry,
                         com.fasterxml.jackson.databind.ObjectMapper objectMapper,
-                        org.springframework.beans.factory.ObjectProvider<org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor> ragAdvisor) {
+                        org.springframework.beans.factory.ObjectProvider<org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor> ragAdvisor,
+                        cn.lwx.lwxaiagent.service.ActionItemService actionItemService) {
+        this.actionItemService = actionItemService;
         this.memoryStore = memoryStore;
         this.skillRetriever = skillRetriever;
         this.meterRegistry = meterRegistry;
@@ -284,7 +288,30 @@ public class ChatExecutor {
     private String assembleContext(String message, String tid) {
         String memoryContext = memoryStore.retrieveAsContext(TenantContext.getUserId(), message);
         String skillContext = skillRetriever.retrieveAsContext(message, tid);
-        if (memoryContext.isEmpty()) return skillContext;
-        return memoryContext + skillContext;
+        String actionContext = assembleActionContext();
+        return (memoryContext.isEmpty() ? "" : memoryContext) + skillContext + actionContext;
+    }
+
+    /**
+     * 行动卡跟进段（V21 产品闭环 ②）：把用户"上次说要试的事"注入系统上下文，
+     * 让模型在开场时自然地跟进一句"上次那件事后来怎么样了"。无未完成项时返回空串。
+     */
+    private String assembleActionContext() {
+        String userId = TenantContext.getUserId();
+        if (userId == null || actionItemService == null) return "";
+        try {
+            var items = actionItemService.listOpen(userId);
+            if (items == null || items.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder("\n\n【上次说要做的事】\n");
+            for (var it : items) {
+                sb.append("- ").append(it.getContent()).append("\n");
+            }
+            sb.append("如果对方本次来信与其中某件相关，请在回应中自然地关心一句进展（不要生硬复述清单）；" +
+                      "若已聊过或无关则忽略，不要每轮都问。\n");
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("action item context skipped: {}", e.getMessage());
+            return "";
+        }
     }
 }

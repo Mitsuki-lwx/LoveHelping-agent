@@ -190,6 +190,18 @@ export function listSandboxPersonas() {
 export function listSandboxSessions(channel = 'REALISTIC') {
   return apiClient.get('/sandbox/list', { params: { channel } })
 }
+export function listActionItems() {
+  return apiClient.get('/action-items')
+}
+export function createActionItemFromReply(chatId, replyText) {
+  return apiClient.post('/action-items/from-reply', { chatId, replyText })
+}
+export function doneActionItem(id) {
+  return apiClient.put(`/action-items/${id}/done`)
+}
+export function removeActionItem(id) {
+  return apiClient.delete(`/action-items/${id}`)
+}
 export function sandboxTaView(body) {
   return apiClient.post('/sandbox/ta-view', body)   // {personaId?, customTraits?, message}
 }

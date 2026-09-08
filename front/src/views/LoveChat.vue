@@ -68,6 +68,21 @@
       </div>
     </div>
 
+    <!-- ② 行动卡（2026-09-08）：把回信建议变成可跟踪的事 -->
+    <div v-if="actionItems.length" class="action-dock letter-card">
+      <div class="action-dock-head">
+        <span class="action-dock-title">📌 说好要做的事</span>
+        <button class="ta-close" @click="actionItems = []">✕</button>
+      </div>
+      <div v-for="it in actionItems" :key="it.id" class="action-row">
+        <label class="action-check">
+          <input type="checkbox" @change="onActionDone(it)" />
+          <span class="action-content">{{ it.content }}</span>
+        </label>
+        <button class="action-skip" @click="onActionSkip(it)">算了</button>
+      </div>
+    </div>
+
     <div class="chat-input-area">
       <div class="input-wrapper letter-card">
         <input
@@ -132,7 +147,7 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages, sandboxTaView, listSandboxPersonas } from '../api/index.js'
+import { createLoveChatSSE, generateChatId, voteMessage, registerConversation, getConversationMessages, sandboxTaView, listSandboxPersonas, listActionItems, createActionItemFromReply, doneActionItem, removeActionItem } from '../api/index.js'
 import { saveLocalConversation } from '../utils/history.js'
 import { getUser } from '../utils/auth.js'
 import { createTypewriter } from '../utils/typewriter.js'
@@ -198,6 +213,38 @@ const voteStates = ref({})
 const showFeedback = ref(null)
 const feedbackText = ref('')
 let cancelSSE = null
+
+/* ============ 行动卡（2026-09-08 产品闭环 ②） ============ */
+const actionItems = ref([])
+
+async function loadActionItems() {
+  try {
+    const res = await listActionItems()
+    actionItems.value = res.data?.data || []
+  } catch (e) { actionItems.value = [] }
+}
+
+/** 收到完整回信后：从三牌建议抽一条行动项（后端无有效建议时不建） */
+async function maybeCreateActionItem(replyText) {
+  try {
+    const res = await createActionItemFromReply(chatId.value, replyText)
+    if (res.data?.data?.created) await loadActionItems()
+  } catch (e) { /* 行动卡是增强，失败不影响主流程 */ }
+}
+
+async function onActionDone(it) {
+  try {
+    await doneActionItem(it.id)
+    actionItems.value = actionItems.value.filter(x => x.id !== it.id)
+  } catch (e) { /* 忽略 */ }
+}
+
+async function onActionSkip(it) {
+  try {
+    await removeActionItem(it.id)
+    actionItems.value = actionItems.value.filter(x => x.id !== it.id)
+  } catch (e) { /* 忽略 */ }
+}
 
 /* ============ TA 视角推演（2026-09-08 产品闭环 ①） ============ */
 const taPickerOpen = ref(false)
@@ -279,6 +326,7 @@ async function loadExistingMessages() {
 }
 
 onMounted(() => {
+  loadActionItems()
   loadExistingMessages()
 })
 
@@ -352,6 +400,8 @@ function sendMessage() {
       }
       loading.value = false
       scrollToBottom()
+      // ② 行动卡：回信落定后，从三牌建议抽一条可跟踪的行动
+      maybeCreateActionItem(messages.value[aiMsgIdx].content)
     }
   })
 }
@@ -757,6 +807,20 @@ onUnmounted(() => {
 .ta-reply { font-size: 14px; color: var(--ink); line-height: 1.7; margin: 4px 0 6px; }
 .ta-insight { font-size: 12.5px; color: var(--ink-soft); background: var(--paper-deep); padding: 6px 10px; border-radius: 8px; }
 .ta-disclaimer { font-size: 11.5px; color: var(--ink-faint); margin-top: 8px; }
+
+/* ---- 行动卡（2026-09-08 产品闭环 ②） ---- */
+.action-dock { margin: 10px 0 4px; padding: 10px 14px; border-left: 3px solid var(--wine); }
+.action-dock-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.action-dock-title { font-family: var(--font-hand); font-size: 13.5px; color: var(--ink); }
+.action-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; }
+.action-check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.action-check input { margin-top: 3px; accent-color: var(--wine); }
+.action-content { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+.action-skip {
+  background: none; border: none; color: var(--ink-faint);
+  font-size: 12px; cursor: pointer; flex-shrink: 0;
+}
+.action-skip:hover { color: var(--wine-deep); }
 </style>
 
 <!-- Non-scoped: these must apply to v-html rendered content -->
