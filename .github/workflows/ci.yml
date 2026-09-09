@@ -100,6 +100,14 @@ jobs:
             curl -s -o /dev/null -m 2 http://localhost:8125/ && break || sleep 2
           done
 
+      # 2.5) 启用 pgvector 扩展（全新容器默认未启用，INSERT vector 类型会报 Unknown type）
+      - name: Enable pgvector extension
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          PGPID=$(docker ps -q --filter ancestor=pgvector/pgvector:pg16)
+          echo "pg container: $PGPID"
+          docker exec "$PGPID" psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
       # 3) 起主应用（prod profile：首次启动自动 Flyway + PG 向量化，需几分钟）
       - name: Start app
         if: steps.gate.outputs.skip != 'true'
