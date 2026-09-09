@@ -1,6 +1,7 @@
 # ============================================================
 # CI（2026-09-07）：后端单测 + 全链路 E2E 冒烟（有 LLM secrets 才跑）
 # 安全扫描见 security.yml（gitleaks 全历史）
+# 注意：secrets 上下文不可用于 job 级 if——E2E 的开关放在 gate step 里（step 级 if 合法）
 # ============================================================
 name: ci
 
@@ -28,12 +29,11 @@ jobs:
           DASHSCOPE_API_KEY: dummy-for-context-test
 
   # ---- 全链路 E2E 冒烟（18 项：注册→SSE→RAG→Agent→护栏→降级）----
-  # 需要真实 LLM secrets（模型调用无法 mock）——secrets 未配置时该 job 自动跳过，
-  # 仓库依然绿；配置后每次 push/PR 即全链路回归。
+  # 需要真实 LLM secrets（模型调用无法 mock）——secrets 未配置时 gate step
+  # 置 skip=true，其余步骤全部跳过，job 依然绿；配置后每次 push 即全链路回归。
   e2e-smoke:
     name: E2E Smoke (18 items)
     needs: backend-test
-    if: ${{ secrets.OPENAI_API_KEY != '' }}
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -64,7 +64,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # 0) 闸门：LLM secrets 缺失时跳过后续所有步骤（step 级 if 可用 secrets）
+      - name: Gate - check LLM key
+        id: gate
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "LLM secrets 未配置，E2E 冒烟跳过（配置 Secrets 后自动恢复全链路回归）"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "LLM secrets 已配置，继续全链路 E2E"
+          fi
+
       - uses: actions/setup-java@v4
+        if: steps.gate.outputs.skip != 'true'
         with:
           distribution: temurin
           java-version: 21
@@ -72,12 +86,14 @@ jobs:
 
       # 1) 构建两个可执行 jar（主应用 + mcp-server 工具面）
       - name: Build jars
+        if: steps.gate.outputs.skip != 'true'
         run: |
           ./mvnw -B package -DskipTests
           ./mvnw -B -f mcp-server/pom.xml package -DskipTests
 
       # 2) 起 mcp-server（主应用启动需连 MCP）
       - name: Start mcp-server
+        if: steps.gate.outputs.skip != 'true'
         run: |
           java -jar mcp-server/target/mcp-server-0.0.1-SNAPSHOT.jar --server.port=8125 > mcp.log 2>&1 &
           for i in $(seq 1 30); do
@@ -86,6 +102,7 @@ jobs:
 
       # 3) 起主应用（prod profile：首次启动自动 Flyway + PG 向量化，需几分钟）
       - name: Start app
+        if: steps.gate.outputs.skip != 'true'
         env:
           SPRING_PROFILES_ACTIVE: prod
           MYSQL_PASSWORD: ci-mysql-pwd
@@ -106,6 +123,7 @@ jobs:
 
       # 4) E2E 冒烟 18 项
       - name: Run e2e smoke
+        if: steps.gate.outputs.skip != 'true'
         run: BASE_URL=http://localhost:8088/api ADMIN_API_KEY=smoke-test-admin-key bash scripts/e2e-smoke.sh
 
       # 5) 失败即吐日志（省得再拉）
