@@ -79,3 +79,6 @@ skills-lock.json
 target_lockbak*/
 .graphify/
 
+
+# 损坏的旧 .git 备份（2026-09-08 环境事故留档）
+.git_broken_bak_20260908/
