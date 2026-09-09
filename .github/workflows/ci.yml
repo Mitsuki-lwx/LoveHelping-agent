@@ -106,7 +106,17 @@ jobs:
         run: |
           PGPID=$(docker ps -q --filter ancestor=pgvector/pgvector:pg16)
           echo "pg container: $PGPID"
-          docker exec "$PGPID" psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          docker exec "$PGPID" psql -U postgres -c "
+          CREATE EXTENSION IF NOT EXISTS vector;
+          CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";
+          CREATE TABLE IF NOT EXISTS public.vector_store (
+            id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+            content text,
+            metadata jsonb,
+            embedding vector(1024)
+          );
+          CREATE INDEX IF NOT EXISTS spring_ai_vector_index
+            ON public.vector_store USING hnsw (embedding vector_cosine_ops);"
 
       # 3) 起主应用（prod profile：首次启动自动 Flyway + PG 向量化，需几分钟）
       - name: Start app
