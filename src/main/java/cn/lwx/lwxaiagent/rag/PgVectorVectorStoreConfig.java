@@ -177,12 +177,22 @@ public class PgVectorVectorStoreConfig {
         // 若 app.rag.reindex=true 则强制重建（用于新文档导入后）
         if ("true".equalsIgnoreCase(System.getProperty("app.rag.reindex", "false"))) {
             log.info("Reindex flag set, clearing vector store and reloading...");
-            pgJdbcTemplate.execute("DELETE FROM vector_store");
+            try {
+                pgJdbcTemplate.execute("DELETE FROM vector_store");
+            } catch (Exception e) {
+                log.info("vector_store 表尚未创建（全新库首次启动），跳过清空");
+            }
         }
 
-        // 查询表中已有记录数
-        Integer count = pgJdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM vector_store", Integer.class);
+        // 查询表中已有记录数（防御式：全新库首次启动时 initializeSchema 建表发生在
+        // bean 初始化完成后，此处表可能还不存在——按 0 条处理，不阻塞启动）
+        Integer count = 0;
+        try {
+            count = pgJdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM vector_store", Integer.class);
+        } catch (org.springframework.jdbc.BadSqlGrammarException e) {
+            log.info("vector_store 表尚未创建（全新库首次启动），存量检查跳过");
+        }
 
         // ---- 父子索引迁移检测（ADR-15）：表里若为旧格式（整篇文档，无 parent_id）则重建 ----
         if (count != null && count > 0) {
