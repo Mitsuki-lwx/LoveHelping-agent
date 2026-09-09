@@ -64,7 +64,7 @@ node_modules/
 front/dist/
 
 /.agents
-/.mvn
+/.mvn/wrapper/maven-wrapper.jar
 
 ### Generated artifacts ###
 META-INF/
