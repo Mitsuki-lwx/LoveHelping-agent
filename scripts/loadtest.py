@@ -26,6 +26,11 @@ import urllib.request
 
 GATE_LIMIT_HINT = 8  # app.online.max-inflight 默认（OnlineLoadTracker）
 
+# 过载/限流拒绝文案（ChatEntry 4003 / RateLimiter 429）。SSE 下拒绝仍是 HTTP 200 的
+# 流内 event:error，所以只判 HTTP 状态会把拒绝误记成成功——必须匹配文案。
+REJECT_HINTS = ("当前咨询较多", "请求过于频繁", "稍等一下", "AI 服务繁忙", "4003")
+
+
 
 def register(base):
     req = urllib.request.Request(
@@ -45,9 +50,9 @@ def one_sync(base, token, prompt, idx, timeout):
         resp = urllib.request.urlopen(req, timeout=timeout)
         body = resp.read().decode("utf-8", "replace")
         dt = time.time() - t0
-        if '"code":200' in body and "4003" not in body and "稍等一下" not in body:
+        if '"code":200' in body and not any(h in body for h in REJECT_HINTS):
             return "ok", dt
-        if "4003" in body or "稍等一下" in body:
+        if any(h in body for h in REJECT_HINTS):
             return "busy", dt
         return "err", dt
     except Exception:
@@ -66,7 +71,7 @@ def one_sse(base, token, prompt, idx, timeout):
             s = line.decode("utf-8", "replace").strip()
             if s.startswith("data:") and len(s) > 5:
                 body = s[5:].strip()
-                if "4003" in body or "稍等一下" in body:
+                if any(h in body for h in REJECT_HINTS):
                     return "busy", (time.time() - t0 if first is None else first)
                 if first is None:
                     first = time.time() - t0  # 首 token 延迟
@@ -114,8 +119,8 @@ def main():
     args = ap.parse_args()
 
     token = register(args.base)
-    print("压测端点: %s/%s | 闸门上限参考: max-inflight=%d | prompt=%s"
-          % (args.base, args.endpoint, GATE_LIMIT_HINT, args.prompt[:20]))
+    print("压测端点: %s/%s | 拒绝=过载(4003)/限流(429)（SSE 下为流内 event:error）| prompt=%s"
+          % (args.base, args.endpoint, args.prompt[:20]))
     print("-" * 96)
     for lvl in [int(x) for x in args.levels.split(",") if x.strip()]:
         run_level(args.base, token, lvl, args.endpoint, args.prompt, args.timeout)
