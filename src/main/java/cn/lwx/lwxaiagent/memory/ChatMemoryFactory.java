@@ -94,6 +94,11 @@ public class ChatMemoryFactory {
      * @param windowSize 上下文窗口大小（get 返回最近 N 条消息）
      * @return 基于 message 表的 ChatMemory 实例
      */
+    /** Bind identity before Reactor/SDK thread switches; never infer ownership from a worker ThreadLocal. */
+    public ChatMemory createForUser(String userId) {
+        return new MessageChatMemory(messageMapper, props.getWindowSize(), promptVersion, encryptionService, userId);
+    }
+
     public ChatMemory create(int windowSize) {
         return new MessageChatMemory(messageMapper, windowSize, promptVersion, encryptionService);
     }

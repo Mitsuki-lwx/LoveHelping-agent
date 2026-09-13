@@ -22,19 +22,27 @@ public class MessageChatMemory implements ChatMemory {
     private final int windowSize;
     private final String promptVersion;
     private final EncryptionService encryptionService;
+    private final String boundUser;
 
-    public MessageChatMemory(MessageMapper messageMapper, int windowSize,
-                             String promptVersion, EncryptionService encryptionService) {
+    public MessageChatMemory(MessageMapper messageMapper, int windowSize, String promptVersion,
+                             EncryptionService encryptionService, String userId) {
         this.messageMapper = messageMapper;
         this.windowSize = windowSize;
         this.promptVersion = promptVersion;
         this.encryptionService = encryptionService;
+        this.boundUser = userId == null ? "anonymous" : userId;
+    }
+
+    public MessageChatMemory(MessageMapper messageMapper, int windowSize,
+                             String promptVersion, EncryptionService encryptionService) {
+        this(messageMapper, windowSize, promptVersion, encryptionService, TenantContext.getUserId());
     }
 
     @Override
     public void add(String conversationId, List<org.springframework.ai.chat.messages.Message> messages) {
         if (conversationId == null || messages == null || messages.isEmpty()) return;
-        String userId = TenantContext.getUserId() != null ? TenantContext.getUserId() : "anonymous";
+        String userId = boundUser;
+        if ("anonymous".equals(userId)) return; // Anonymous chat is intentionally stateless.
         List<Message> rows = new ArrayList<>();
         for (org.springframework.ai.chat.messages.Message m : messages) {
             String text = textOf(m);
@@ -62,10 +70,11 @@ public class MessageChatMemory implements ChatMemory {
 
     @Override
     public List<org.springframework.ai.chat.messages.Message> get(String conversationId) {
-        if (conversationId == null) return List.of();
+        if (conversationId == null || "anonymous".equals(boundUser)) return List.of();
         try {
             List<Message> rows = messageMapper.selectList(new LambdaQueryWrapper<Message>()
                     .eq(Message::getConversationId, conversationId)
+                    .eq(Message::getUserId, boundUser)
                     .eq(Message::getDeleted, 0)
                     .orderByDesc(Message::getId)
                     .last("LIMIT " + windowSize));
@@ -92,6 +101,7 @@ public class MessageChatMemory implements ChatMemory {
         try {
             messageMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Message>()
                     .eq(Message::getConversationId, conversationId)
+                    .eq(Message::getUserId, boundUser)
                     .set(Message::getDeleted, 1));
         } catch (Exception e) {
             log.warn("MessageChatMemory.clear failed: {}", e.getMessage());

@@ -20,8 +20,10 @@ public class GraphExecutorConfig {
             @Value("${app.graph.executor.max-size:64}") int max,
             @Value("${app.graph.executor.queue-capacity:200}") int queue) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(Math.max(2, core));
-        executor.setMaxPoolSize(Math.max(core, max));
+        int effectiveCore = Math.max(2, core);
+        executor.setCorePoolSize(effectiveCore);
+        executor.setMaxPoolSize(Math.max(effectiveCore, max));
+        executor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
         executor.setQueueCapacity(Math.max(0, queue));
         executor.setThreadNamePrefix("graph-");
         executor.setWaitForTasksToCompleteOnShutdown(false);

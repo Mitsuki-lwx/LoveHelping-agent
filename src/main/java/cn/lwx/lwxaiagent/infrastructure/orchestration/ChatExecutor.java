@@ -29,6 +29,8 @@ import reactor.core.publisher.Flux;
 public class ChatExecutor {
 
     private final ChatClient chatClient;
+    private final ChatMemoryFactory chatMemoryFactory;
+    private final cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry telemetry;
     private final MemoryStore memoryStore;
     private final SkillRetriever skillRetriever;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
@@ -132,7 +134,10 @@ public class ChatExecutor {
                         io.micrometer.core.instrument.MeterRegistry meterRegistry,
                         com.fasterxml.jackson.databind.ObjectMapper objectMapper,
                         org.springframework.beans.factory.ObjectProvider<org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor> ragAdvisor,
-                        cn.lwx.lwxaiagent.service.ActionItemService actionItemService) {
+                        cn.lwx.lwxaiagent.service.ActionItemService actionItemService,
+                        cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry telemetry) {
+        this.chatMemoryFactory = chatMemoryFactory;
+        this.telemetry = telemetry;
         this.actionItemService = actionItemService;
         this.memoryStore = memoryStore;
         this.skillRetriever = skillRetriever;
@@ -140,13 +145,9 @@ public class ChatExecutor {
         this.objectMapper = objectMapper;
         this.ragAdvisor = ragAdvisor;
 
-        ChatMemory chatMemory = chatMemoryFactory.create();
         this.chatClient = ChatClient.builder(chatModel)
                 .defaultSystem(SYSTEM_PROMPT)
-                .defaultAdvisors(
-                        MessageChatMemoryAdvisor.builder(chatMemory).build(),
-                        new MyLoggerAdvisor(),
-                        guardrailAdvisor)
+                .defaultAdvisors(new MyLoggerAdvisor(), guardrailAdvisor)
                 .build();
     }
 
@@ -194,9 +195,14 @@ public class ChatExecutor {
         if (advice) {
             effectivePrompt = effectivePrompt + ADVICE_ACTIVATE_PROMPT;
         }
+        var parentTrace = telemetry.capture();
         var req = chatClient.prompt()
                 .user(message)
-                .advisors(spec -> spec.param(org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID, chatId));
+                .advisors(MessageChatMemoryAdvisor.builder(chatMemoryFactory.createForUser(TenantContext.getUserId())).build())
+                .advisors(spec -> {
+                    spec.param(org.springframework.ai.chat.memory.ChatMemory.CONVERSATION_ID, chatId);
+                    if (parentTrace != null) spec.param(cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry.PARENT_CONTEXT_KEY, parentTrace);
+                });
         req.system(effectivePrompt + context);
         if (rag) {
             var advisor = ragAdvisor.getIfAvailable();
@@ -204,7 +210,7 @@ public class ChatExecutor {
                 req.advisors(advisor); // 检索增强：改写→检索→上下文注入
             }
         }
-        Flux<String> stream = req.stream().content();
+        Flux<String> stream = req.stream().content().contextWrite(ctx -> telemetry.propagate(ctx, parentTrace));
         if (!advice) {
             return new AgentResult.ShallowResult(stream);
         }

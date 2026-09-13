@@ -25,18 +25,18 @@ import java.util.Map;
 public class SandboxController {
 
     private final SandboxService sandboxService;
-    private final GraphRunner graphRunner;
+    private final cn.lwx.lwxaiagent.infrastructure.orchestration.ChatEntry chatEntry;
     private final cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService;
 
     private final cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService;
     private final cn.lwx.lwxaiagent.service.SandboxReviewService reviewService;
 
-    public SandboxController(SandboxService sandboxService, GraphRunner graphRunner,
+    public SandboxController(SandboxService sandboxService, cn.lwx.lwxaiagent.infrastructure.orchestration.ChatEntry chatEntry,
                              cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRuleService,
                              cn.lwx.lwxaiagent.service.SandboxTaViewService taViewService,
                              cn.lwx.lwxaiagent.service.SandboxReviewService reviewService) {
         this.sandboxService = sandboxService;
-        this.graphRunner = graphRunner;
+        this.chatEntry = chatEntry;
         this.guardrailRuleService = guardrailRuleService;
         this.taViewService = taViewService;
         this.reviewService = reviewService;
@@ -149,38 +149,9 @@ public class SandboxController {
         SandboxSession session = sandboxService.getSession(sandboxId, userId);
         sandboxService.touchSession(sandboxId);
 
-        Map<String, Object> input = new java.util.HashMap<>();
-        input.put(GraphStateKeys.MESSAGE, message);
-        input.put(GraphStateKeys.CHAT_ID, String.valueOf(sandboxId));
-        input.put(GraphStateKeys.USER_ID, userId);
-        input.put(GraphStateKeys.SANDBOX_ID, sandboxId);
-        input.put(GraphStateKeys.ADVICE, false);
-
-        // 走编排图（沙盘节点：人设 + 记忆 + RAG），分块模拟流式（等价 AgentLoopExecutor）
-        return Flux.create(sink -> {
-            java.util.concurrent.CompletableFuture.supplyAsync(() -> graphRunner.run(input, String.valueOf(sandboxId)))
-                    .thenAccept(result -> {
-                        String output = (String) result.get(GraphStateKeys.OUTPUT);
-                        for (String part : chunk(output == null ? "" : output)) {
-                            sink.next(part);
-                        }
-                        sink.complete();
-                    })
-                    .exceptionally(err -> {
-                        sink.next("沙盘对话出错，请稍后再试");
-                        sink.complete();
-                        return null;
-                    });
-        });
-    }
-
-    private List<String> chunk(String text) {
-        java.util.List<String> parts = new java.util.ArrayList<>();
-        int size = 30;
-        for (int i = 0; i < text.length(); i += size) {
-            parts.add(text.substring(i, Math.min(text.length(), i + size)));
-        }
-        return parts;
+        // Shared subscription admission, total timeout, cancellation and trace propagation.
+        return chatEntry.sandbox(message, sandboxId, userId)
+                .onErrorResume(e -> Flux.just(e instanceof BizException b ? b.getMessage() : "沙盘对话出错，请稍后再试"));
     }
 
     // ==================== 记忆注入（CAP-8,10,11）====================

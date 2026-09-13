@@ -83,6 +83,10 @@ public class AgentLlmNode {
             messages.add(new org.springframework.ai.chat.messages.SystemMessage(systemPrompt()));
             messages.add(new UserMessage(msg));
         }
+        if (messages.stream().noneMatch(org.springframework.ai.chat.messages.SystemMessage.class::isInstance)) {
+            messages.add(0, new org.springframework.ai.chat.messages.SystemMessage(systemPrompt()));
+        }
+        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Agent cancelled");
         // 步数计数（防无上限工具循环烧配额）
         int step = state.value(GraphStateKeys.AGENT_STEP).map(v -> ((Number) v).intValue()).orElse(0) + 1;
         if (step > MAX_STEPS) {

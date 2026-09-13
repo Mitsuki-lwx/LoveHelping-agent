@@ -1,52 +1,56 @@
 package cn.lwx.lwxaiagent.rag.rerank;
 
-import lombok.extern.slf4j.Slf4j;
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.TraceContext;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.postretrieval.document.DocumentPostProcessor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
-/**
- * 重排挂载点（ADR-15 阶段 4）：Spring AI 检索增强管线的 postretrieval 阶段。
- * <p>开启（enabled=true 且 mode=llm）时调用 {@link DocumentReranker} 把候选重排到 topK；
- * 关闭时原样透传（链路与现状完全一致）。指标：executions/candidates/fallback。</p>
- */
-@Slf4j
+/** All providers share one fallback boundary and an observable top-K bound. */
 @Component
 public class RerankDocumentPostProcessor implements DocumentPostProcessor {
-
     private final RerankProperties properties;
-    private final DocumentReranker documentReranker;
-    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final LlmDocumentReranker llm;
+    private final LocalDocumentReranker local;
+    private final MeterRegistry meters;
+    private final AiTelemetry telemetry;
 
-    public RerankDocumentPostProcessor(RerankProperties properties,
-                                       DocumentReranker documentReranker,
-                                       io.micrometer.core.instrument.MeterRegistry meterRegistry) {
-        this.properties = properties;
-        this.documentReranker = documentReranker;
-        this.meterRegistry = meterRegistry;
+    public RerankDocumentPostProcessor(RerankProperties properties, LlmDocumentReranker llm,
+                                       LocalDocumentReranker local, MeterRegistry meters, AiTelemetry telemetry) {
+        this.properties = properties; this.llm = llm; this.local = local; this.meters = meters; this.telemetry = telemetry;
     }
 
-    @Override
-    public List<Document> process(Query query, List<Document> documents) {
-        if (!properties.isEnabled() || !"llm".equals(properties.getMode())) {
-            return documents; // 关闭态：透传，零变化
-        }
-        if (documents == null || documents.size() <= properties.getTopK()) {
-            return documents; // 退化：候选不足，不重排
-        }
-        try {
-            meterRegistry.counter("rag.rerank.executions").increment();
-            meterRegistry.counter("rag.rerank.candidates").increment(documents.size());
-            List<Document> reranked = documentReranker.rerank(query.text(), documents, properties.getTopK());
-            log.info("RAG rerank: {} -> {} candidates", documents.size(), reranked.size());
-            return reranked;
-        } catch (Exception e) {
-            meterRegistry.counter("rag.rerank.fallback").increment();
-            log.warn("RAG rerank failed, fallback to vector order: {}", e.getMessage());
-            return documents;
+    @Override public List<Document> process(Query query, List<Document> documents) {
+        if (!properties.isActive() || documents == null || documents.size() <= properties.getTopK()) return documents;
+        int k = Math.min(properties.getTopK(), documents.size());
+        Object parent = query.context().get(AiTelemetry.PARENT_CONTEXT_KEY);
+        var span = telemetry.start("rag.rerank", telemetry.capture() != null ? telemetry.capture() : parent instanceof TraceContext t ? t : null);
+        span.tag("rag.mode", properties.getMode()).tag("rag.candidates", String.valueOf(documents.size()));
+        long start = System.nanoTime();
+        String outcome = "success";
+        try (var ignored = telemetry.scope(span)) {
+            meters.counter("rag.rerank.executions", "mode", properties.getMode()).increment();
+            List<Document> ranked = ("local".equals(properties.getMode()) ? local : llm)
+                    .rerank(query.text(), documents.subList(0, Math.min(documents.size(), properties.getTopN())), k);
+            if (ranked == null || ranked.size() != k) throw new IllegalStateException("Invalid rerank result");
+            return ranked;
+        } catch (java.util.concurrent.CancellationException cancelled) {
+            outcome = "cancelled"; throw cancelled;
+        } catch (RuntimeException e) {
+            outcome = "fallback";
+            meters.counter("rag.rerank.fallback", "mode", properties.getMode()).increment();
+            span.tag("langfuse.observation.level", "WARNING");
+            return List.copyOf(documents.subList(0, k));
+        } finally {
+            span.tag("rag.outcome", outcome).tag("rag.results", String.valueOf(k));
+            meters.timer("rag.rerank.latency", "mode", properties.getMode(), "outcome", outcome)
+                    .record(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+            span.end();
         }
     }
 }

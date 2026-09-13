@@ -36,7 +36,7 @@ public class RagAdvisorConfig {
             ObjectProvider<QueryRewriter> queryRewriter) {
         RetrievalAugmentationAdvisor.Builder builder = RetrievalAugmentationAdvisor.builder()
                 .documentRetriever(documentRetriever)
-                .queryAugmenter(ContextualQueryAugmenter.builder().build())
+                .queryAugmenter(ContextualQueryAugmenter.builder().allowEmptyContext(true).build())
                 .documentPostProcessors(rerankDocumentPostProcessor); // 重排：关闭态原样透传
         // 查询改写默认开（application.yml app.rag.query-rewrite.enabled=true）
         if (queryRewriteEnabled) {

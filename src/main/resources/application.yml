@@ -52,6 +52,13 @@ spring:
 
   # ======================== Spring AI 配置 ========================
   ai:
+    # ADR-23: LlmGateway is the only retry owner (no SDK x gateway multiplication).
+    retry:
+      max-attempts: 1
+    chat:
+      observations:
+        log-prompt: false
+        log-completion: false
     # 对话记忆（Phase 2 消息落库后）已迁移至自建 message 表（MessageChatMemory），
     # 不再使用 Spring AI JDBC ChatMemory（SPRING_AI_CHAT_MEMORY 已废弃）。
 
@@ -121,6 +128,10 @@ sentry:
   dsn: ${SENTRY_DSN:}    # 错误追踪（2026-09-07）：空=不初始化；填 DSN 即启用自动上报
 
 management:
+  otlp:
+    tracing:
+      export:
+        enabled: false # Only the bounded Langfuse exporter is used (ADR-24).
   tracing:
     enabled: true                # 启用链路追踪
     sampling:
@@ -140,16 +151,34 @@ app:
   # 实测依据（docs/09 §6.1）：厂商 ≥40 零 429（无硬限流），24 并发 P95 3.5s（吞吐延迟平衡点）。
   # 闸门只限"在途模型请求"——真实在线用户数远高于此（多数时间在阅读/输入）。
   online:
-    max-inflight: 24
+    max-inflight: ${ONLINE_MAX_INFLIGHT:24}
+  graph:
+    executor:
+      core-size: 24
+      max-size: 24
+      queue-capacity: 0
   chat:
+    timeout-ms: 90000
     provider: deepseek           # 默认聊天模型提供商（历史配置，主备结构见 app.llm）
 
   # LlmGateway 配置（ADR-7）：当前仅使用 sensenova OpenAI 兼容端点
   llm:
+    max-concurrent-calls: ${LLM_MAX_CONCURRENT_CALLS:24}
+    connect-timeout-ms: 3000
+    attempt-timeout-ms: 25000
+    total-timeout-ms: 60000
+    stream-idle-timeout-ms: 15000
     retry:
-      max-attempts: 3            # 主模型最多尝试次数（含首次）
-      backoff-ms: 1000           # 指数退避初始间隔（毫秒），按 2 倍递增
-    fallback-enabled: false      # 禁用备用供应商，仅使用主模型
+      max-attempts: 3
+      backoff-ms: 250
+      max-backoff-ms: 5000
+      jitter: 0.5
+      budget-per-minute: 30
+    circuit:
+      enabled: true
+      failure-threshold: 5
+      open-ms: 15000
+    fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
     # 视觉模型（ADR-11）：基于 GoPlan 端点换 model 即多模态；未配置则图片聊天不可用
     vision-model: mimo-v2.5
 
@@ -166,16 +195,20 @@ app:
       enabled: true
     # 向量粗召回数（默认 8）：top5 去重后父文档常不足；8 对 Recall 更稳（9/4 实测 Recall 1.00）
     top-k: 8
-    # 检索日志带相似度分数（默认开：每次检索多一次 query embedding——百炼 text-embedding-v3
-    # 查询量小成本可忽略；Context Precision 量化与检索质量排查依赖此分数）
-    log-score: true
-    # 检索重排（ADR-15 阶段 4，默认关闭灰度）：开启后每条 RAG 多一次 LLM 调用（v1=主线 LLM 打分）
-    # rerank:
-    #   enabled: false       # true 时检索窗口扩为 topN=50，postretrieval 重排取 topK=5
-    #   top-n: 50
-    #   top-k: 5
-    #   mode: llm            # llm=主线模型打分；off=关闭
-    #   max-candidate-chars: 200
+    # ADR-25: free local CPU cross-encoder. Start ops/reranker before enabling.
+    # No extra embedding calls are made for logging.
+    rerank:
+      enabled: ${RERANK_ENABLED:false}
+      mode: ${RERANK_MODE:local}
+      url: ${RERANK_URL:http://127.0.0.1:8091/rerank}
+      top-n: 20
+      top-k: 5
+      max-candidate-chars: 1000
+      timeout-ms: 2000
+      connect-timeout-ms: 500
+      max-concurrent: 2
+      failure-threshold: 3
+      circuit-open-ms: 15000
 
   # Langfuse 可观测（手写 2.x 签名接入，参考 CodeForge）：密钥一律环境变量注入
   langfuse:
@@ -183,6 +216,10 @@ app:
     public-key: ${LANGFUSE_PUBLIC_KEY:}
     secret-key: ${LANGFUSE_SECRET_KEY:}
     host: ${LANGFUSE_HOST:http://localhost:3000}
+    max-queue-size: 2048
+    max-batch-size: 256
+    schedule-delay-ms: 1000
+    timeout-ms: 3000
 
   # 编排图能力治理（ADR-19）：agent 节点工具白名单（能力域，逗号分隔）
   orchestration:
@@ -237,8 +274,13 @@ app:
 
   # 速率限制配置（防止用户频繁调用 API）
   rate-limit:
-    enabled: false               # 限流暂不启用（登录直接用，2026-08-19 决定）；代码保留，未来收费/防刷时开启
-    daily-quota: 5               # 每日每人最多调用次数
+    enabled: ${DAILY_QUOTA_ENABLED:false} # Daily entitlement remains opt-in.
+    daily-quota: 5
+    burst-enabled: ${BURST_LIMIT_ENABLED:true}
+    burst-capacity: 8
+    refill-per-second: 1.0
+    max-local-buckets: 10000
+    redis-cooldown-ms: 5000
 
   # 对话记忆配置
   memory:
@@ -276,7 +318,7 @@ logging:
   level:
     # Spring AI 的 SimpleLoggerAdvisor 输出 DEBUG 级别日志
     # 可以看到每次 LLM 调用的请求和响应内容
-    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: debug
+    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: OFF
 
 # ======================== RAG 检索系统配置 ========================
 # 检索模式：pgvector（ADR-1 收敛后唯一路径；Milvus + ES 混合检索已移除）

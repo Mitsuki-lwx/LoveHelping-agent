@@ -2,149 +2,153 @@ package cn.lwx.lwxaiagent.infrastructure.ai;
 
 import cn.lwx.lwxaiagent.common.BizException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.metadata.ChatResponseMetadata;
-import org.springframework.ai.chat.metadata.Usage;
+import org.junit.jupiter.api.*;
 import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.model.*;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.core.publisher.Flux;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-/**
- * LlmGateway 单元测试（ADR-7）：重试、降级、计量。
- */
 class LlmGatewayTest {
-
-    private LlmGatewayProperties props() {
-        LlmGatewayProperties p = new LlmGatewayProperties();
-        p.getRetry().setMaxAttempts(3);
-        p.getRetry().setBackoffMs(1); // 测试用短退避
-        p.setFallbackEnabled(true);
-        return p;
+    ChatModel primary, fallback;
+    LlmGatewayProperties props;
+    SimpleMeterRegistry meters;
+    LlmGateway gateway;
+    @BeforeEach void setup() {
+        primary = mock(ChatModel.class); fallback = mock(ChatModel.class);
+        props = new LlmGatewayProperties(); props.getRetry().setBackoffMs(1); props.getRetry().setJitter(0);
+        props.setAttemptTimeoutMs(500); props.setTotalTimeoutMs(2000); props.setStreamIdleTimeoutMs(100);
+        meters = new SimpleMeterRegistry();
     }
-
-    private ChatResponse response(String text, int prompt, int completion) {
-        Usage usage = mock(Usage.class);
-        doReturn(prompt).when(usage).getPromptTokens();
-        doReturn(completion).when(usage).getCompletionTokens();
-        ChatResponseMetadata meta = ChatResponseMetadata.builder().usage(usage).build();
-        // 空回复防御（LlmGateway.isEmptyResponse）要求 generation 带真实 content，
-        // 否则 mock 的"成功响应"会被误判为空回复而触发重试/降级
-        Generation generation = new Generation(new AssistantMessage(text));
-        return ChatResponse.builder().metadata(meta).generations(java.util.List.of(generation)).build();
+    LlmGateway create() { gateway = new LlmGateway(primary, fallback, props, meters); return gateway; }
+    @AfterEach void cleanup() { if (gateway != null) gateway.close(); meters.close(); Thread.interrupted(); }
+    static ChatResponse response(String text) {
+        return ChatResponse.builder().generations(List.of(new Generation(new AssistantMessage(text))))
+                .metadata(ChatResponseMetadata.builder().model("mock-model").usage(new DefaultUsage(10, 5)).build()).build();
     }
+    static WebClientResponseException http(int code) { return WebClientResponseException.create(code, "test", HttpHeaders.EMPTY, null, null); }
 
-    @Test
-    void primarySuccess_usesPrimary_only() {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        ChatResponse expected = response("ok", 10, 5);
-        when(primary.call(any(Prompt.class))).thenReturn(expected);
-
-        LlmGateway gateway = new LlmGateway(primary, fallback, props(), new SimpleMeterRegistry());
-        ChatResponse result = gateway.call(new Prompt("hi"));
-
-        assertSame(expected, result);
-        verify(primary, times(1)).call(any(Prompt.class));
-        verify(fallback, never()).call(any(Prompt.class));
+    @Test void primarySuccess() {
+        var r = response("ok"); when(primary.call(any(Prompt.class))).thenReturn(r);
+        assertSame(r, create().call(new Prompt("test"))); verifyNoInteractions(fallback);
+        assertEquals(10, meters.get("llm.tokens").tags("provider", "primary", "type", "prompt").counter().count());
     }
-
-    @Test
-    void primaryFails_retriesThenFallsBack() {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        ChatResponse expected = response("fallback", 3, 1);
-        // 主模型始终失败 → 重试 maxAttempts(3) 次后切备
-        when(primary.call(any(Prompt.class))).thenThrow(new RuntimeException("primary down"));
-        when(fallback.call(any(Prompt.class))).thenReturn(expected);
-
-        LlmGateway gateway = new LlmGateway(primary, fallback, props(), new SimpleMeterRegistry());
-        ChatResponse result = gateway.call(new Prompt("hi"));
-
-        assertSame(expected, result);
-        verify(primary, times(3)).call(any(Prompt.class)); // 含首次共 3 次
-        verify(fallback, times(1)).call(any(Prompt.class));
+    @Test void transientRetriesThenFallback() {
+        when(primary.call(any(Prompt.class))).thenThrow(http(503)); when(fallback.call(any(Prompt.class))).thenReturn(response("backup"));
+        assertEquals("backup", create().call(new Prompt("test")).getResult().getOutput().getText());
+        verify(primary, times(3)).call(any(Prompt.class)); verify(fallback).call(any(Prompt.class));
     }
-
-    @Test
-    void bothFail_throwsBizException() {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        when(primary.call(any(Prompt.class))).thenThrow(new RuntimeException("primary down"));
-        when(fallback.call(any(Prompt.class))).thenThrow(new RuntimeException("fallback down"));
-
-        LlmGateway gateway = new LlmGateway(primary, fallback, props(), new SimpleMeterRegistry());
-        assertThrows(BizException.class, () -> gateway.call(new Prompt("hi")));
+    @Test void unknownProgrammingErrorIsNotRetriedOrFailedOver() {
+        when(primary.call(any(Prompt.class))).thenThrow(new IllegalArgumentException("invalid input"));
+        assertThrows(BizException.class, () -> create().call(new Prompt("test")));
+        verify(primary).call(any(Prompt.class)); verifyNoInteractions(fallback);
     }
-
-    @Test
-    void fallbackDisabled_primaryFailurePropagates() {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        when(primary.call(any(Prompt.class))).thenThrow(new RuntimeException("primary down"));
-
-        LlmGatewayProperties p = props();
-        p.setFallbackEnabled(false);
-        LlmGateway gateway = new LlmGateway(primary, fallback, p, new SimpleMeterRegistry());
-
-        assertThrows(RuntimeException.class, () -> gateway.call(new Prompt("hi")));
-        verify(fallback, never()).call(any(Prompt.class));
+    @Test void client400DoesNotRetryOrFallback() {
+        when(primary.call(any(Prompt.class))).thenThrow(http(400));
+        assertThrows(BizException.class, () -> create().call(new Prompt("test")));
+        verify(primary).call(any(Prompt.class)); verifyNoInteractions(fallback);
     }
-
-    @Test
-    void usage_recordedToMeterRegistry() {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        ChatResponse resp = response("ok", 120, 80);
-        when(primary.call(any(Prompt.class))).thenReturn(resp);
-
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        LlmGateway gateway = new LlmGateway(primary, fallback, props(), registry);
-        gateway.call(new Prompt("hi"));
-
-        double promptTokens = registry.counter("llm.tokens", "type", "prompt").count();
-        double completionTokens = registry.counter("llm.tokens", "type", "completion").count();
-        assertEquals(120.0, promptTokens);
-        assertEquals(80.0, completionTokens);
+    @Test void disabledFallbackDoesNotCountPhantomFallback() {
+        props.setFallbackEnabled(false); when(primary.call(any(Prompt.class))).thenThrow(http(503));
+        assertThrows(BizException.class, () -> create().call(new Prompt("test")));
+        assertNull(meters.find("llm.fallback").counter()); verifyNoInteractions(fallback);
     }
-
-    @Test
-    void fourHundredError_doesNotRetry() {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        RuntimeException badRequest = new org.springframework.web.reactive.function.client.WebClientResponseException(
-                "bad request", org.springframework.http.HttpStatusCode.valueOf(400), "Bad Request",
-                null, null, null, null);
-        when(primary.call(any(Prompt.class))).thenThrow(badRequest);
-
-        LlmGatewayProperties p = props();
-        p.setFallbackEnabled(false); // 4xx 直接失败（重试无意义）
-        LlmGateway gateway = new LlmGateway(primary, fallback, p, new SimpleMeterRegistry());
-        // fallback 关闭时 4xx 直接失败包装为 BizException（不进入无意义重试）
-        assertThrows(cn.lwx.lwxaiagent.common.BizException.class, () -> gateway.call(new Prompt("hi")));
-        verify(primary, times(1)).call(any(Prompt.class)); // 只调一次，未重试
+    @Test void interruptionDoesNotStartAnotherAttempt() {
+        Thread.currentThread().interrupt();
+        assertThrows(CancellationException.class, () -> create().call(new Prompt("test")));
+        assertTrue(Thread.currentThread().isInterrupted()); verifyNoInteractions(primary, fallback);
     }
-
-    @Test
-    void rateLimit_errorIsRetriedWithRetryAfter() throws Exception {
-        ChatModel primary = mock(ChatModel.class);
-        ChatModel fallback = mock(ChatModel.class);
-        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-        headers.add("Retry-After", "1");
-        org.springframework.web.reactive.function.client.WebClientResponseException tooMany =
-                new org.springframework.web.reactive.function.client.WebClientResponseException(
-                        "rate limited", org.springframework.http.HttpStatusCode.valueOf(429), "Too Many Requests",
-                        headers, null, null, null);
-        when(primary.call(any(Prompt.class)))
-                .thenThrow(tooMany)
-                .thenReturn(response("ok", 10, 5)); // 第二次成功
-
-        LlmGateway gateway = new LlmGateway(primary, fallback, props(), new SimpleMeterRegistry());
-        gateway.call(new Prompt("hi")); // 429 → 尊重 Retry-After(1s) 重试 → 成功
+    @Test void emptySyncResponseRetries() {
+        when(primary.call(any(Prompt.class))).thenReturn(response(""), response("ok"));
+        assertEquals("ok", create().call(new Prompt("test")).getResult().getOutput().getText());
         verify(primary, times(2)).call(any(Prompt.class));
+    }
+    @Test void toolOnlyResponseIsValid() {
+        var assistant = AssistantMessage.builder().content("").toolCalls(List.of(new AssistantMessage.ToolCall("id", "function", "search", "{}"))).build();
+        when(primary.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(new Generation(assistant))));
+        assertFalse(create().call(new Prompt("test")).getResult().getOutput().getToolCalls().isEmpty());
+        verify(primary).call(any(Prompt.class));
+    }
+    @Test void streamRetriesBeforeFirstChunk() {
+        when(primary.stream(any(Prompt.class))).thenReturn(Flux.error(http(503)), Flux.just(response("ok")));
+        assertEquals(1, create().stream(new Prompt("test")).collectList().block(Duration.ofSeconds(3)).size());
+        verify(primary, times(2)).stream(any(Prompt.class)); verifyNoInteractions(fallback);
+    }
+    @Test void partialStreamNeverReplaysOrSwitchesProvider() {
+        when(primary.stream(any(Prompt.class))).thenReturn(Flux.concat(Flux.just(response("prefix")), Flux.error(http(503))));
+        var seen = new java.util.ArrayList<String>();
+        assertThrows(BizException.class, () -> create().stream(new Prompt("test"))
+                .doOnNext(r -> seen.add(r.getResult().getOutput().getText())).blockLast());
+        assertEquals(List.of("prefix"), seen); verify(primary).stream(any(Prompt.class)); verifyNoInteractions(fallback);
+    }
+    @Test void emptyStreamFailsOver() {
+        when(primary.stream(any(Prompt.class))).thenReturn(Flux.empty()); when(fallback.stream(any(Prompt.class))).thenReturn(Flux.just(response("backup")));
+        assertEquals("backup", create().stream(new Prompt("test")).blockLast().getResult().getOutput().getText());
+        verify(primary, times(3)).stream(any(Prompt.class));
+    }
+    @Test void cumulativeStreamUsageCountedOnce() {
+        when(primary.stream(any(Prompt.class))).thenReturn(Flux.just(response("a"), response("b"), response("c")));
+        create().stream(new Prompt("test")).blockLast();
+        assertEquals(10, meters.get("llm.tokens").tags("provider", "primary", "type", "prompt").counter().count());
+    }
+    @Test void cancellationReleasesStreamCapacity() {
+        props.setMaxConcurrentCalls(1); when(primary.stream(any(Prompt.class))).thenReturn(Flux.never(), Flux.just(response("ok")));
+        var g = create(); var subscription = g.stream(new Prompt("test")).subscribe(); subscription.dispose();
+        assertNotNull(g.stream(new Prompt("next")).blockLast(Duration.ofSeconds(1)));
+    }
+    @Test void totalDeadlineTerminatesContinuouslyEmittingStream() {
+        props.setTotalTimeoutMs(100); props.setFallbackEnabled(false);
+        when(primary.stream(any(Prompt.class))).thenReturn(Flux.interval(Duration.ofMillis(5)).map(i -> response("x")));
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> assertThrows(BizException.class,
+                () -> create().stream(new Prompt("test")).blockLast()));
+        verify(primary).stream(any(Prompt.class));
+    }
+    @Test void hangingSyncWorkIsInterruptedAndBounded() throws Exception {
+        props.setAttemptTimeoutMs(40); props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.setMaxConcurrentCalls(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        when(primary.call(any(Prompt.class))).thenAnswer(i -> {
+            try { new CountDownLatch(1).await(); return response("never"); }
+            catch (InterruptedException e) { interrupted.countDown(); throw new CancellationException(); }
+        });
+        assertThrows(BizException.class, () -> create().call(new Prompt("test")));
+        assertTrue(interrupted.await(1, TimeUnit.SECONDS));
+    }
+    @Test void sharedRetryBudgetBoundsStorm() {
+        props.getRetry().setBudgetPerMinute(2); props.getCircuit().setEnabled(false); props.setFallbackEnabled(false);
+        when(primary.call(any(Prompt.class))).thenThrow(http(503)); var g = create();
+        for (int i = 0; i < 10; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
+        verify(primary, times(12)).call(any(Prompt.class));
+    }
+    @Test void circuitOpensAndRejectsWithoutCallingSupplier() {
+        props.getRetry().setMaxAttempts(1); props.getCircuit().setFailureThreshold(2); props.setFallbackEnabled(false);
+        when(primary.call(any(Prompt.class))).thenThrow(http(503)); var g = create();
+        for (int i = 0; i < 5; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
+        verify(primary, times(2)).call(any(Prompt.class));
+    }
+    @Test void delayParsesHttpDateAndNeverShortensRetryAfter() {
+        long now = java.time.Instant.parse("2026-09-13T00:00:00Z").toEpochMilli();
+        HttpHeaders headers = new HttpHeaders(); headers.set("Retry-After", "Sun, 13 Sep 2026 00:00:10 GMT");
+        var error = WebClientResponseException.create(429, "limited", headers, null, null);
+        assertEquals(10000, LlmFailurePolicy.delayMs(error, 1, props.getRetry(), now));
+        headers.set("Retry-After", "-1");
+        assertTrue(LlmFailurePolicy.delayMs(WebClientResponseException.create(429, "limited", headers, null, null), 1, props.getRetry(), now) >= 0);
+    }
+    @Test void longRetryAfterFailsOverWithoutEarlyRetry() {
+        HttpHeaders headers = new HttpHeaders(); headers.set("Retry-After", "60");
+        when(primary.call(any(Prompt.class))).thenThrow(WebClientResponseException.create(429, "limited", headers, null, null));
+        when(fallback.call(any(Prompt.class))).thenReturn(response("backup"));
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () -> create().call(new Prompt("test")));
+        verify(primary).call(any(Prompt.class));
     }
 }

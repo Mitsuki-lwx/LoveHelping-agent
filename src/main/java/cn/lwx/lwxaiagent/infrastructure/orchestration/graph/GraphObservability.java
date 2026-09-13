@@ -35,14 +35,31 @@ public class GraphObservability {
     public Map<String, Object> execute(String node, OverAllState state, NodeActionLike action) {
         appendPath(state, node);
         // 全链路埋点：节点作为 chat.pipeline 的子 span（OTLP → Langfuse 可见每阶段耗时）
-        io.micrometer.tracing.Span nodeSpan = tracer.nextSpan().name("graph.node." + node);
+        var builder = tracer.spanBuilder().name("graph.node." + node);
+        String traceId = state.value(GraphStateKeys.PIPELINE_TRACE_ID).map(Object::toString).orElse(null);
+        String spanId = state.value(GraphStateKeys.PIPELINE_SPAN_ID).map(Object::toString).orElse(null);
+        if (traceId != null && spanId != null && !traceId.isBlank() && !spanId.isBlank()) {
+            builder.setParent(tracer.traceContextBuilder().traceId(traceId).spanId(spanId)
+                    .sampled(state.value(GraphStateKeys.PIPELINE_SAMPLED).map(Boolean.TRUE::equals).orElse(true)).build());
+        }
+        io.micrometer.tracing.Span nodeSpan = builder.start();
+        nodeSpan.tag("graph.node", node);
+        String oldUser = cn.lwx.lwxaiagent.tenant.context.TenantContext.getUserId();
+        String oldTenant = cn.lwx.lwxaiagent.tenant.context.TenantContext.getTenantId();
+        String oldRole = cn.lwx.lwxaiagent.tenant.context.TenantContext.getRole();
         long start = System.nanoTime();
-        try (io.micrometer.tracing.Tracer.SpanInScope ws = tracer.withSpan(nodeSpan.start())) {
+        try (io.micrometer.tracing.Tracer.SpanInScope ws = tracer.withSpan(nodeSpan)) {
+            if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException("Graph cancelled");
+            cn.lwx.lwxaiagent.tenant.context.TenantContext.set("default",
+                    state.value(GraphStateKeys.USER_ID).map(Object::toString).orElse("anonymous"), "USER");
             return action.apply(state);
         } catch (RuntimeException e) {
-            nodeSpan.error(e);
+            nodeSpan.error(new IllegalStateException("Graph node failed"));
             throw e;
         } finally {
+            cn.lwx.lwxaiagent.tenant.context.TenantContext.clear();
+            if (oldUser != null || oldTenant != null || oldRole != null)
+                cn.lwx.lwxaiagent.tenant.context.TenantContext.set(oldTenant, oldUser, oldRole);
             nodeSpan.end();
             String route = state.value(OrchestrationGraph.ROUTE).map(Object::toString).orElse("unknown");
             try {

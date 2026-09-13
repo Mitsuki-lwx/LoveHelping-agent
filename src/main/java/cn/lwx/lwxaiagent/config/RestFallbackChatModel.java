@@ -1,100 +1,115 @@
 package cn.lwx.lwxaiagent.config;
 
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.MessageType;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.ai.chat.messages.*;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.web.client.RestClient;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.client.RestClientResponseException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.net.URI;
+import java.net.http.*;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.*;
 
-/**
- * 降级备模型（RestClient 直连 dashscope 原生端点，2026-09-06）。
- * <p>背景链：OpenAI 兼容 /v1 网关对框架 WebClient 404（curl 200）→ 原生 DashScopeChatModel
- * 网络通但 400（body 契约差）——均与 curl 实测 200 的同构请求存在未知差异。本实现完全自控
- * body，与已验证 200 的 curl 请求（model/input.messages/parameters.result_format=message）
- * 逐一同构，保证降级可用。仅实现 call；stream 降级为同步结果包装。
- */
+/** Native DashScope backup: finite HTTP deadlines, full tool protocol, cancellable async fallback. */
 public class RestFallbackChatModel implements ChatModel {
-
-    /** dashscope 原生生成端点（与 embedding 同域，网络层验证可达） */
-    private static final String DASHSCOPE_GENERATION_URL =
-            "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
-
-    private final RestClient restClient;
+    private static final URI ENDPOINT = URI.create("https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation");
+    private final HttpClient client;
+    private final String apiKey;
     private final String model;
+    private final Duration timeout;
+    private final ObjectMapper json = new ObjectMapper();
 
-    public RestFallbackChatModel(String apiKey, String model) {
-        this.restClient = RestClient.builder()
-                .baseUrl(DASHSCOPE_GENERATION_URL)
-                .defaultHeader("Content-Type", "application/json")
-                .defaultHeader("Authorization", "Bearer " + apiKey)
-                .build();
+    public RestFallbackChatModel(String apiKey, String model) { this(apiKey, model, 3000, 25000); }
+    public RestFallbackChatModel(String apiKey, String model, long connectMs, long readMs) {
+        this.apiKey = apiKey;
         this.model = model;
+        this.timeout = Duration.ofMillis(readMs);
+        this.client = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(connectMs)).build();
     }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public ChatResponse call(Prompt prompt) {
-        List<Map<String, Object>> msgs = new ArrayList<>();
-        for (Message m : prompt.getInstructions()) {
-            if (m.getText() == null || m.getText().isBlank()) {
-                continue; // dashscope 原生端点拒空 content（curl 实测）
+    @Override public ChatResponse call(Prompt prompt) {
+        try { return parse(client.send(request(prompt), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8))); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new java.util.concurrent.CancellationException("Fallback cancelled"); }
+        catch (java.io.IOException e) { throw new org.springframework.web.client.ResourceAccessException("Fallback transport failed", e); }
+    }
+
+    @Override public Flux<ChatResponse> stream(Prompt prompt) {
+        // One full result on the backup, but no blocking call on Reactor/event-loop threads.
+        return Mono.fromFuture(() -> client.sendAsync(request(prompt), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)))
+                .map(this::parse).flux();
+    }
+
+    private HttpRequest request(Prompt prompt) {
+        if (apiKey == null || apiKey.isBlank()) throw new IllegalStateException("Fallback credentials are not configured");
+        try {
+            return HttpRequest.newBuilder(ENDPOINT).timeout(timeout)
+                    .header("Content-Type", "application/json").header("Authorization", "Bearer " + apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload(prompt)))) .build();
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalArgumentException("Invalid model request", e); }
+    }
+
+    Map<String, Object> payload(Prompt prompt) {
+        List<Map<String, Object>> messages = new ArrayList<>();
+        for (Message message : prompt.getInstructions()) {
+            if (message instanceof ToolResponseMessage tool) {
+                for (var response : tool.getResponses()) messages.add(Map.of(
+                        "role", "tool", "tool_call_id", response.id(), "name", response.name(), "content", response.responseData()));
+                continue;
             }
             Map<String, Object> one = new LinkedHashMap<>();
-            one.put("role", roleOf(m.getMessageType()));
-            one.put("content", m.getText());
-            msgs.add(one);
+            one.put("role", message.getMessageType().getValue());
+            one.put("content", message.getText() == null ? "" : message.getText());
+            if (message instanceof AssistantMessage assistant && !assistant.getToolCalls().isEmpty()) {
+                one.put("tool_calls", assistant.getToolCalls().stream().map(t -> Map.of(
+                        "id", t.id(), "type", "function", "function", Map.of("name", t.name(), "arguments", t.arguments()))).toList());
+            }
+            messages.add(one);
         }
-        Map<String, Object> input = new LinkedHashMap<>();
-        input.put("messages", msgs);
         Map<String, Object> parameters = new LinkedHashMap<>();
         parameters.put("result_format", "message");
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", model);
-        body.put("input", input);
-        body.put("parameters", parameters);
-
-        Map<String, Object> resp = restClient.post().body(body).retrieve().body(Map.class);
-        String text = extractText(resp);
-        if (text == null || text.isBlank()) {
-            throw new IllegalStateException("fallback dashscope returned empty content: "
-                    + (resp == null ? "null" : resp.toString()));
+        if (prompt.getOptions() instanceof ToolCallingChatOptions options && options.getToolCallbacks() != null
+                && !options.getToolCallbacks().isEmpty()) {
+            parameters.put("tools", options.getToolCallbacks().stream().map(cb -> {
+                var d = cb.getToolDefinition();
+                try { return Map.of("type", "function", "function", Map.of(
+                        "name", d.name(), "description", d.description(), "parameters", json.readTree(d.inputSchema()))); }
+                catch (Exception e) { throw new IllegalArgumentException("Invalid tool schema", e); }
+            }).toList());
         }
-        return new ChatResponse(List.of(new Generation(new AssistantMessage(text))));
+        return Map.of("model", model, "input", Map.of("messages", messages), "parameters", parameters);
     }
 
-    @SuppressWarnings("unchecked")
-    private String extractText(Map<String, Object> resp) {
-        if (resp == null) return null;
-        Object output = resp.get("output");
-        if (output instanceof Map<?, ?> om && om.get("choices") instanceof List<?> choices
-                && !choices.isEmpty() && choices.get(0) instanceof Map<?, ?> c
-                && c.get("message") instanceof Map<?, ?> msg) {
-            Object content = msg.get("content");
-            return content == null ? null : content.toString();
+    private ChatResponse parse(HttpResponse<String> response) {
+        if (response.statusCode() >= 400) {
+            HttpHeaders headers = new HttpHeaders();
+            response.headers().map().forEach(headers::put);
+            throw new RestClientResponseException("Fallback HTTP " + response.statusCode(), response.statusCode(),
+                    "", headers, new byte[0], StandardCharsets.UTF_8);
         }
-        return null;
-    }
-
-    private String roleOf(MessageType t) {
-        return switch (t) {
-            case SYSTEM -> "system";
-            case ASSISTANT -> "assistant";
-            default -> "user";
-        };
-    }
-
-    @Override
-    public reactor.core.publisher.Flux<ChatResponse> stream(Prompt prompt) {
-        // 降级场景：同步全量结果包成单条流（可用性优先，非真流式）
-        return reactor.core.publisher.Flux.defer(() -> reactor.core.publisher.Flux.just(call(prompt)));
+        try {
+            JsonNode root = json.readTree(response.body());
+            JsonNode message = root.path("output").path("choices").path(0).path("message");
+            String text = message.path("content").asText("");
+            List<AssistantMessage.ToolCall> tools = new ArrayList<>();
+            for (JsonNode t : message.path("tool_calls")) tools.add(new AssistantMessage.ToolCall(
+                    t.path("id").asText(), "function", t.path("function").path("name").asText(),
+                    t.path("function").path("arguments").asText("{}")));
+            var assistant = AssistantMessage.builder().content(text).toolCalls(tools).build();
+            JsonNode usage = root.path("usage");
+            return ChatResponse.builder().generations(List.of(new Generation(assistant)))
+                    .metadata(ChatResponseMetadata.builder().model(model)
+                            .usage(new DefaultUsage(usage.path("input_tokens").asInt(), usage.path("output_tokens").asInt())).build()).build();
+        } catch (Exception e) { throw new IllegalStateException("Invalid fallback response", e); }
     }
 }

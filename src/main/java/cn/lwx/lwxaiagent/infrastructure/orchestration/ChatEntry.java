@@ -4,280 +4,209 @@ import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphRunner;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
+import cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker;
+import cn.lwx.lwxaiagent.memory.MemoryService;
 import cn.lwx.lwxaiagent.service.RateLimiter;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
-import lombok.extern.slf4j.Slf4j;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.tracing.Tracer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 
-/**
- * 聊天统一入口（ADR-19 收编后）：入口交叉关注点（护栏/限流）+ 业务编排图执行。
- * <p>不再自行路由分发——路由由 {@code OrchestrationGraph.classify} 承担；
- * 本类把图异步执行结果桥接为 SSE Flux（文本分块模拟流式 + 🔧 工具可视化 + advice 事件标记）。</p>
- */
-@Slf4j
+/** One admission/lifecycle path for normal, RAG, Agent and sandbox requests (ADR-23). */
 @Component
 public class ChatEntry {
-
-    private final GuardrailRuleService guardrailRuleService;
+    private final GuardrailRuleService guardrails;
     private final RateLimiter rateLimiter;
     private final CapabilityRouter router;
     private final GraphRunner graphRunner;
-    private final StreamRegistry streamRegistry;
-    /** 在线负载/并发闸门（ADR-20 补强 + OWASP LLM10，2026-09-03） */
-    private final cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker onlineLoad;
-    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
-    private final io.micrometer.tracing.Tracer tracer;
+    private final StreamRegistry streams;
+    private final OnlineLoadTracker online;
+    private final MeterRegistry meters;
+    private final Tracer tracer;
+    private final MemoryService memory;
+    private final boolean brakeEnabled;
+    private final int brakeStart, brakeEnd;
+    private final long timeoutMs;
 
-    /** 情绪刹车片配置（FR-CORE-02） */
-    private final boolean emotionBrakeEnabled;
-    private final int emotionBrakeStartHour;
-    private final int emotionBrakeEndHour;
-
-    public ChatEntry(GuardrailRuleService guardrailRuleService,
-                     RateLimiter rateLimiter,
-                     CapabilityRouter router,
-                     GraphRunner graphRunner,
-                     StreamRegistry streamRegistry,
-                     cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker onlineLoad,
-                     io.micrometer.core.instrument.MeterRegistry meterRegistry,
-                     io.micrometer.tracing.Tracer tracer,
-                     @Value("${app.emotion-brake.enabled:true}") boolean emotionBrakeEnabled,
-                     @Value("${app.emotion-brake.start-hour:23}") int emotionBrakeStartHour,
-                     @Value("${app.emotion-brake.end-hour:6}") int emotionBrakeEndHour) {
-        this.guardrailRuleService = guardrailRuleService;
-        this.rateLimiter = rateLimiter;
-        this.router = router;
-        this.graphRunner = graphRunner;
-        this.streamRegistry = streamRegistry;
-        this.onlineLoad = onlineLoad;
-        this.meterRegistry = meterRegistry;
-        this.tracer = tracer;
-        this.emotionBrakeEnabled = emotionBrakeEnabled;
-        this.emotionBrakeStartHour = emotionBrakeStartHour;
-        this.emotionBrakeEndHour = emotionBrakeEndHour;
+    public ChatEntry(GuardrailRuleService guardrails, RateLimiter rateLimiter, CapabilityRouter router,
+                     GraphRunner graphRunner, StreamRegistry streams, OnlineLoadTracker online,
+                     MeterRegistry meters, Tracer tracer, MemoryService memory,
+                     @Value("${app.emotion-brake.enabled:true}") boolean brakeEnabled,
+                     @Value("${app.emotion-brake.start-hour:23}") int brakeStart,
+                     @Value("${app.emotion-brake.end-hour:6}") int brakeEnd,
+                     @Value("${app.chat.timeout-ms:90000}") long timeoutMs) {
+        this.guardrails = guardrails; this.rateLimiter = rateLimiter; this.router = router;
+        this.graphRunner = graphRunner; this.streams = streams; this.online = online;
+        this.meters = meters; this.tracer = tracer; this.memory = memory;
+        this.brakeEnabled = brakeEnabled; this.brakeStart = brakeStart; this.brakeEnd = brakeEnd;
+        this.timeoutMs = Math.max(1, timeoutMs);
     }
 
-    public AgentResult chat(String message, String chatId, List<Long> mediaIds,
-                            boolean forceAgent, java.util.function.BiConsumer<Boolean, String> taskCallback) {
-        return chat(message, chatId, mediaIds, forceAgent, false, taskCallback);
+    public AgentResult chat(String message, String chatId, List<Long> mediaIds, boolean forceAgent, BiConsumer<Boolean, String> callback) {
+        return chat(message, chatId, mediaIds, forceAgent, false, callback);
     }
 
-    /**
-     * 统一入口（ADR-19）：护栏/限流 → 业务编排图。
-     * @param continueBrake 用户已在冷静提示后明确选择"继续发送"（FR-CORE-02 出口）：
-     *                      跳过情绪刹车片（仍保留 L3 硬阻断）
-     */
-    public AgentResult chat(String message, String chatId, List<Long> mediaIds,
-                            boolean forceAgent, boolean continueBrake,
-                            java.util.function.BiConsumer<Boolean, String> taskCallback) {
-        String userId = TenantContext.getUserId() != null ? TenantContext.getUserId() : "anonymous";
+    public AgentResult chat(String message, String chatId, List<Long> mediaIds, boolean forceAgent,
+                            boolean continueBrake, BiConsumer<Boolean, String> callback) {
+        return chat(message, chatId, mediaIds, forceAgent, continueBrake, callback, forceAgent ? "agent" : "love");
+    }
 
-        // ① 入口交叉关注点（保留）
+    /** 会话归属类型由调用入口语义决定（love/agent），不跟着内部编排路由走。 */
+    public AgentResult chat(String message, String chatId, List<Long> mediaIds, boolean forceAgent,
+                            boolean continueBrake, BiConsumer<Boolean, String> callback, String conversationType) {
+        validate(message, chatId);
         guardrailCheck(message, continueBrake);
-        rateLimiter.checkQuota(userId);
-        // 全局并发闸门（OWASP LLM10）：在线请求同时超过 app.online.max-inflight 时
-        // 直接给用户友好提示，避免 LLM 被打满（可用性 + 成本双重失控）
-        boolean entered = onlineLoad != null && onlineLoad.enter();
-        if (!entered) {
-            // 排队告知（2026-09-07）：带当前负载与建议等待，前端可结构化展示/自动重试
-            double avgSec = onlineLoad.avgDurationMs() / 1000.0;
-            double effAvg = avgSec > 0.5 ? avgSec : 3.0; // 冷启动无样本时兜底 3s（sync 实测量级）
-            int retryAfter = Math.max(2, (int) Math.ceil(effAvg));
-            java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
-            data.put("currentLoad", onlineLoad.inFlight());
-            data.put("maxLoad", onlineLoad.maxInFlight());
-            data.put("avgDurationSec", Math.round(effAvg * 10) / 10.0);
-            data.put("retryAfterSec", retryAfter);
-            throw new BizException(4003,
-                    "当前咨询较多（" + onlineLoad.maxInFlight() + " 路同时进行中，平均每轮约 "
-                            + (int) Math.ceil(effAvg) + " 秒）。建议 " + retryAfter + " 秒后再试，"
-                            + "或先换个话题聊聊～", data);
-        }
-
-        // ② 话术三级判定
-        boolean advice = router.isAdviceRequest(message);
-
-        // ③ 指标
-        recordChatRequest("graph");
-
-        // ④ 组装图输入
-        Map<String, Object> input = new HashMap<>();
-        input.put(GraphStateKeys.MESSAGE, message);
-        input.put(GraphStateKeys.CHAT_ID, chatId);
-        input.put(GraphStateKeys.USER_ID, userId);
-        input.put(GraphStateKeys.ADVICE, advice);
+        String user = Optional.ofNullable(TenantContext.getUserId()).orElse("anonymous");
+        // Public anonymous chat is stateless; never use a supplied ID to read a registered user's history.
+        String key = "anonymous".equals(user) ? "anon-" + UUID.randomUUID() : chatId;
+        Map<String, Object> input = baseInput(message, key, user);
+        input.put(GraphStateKeys.ADVICE, router.isAdviceRequest(message));
         if (mediaIds != null && !mediaIds.isEmpty()) {
-            input.put(GraphStateKeys.MEDIA_IDS, mediaIds); // 视觉节点（ADR-11）
+            if (mediaIds.size() > 4 || mediaIds.stream().anyMatch(id -> id == null || id <= 0)) throw new BizException(400, "图片数量或编号无效");
+            input.put(GraphStateKeys.MEDIA_IDS, List.copyOf(mediaIds));
         }
-        if (forceAgent) {
-            input.put(GraphStateKeys.FORCE_AGENT, true); // LoveManus 通道
-        }
-
-        // ④b 全链路 trace 串联：把 HTTP 入口 span 上下文透传给异步图执行
-        // （SSE 异步线程丢失请求 trace 上下文，导致 LLM/embedding 变成孤立 root trace）
-        var entrySpan = tracer.currentSpan();
-        if (entrySpan != null) {
-            input.put(GraphStateKeys.PIPELINE_TRACE_ID, entrySpan.context().traceId());
-            input.put(GraphStateKeys.PIPELINE_SPAN_ID, entrySpan.context().spanId());
-        }
-
-        // ⑤ 异步执行图 → SSE Flux（文本分块 + 🔧 可视化 + advice 事件）+ 任务完成回调
-        java.util.function.BiConsumer<Boolean, String> cb =
-                taskCallback != null ? taskCallback : (ok, err) -> {};
-        Flux<String> flux = Flux.create(sink -> {
-            // 真流式桥（2026-09-02）：注册本请求的 SSE sink，图内 normal/simple 节点
-            // 在 LLM 生成时实时推送文本增量（advice marker 由 sink 剥离）
-            String regKey = chatId == null ? "anon" : chatId;
-            StreamRegistry.StreamSink streamSink = streamRegistry.register(regKey, sink);
-            graphRunner.runAsync(input, regKey)
-                    // 中危修复（2026-09-05）：图执行超时保护——90s 未完成则结束 SSE
-                    // （模型悬挂时此前无限等待：SSE 永不结束 + 在线闸门计数泄漏）
-                    .orTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
-                    .thenAccept(result -> {
-                        @SuppressWarnings("unchecked")
-                        List<String> tools = (List<String>) result.getOrDefault(GraphStateKeys.TOOL_EVENTS, List.of());
-                        // 真流式（ADR-21）：agent 工具执行时已实时发 🔧（AgentToolNode 置位）——
-                        // 只有非流式/兜底路径才在此补发，避免重复
-                        boolean toolsAlreadySent = streamSink != null && streamSink.toolsStreamed();
-                        if (!toolsAlreadySent) {
-                            for (String t : tools) {
-                                sink.next("🔧 调用工具: " + t);
-                            }
-                        }
-                        String output = String.valueOf(result.getOrDefault(GraphStateKeys.OUTPUT, ""));
-                        // agent/视觉路径未接真流式（节点不用 registry）→ 兜底 chunk 保持行为
-                        if (streamSink == null || !streamSink.streamed()) {
-                            for (String part : chunk(output)) {
-                                sink.next(part);
-                            }
-                        }
-                        Object tiers = result.get(GraphStateKeys.ADVICE_TIERS);
-                        if (tiers != null && !tiers.toString().isBlank()) {
-                            sink.next(ChatExecutor.ADVICE_EVENT_MARKER + tiers);
-                        }
-                        sink.complete();
-                        streamRegistry.unregister(regKey);
-                        cb.accept(true, null); // agent_task 完成回调（LoveManus 通道）
-                    })
-                    .exceptionally(err -> {
-                        log.error("ChatEntry graph run failed ({}): {}", chatId, err.getMessage());
-                        sink.next("系统繁忙，请稍后再试。");
-                        sink.complete();
-                        streamRegistry.unregister(regKey);
-                        cb.accept(false, err.getMessage()); // 失败回调 → 任务 FAILED
-                        return null;
-                    });
-        });
-
-        // ⑥ 后处理
-        rateLimiter.increment(userId);
-        // 在线在途计数随 SSE 生命周期回收（完成/取消/异常都会触发 doFinally）
-        final long startNanos = System.nanoTime();
-        return new AgentResult.ShallowResult(flux.doFinally(sig -> {
-            if (onlineLoad != null) {
-                onlineLoad.recordDuration((System.nanoTime() - startNanos) / 1_000_000L); // 排队等待估算样本
-                onlineLoad.exit();
-            }
+        if (forceAgent) input.put(GraphStateKeys.FORCE_AGENT, true);
+        return new AgentResult.ShallowResult(execute(input, key, callback, () -> {
+            if (!"anonymous".equals(user)) memory.claimConversation(user, chatId, conversationType);
         }));
     }
 
-    // ==================== 交叉关注点 ====================
+    /** Caller verifies sandbox ownership before invoking; all capacity/rate/timeout protections are shared. */
+    public Flux<String> sandbox(String message, Long sandboxId, String user) {
+        String key = String.valueOf(sandboxId); // Preserve existing sandbox memory/checkpoint IDs.
+        validate(message, String.valueOf(sandboxId));
+        guardrailCheck(message, true);
+        Map<String, Object> input = baseInput(message, key, user);
+        input.put(GraphStateKeys.SANDBOX_ID, sandboxId);
+        input.put(GraphStateKeys.ADVICE, false);
+        return execute(input, key, null, () -> {});
+    }
 
+    private Map<String, Object> baseInput(String message, String key, String user) {
+        Map<String, Object> input = new HashMap<>();
+        input.put(GraphStateKeys.MESSAGE, message); input.put(GraphStateKeys.CHAT_ID, key); input.put(GraphStateKeys.USER_ID, user);
+        var parent = tracer.currentSpan();
+        if (parent != null) {
+            input.put(GraphStateKeys.PIPELINE_TRACE_ID, parent.context().traceId());
+            input.put(GraphStateKeys.PIPELINE_SPAN_ID, parent.context().spanId());
+            input.put(GraphStateKeys.PIPELINE_SAMPLED, Boolean.TRUE.equals(parent.context().sampled()));
+        }
+        return input;
+    }
+
+    private Flux<String> execute(Map<String, Object> input, String key, BiConsumer<Boolean, String> callback, Runnable authorize) {
+        AtomicBoolean subscribed = new AtomicBoolean();
+        return Flux.defer(() -> {
+            if (!subscribed.compareAndSet(false, true)) return Flux.error(new BizException(409, "同一请求不能重复订阅"));
+            AtomicBoolean finished = new AtomicBoolean();
+            BiConsumer<Boolean, String> notify = (ok, reason) -> {
+                if (finished.compareAndSet(false, true) && callback != null) {
+                    try { callback.accept(ok, reason); } catch (RuntimeException ignored) { metric("task_callback_error"); }
+                }
+            };
+            if (!online.enter()) { notify.accept(false, "overloaded"); return Flux.error(overloaded()); }
+            long start = System.nanoTime();
+            AtomicReference<StreamRegistry.StreamSink> registered = new AtomicReference<>();
+            AtomicReference<CompletableFuture<Map<String, Object>>> future = new AtomicReference<>();
+            return Flux.<String>create(sink -> {
+                try {
+                    authorize.run();
+                    rateLimiter.acquire(Objects.toString(input.get(GraphStateKeys.USER_ID), "anonymous"));
+                    if (sink.isCancelled()) return;
+                    StreamRegistry.StreamSink stream = streams.register(key, sink);
+                    registered.set(stream);
+                    if (sink.isCancelled()) { streams.unregister(key, stream); return; }
+                    CompletableFuture<Map<String, Object>> run = graphRunner.runAsync(input, key);
+                    future.set(run);
+                    sink.onCancel(() -> graphRunner.stop(key, run));
+                    if (sink.isCancelled()) { graphRunner.stop(key, run); return; }
+                    run.whenComplete((result, error) -> {
+                        if (sink.isCancelled()) return;
+                        if (error != null) { sink.error(unwrap(error)); return; }
+                        if (!stream.toolsStreamed()) {
+                            Object tools = result.get(GraphStateKeys.TOOL_EVENTS);
+                            if (tools instanceof List<?> list) for (Object tool : list) sink.next("调用工具: " + tool);
+                        }
+                        if (!stream.streamed()) for (String part : chunk(Objects.toString(result.get(GraphStateKeys.OUTPUT), ""))) sink.next(part);
+                        Object advice = result.get(GraphStateKeys.ADVICE_TIERS);
+                        if (advice != null && !advice.toString().isBlank()) sink.next(ChatExecutor.ADVICE_EVENT_MARKER + advice);
+                        sink.complete();
+                    });
+                } catch (RuntimeException error) { sink.error(error); }
+            }, reactor.core.publisher.FluxSink.OverflowStrategy.ERROR)
+            // Real total deadline, not an idle timeout reset by every text chunk.
+            .takeUntilOther(reactor.core.publisher.Mono.delay(Duration.ofMillis(timeoutMs))
+                    .flatMap(t -> reactor.core.publisher.Mono.error(new java.util.concurrent.TimeoutException("Chat deadline exceeded"))))
+            .doOnComplete(() -> notify.accept(true, null))
+            .doOnError(e -> notify.accept(false, e instanceof java.util.concurrent.TimeoutException ? "timeout" : "execution_failed"))
+            .doFinally(signal -> {
+                try {
+                    CompletableFuture<?> run = future.get();
+                    if (signal != SignalType.ON_COMPLETE && run != null) graphRunner.stop(key, run);
+                    streams.unregister(key, registered.get());
+                    if (signal == SignalType.CANCEL) notify.accept(false, "cancelled");
+                    metric(signal.name().toLowerCase(Locale.ROOT));
+                } finally {
+                    online.recordDuration((System.nanoTime() - start) / 1_000_000L);
+                    online.exit();
+                }
+            });
+        });
+    }
+
+    private Throwable unwrap(Throwable error) {
+        if (error instanceof java.util.concurrent.CompletionException && error.getCause() != null) return error.getCause();
+        return error;
+    }
+    private BizException overloaded() {
+        int retry = Math.min(30, Math.max(2, (int) Math.ceil(online.avgDurationMs() / 1000.0)));
+        return new BizException(4003, "当前咨询较多，请稍后再试", Map.of("currentLoad", online.inFlight(), "maxLoad", online.maxInFlight(), "retryAfterSec", retry));
+    }
+    private void validate(String message, String id) {
+        if (message == null || message.isBlank() || message.length() > 8000) throw new BizException(400, "消息不能为空且不能超过 8000 字符");
+        if (id == null || id.isBlank() || id.length() > 100 || !id.matches("[A-Za-z0-9_-]+")) throw new BizException(400, "会话编号格式无效");
+    }
     private void guardrailCheck(String prompt, boolean continueBrake) {
-        // ①b system prompt 探查拦截（OWASP LLM07，2026-09-02）：翻译/复述/总结 system
-        // prompt 的请求不依赖模型遵从性，规则确定性短路——实测 flash 对"翻译那段规则"
-        // 会如实翻译全文，prompt 指令拦不住，故在入口直接返回固定拒绝
         if (isPromptLeakProbe(prompt)) {
-            log.warn("Prompt-leak probe blocked: {}",
-                    prompt.length() > 40 ? prompt.substring(0, 40) : prompt);
-            meterRegistry.counter("guardrail.prompt_leak.blocked").increment();
-            throw new BizException(4001,
-                    "这些是我的内部设定，不方便透露。有什么情感或关系上的问题，我很乐意帮你聊聊。");
+            metric("prompt_leak_blocked");
+            throw new BizException(4001, "这些是我的内部设定，不方便透露。有什么情感或关系上的问题，我很乐意帮你聊聊。");
         }
-
-        // ① 标准护栏（ADR-6）
-        var verdict = guardrailRuleService.check(prompt);
+        var verdict = guardrails.check(prompt);
+        if (verdict.level() > 0) meters.counter("guardrail.trigger", "level", String.valueOf(verdict.level()), "rule_id", verdict.ruleId()).increment();
         if (verdict.level() >= 3) {
-            log.warn("Guardrail L3 blocked ({}): {}", verdict.ruleId(),
-                    prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
-            // 可观测（2026-09-05 可观测测试发现）：L3 阻断此前不计任何指标——
-            // 08 §2.2 承诺的 guardrail.trigger{level,rule_id}（误报率数据源）与
-            // chat.request（含被拦截请求）在此补齐，否则护栏行为完全不可观测。
-            meterRegistry.counter("guardrail.trigger", "level", "3",
-                    "rule_id", verdict.ruleId()).increment();
-            meterRegistry.counter("chat.request", "mode", "blocked",
-                    "status", "l3").increment();
-            String fallback = "self_harm".equals(verdict.ruleId())
-                    ? "我注意到你现在的状态可能非常难受。如果你正在经历难以承受的时刻，请一定联系专业援助：全国心理援助热线 400-161-9995，北京心理危机研究与干预中心 010-82951332。你不需要独自面对，我们慢慢聊。"
-                    : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
-            throw new BizException(4001, fallback);
+            metric("l3_blocked");
+            throw new BizException(4001, "self_harm".equals(verdict.ruleId())
+                    ? "我注意到你现在可能非常难受。如果你正在经历难以承受的时刻，请联系专业援助：全国心理援助热线 400-161-9995。你不需要独自面对。"
+                    : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。");
         }
-
-        // ② 情绪刹车片（FR-CORE-02）：L2+ 且深夜 且 命中刹车词 且 用户未确认继续发送
-        if (emotionBrakeEnabled && !continueBrake && verdict.level() >= 2
-                && isLateNight()
-                && guardrailRuleService.matchesEmotionBrake(prompt)) {
-            log.info("Emotion brake triggered ({}): {}", verdict.ruleId(),
-                    prompt.length() > 30 ? prompt.substring(0, 30) + "..." : prompt);
-            meterRegistry.counter("emotion_brake.triggered").increment();
-            throw new BizException(4002,
-                    "我注意到你现在情绪比较激动。深夜情绪容易放大，可以先冷静一下再继续。" +
-                    "如果你想换个更温和的说法表达，我可以帮你。" +
-                    "若确认仍然要发，请携带 continueBrake=true 重试（本消息仍会被正常发送给 AI）。");
-        }
-
-        // ③ 普通 L2/L1 记录
-        if (verdict.level() > 0) {
-            log.info("Guardrail L{} logged ({}): {}", verdict.level(), verdict.ruleId(),
-                    prompt.length() > 30 ? prompt.substring(0, 30) : prompt);
-        }
+        if (brakeEnabled && !continueBrake && verdict.level() >= 2 && isLateNight() && guardrails.matchesEmotionBrake(prompt))
+            throw new BizException(4002, "我注意到你现在情绪比较激动。可以先冷静一下再继续；确认仍要发送时请携带 continueBrake=true。");
     }
-
-    /** system prompt 探查意图判定（OWASP LLM07）：不依赖模型遵从性的确定性拦截。
-     *  信号 = 高信号词（system prompt / 系统提示）OR（动作词 × 内容词）组合。 */
     private boolean isPromptLeakProbe(String prompt) {
-        if (prompt == null || prompt.length() > 200) {
-            return false; // 正常长问题不拦（长输入多为真实咨询）
-        }
-        String p = prompt.toLowerCase();
-        if (p.contains("system prompt") || p.contains("systemprompt") || p.contains("系统提示")) {
-            return true;
-        }
-        boolean action = p.contains("翻译") || p.contains("打印") || p.contains("复述")
-                || p.contains("总结") || p.contains("输出") || p.contains("显示")
-                || p.contains("告诉") || p.contains("说明") || p.contains("列出");
-        boolean target = p.contains("规则") || p.contains("指令") || p.contains("设定")
-                || p.contains("提示词") || p.contains("开发者");
-        return action && target;
+        if (prompt.length() > 200) return false;
+        String p = prompt.toLowerCase(Locale.ROOT);
+        if (p.contains("system prompt") || p.contains("systemprompt") || p.contains("系统提示")) return true;
+        return List.of("翻译", "打印", "复述", "总结", "输出", "显示", "告诉", "说明", "列出").stream().anyMatch(p::contains)
+                && List.of("规则", "指令", "设定", "提示词", "开发者").stream().anyMatch(p::contains);
     }
-
-    /** 深夜时段判定（可配置 start-hour / end-hour） */
     private boolean isLateNight() {
-        java.time.LocalTime now = java.time.LocalTime.now();
-        int hour = now.getHour();
-        if (emotionBrakeStartHour <= emotionBrakeEndHour) {
-            return hour >= emotionBrakeStartHour && hour < emotionBrakeEndHour;
-        }
-        return hour >= emotionBrakeStartHour || hour < emotionBrakeEndHour;
+        int hour = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Shanghai")).getHour();
+        return brakeStart <= brakeEnd ? hour >= brakeStart && hour < brakeEnd : hour >= brakeStart || hour < brakeEnd;
     }
-
-    private void recordChatRequest(String mode) {
-        try { meterRegistry.counter("chat.request", "mode", mode).increment(); } catch (Exception ignored) {}
-    }
-
-    /** 分块模拟流式（与 AgentLoopExecutor 一致） */
+    private void metric(String outcome) { try { meters.counter("chat.request", "mode", "graph", "status", outcome).increment(); } catch (RuntimeException ignored) {} }
     private List<String> chunk(String text) {
-        java.util.List<String> parts = new java.util.ArrayList<>();
-        int size = 30;
-        for (int i = 0; i < text.length(); i += size) {
-            parts.add(text.substring(i, Math.min(text.length(), i + size)));
-        }
+        List<String> parts = new ArrayList<>();
+        for (int i = 0; i < text.length(); i += 30) parts.add(text.substring(i, Math.min(text.length(), i + 30)));
         return parts;
     }
 }

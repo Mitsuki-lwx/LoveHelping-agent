@@ -54,16 +54,18 @@ public class StreamRegistry {
 
     /** 注册（订阅建立时调用；重复注册以新 sink 覆盖，旧 sink 置 cancelled 防悬挂推送） */
     public StreamSink register(String chatId, FluxSink<String> sink) {
-        StreamSink old = sinks.put(chatId, new StreamSink(sink, reasoningMode));
-        if (old != null) {
-            old.cancel();
+        StreamSink fresh = new StreamSink(sink, reasoningMode);
+        if (sinks.putIfAbsent(chatId, fresh) != null) {
+            throw new cn.lwx.lwxaiagent.common.BizException(409, "当前会话仍有请求处理中，请等待完成或先停止");
         }
-        return sinks.get(chatId);
+        return fresh;
     }
 
-    public void unregister(String chatId) {
-        sinks.remove(chatId);
+    public void unregister(String chatId, StreamSink expected) {
+        if (expected != null && sinks.remove(chatId, expected)) expected.cancel();
     }
+
+    public int activeCount() { return sinks.size(); }
 
     /** 查询；无则 null（调用方决定是否兜底） */
     public StreamSink get(String chatId) {
@@ -139,6 +141,7 @@ public class StreamRegistry {
                 emit(text);
                 return;
             }
+            if (adviceSeen) return; // Do not accumulate an unbounded structured payload after its marker.
             pending.append(text);
             int idx;
             while ((idx = pending.indexOf(MARKER)) >= 0) {
@@ -181,7 +184,7 @@ public class StreamRegistry {
         }
 
         private void emit(String s) {
-            if (cancelled || s.isEmpty()) {
+            if (cancelled || sink.isCancelled() || s.isEmpty()) {
                 return;
             }
             try {

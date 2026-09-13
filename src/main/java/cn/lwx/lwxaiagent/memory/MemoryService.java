@@ -74,6 +74,21 @@ public class MemoryService {
         return owners.isEmpty() ? null : owners.get(0);
     }
 
+    /** Admission must fail closed. V23 makes cross-user concurrent claims atomic in MySQL. */
+    public void claimConversation(String userId, String conversationId, String chatType) {
+        String owner = getOwnerUserId(conversationId);
+        if (owner != null && !owner.equals(userId)) throw new BizException(403, "无权访问该会话");
+        if (owner == null) {
+            List<String> prior = jdbcTemplate.queryForList(
+                    "SELECT user_id FROM message WHERE conversation_id = ? AND user_id <> ? LIMIT 1",
+                    String.class, conversationId, userId);
+            if (!prior.isEmpty()) throw new BizException(403, "无权访问该会话");
+            jdbcTemplate.update("INSERT IGNORE INTO user_conversations (user_id, conversation_id, title, chat_type) VALUES (?, ?, ?, ?)",
+                    userId, conversationId, "", chatType);
+            if (!userId.equals(getOwnerUserId(conversationId))) throw new BizException(403, "无权访问该会话");
+        }
+    }
+
     /**
      * <h3>获取指定会话的完整历史消息</h3>
      *

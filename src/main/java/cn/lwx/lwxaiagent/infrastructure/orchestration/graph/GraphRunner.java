@@ -1,186 +1,177 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph;
 
-import cn.lwx.lwxaiagent.infrastructure.observability.LangfuseReporter;
+import cn.lwx.lwxaiagent.common.BizException;
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import cn.lwx.lwxaiagent.memory.ChatMemoryFactory;
+import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import com.alibaba.cloud.ai.graph.CompiledGraph;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import com.alibaba.cloud.ai.graph.RunnableConfig;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 业务编排图执行门面（ADR-19）：统一异步执行入口 + agent 路径的记忆承接。
- * <ul>
- *   <li><b>执行</b>：图 invoke（线程池异步），返回 OUTPUT / ADVICE_TIERS / TOOL_EVENTS / 路由</li>
- *   <li><b>历史注入</b>：执行前把 message 表窗口历史 + 本条用户消息放入 {@code MESSAGES}
- *       （普通/简答/沙盘路径节点自管记忆，不读此键；agent 工具循环读取实现多轮上下文）</li>
- *   <li><b>落库</b>：仅 agent 路径完成后再写回 message 表（普通等由 ChatExecutor advisor 落库，
- *       避免重复）；工具消息不过滤进 message 表</li>
- *   <li><b>stop</b>：取消活跃异步执行（对应旧 AgentLoopExecutor.stop）</li>
- * </ul>
- */
+/** Interruptible graph execution, per-session single-flight and request-scoped tracing (ADR-23/24). */
 @Slf4j
 @Component
 public class GraphRunner {
-
-    /** 与 OrchestrationGraph.classify 写入的路由键一致 */
     static final String ROUTE_KEY = "graph.route";
-    static final String ROUTE_AGENT = "agent";
-    static final String ROUTE_VISION = "vision";
-
     private final CompiledGraph graph;
-    private final ChatMemoryFactory chatMemoryFactory;
+    private final ChatMemoryFactory memory;
     private final GraphObservability observability;
-    private final org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter;
-    private final io.micrometer.tracing.Tracer tracer;
-    /** 图执行线程池（2026-09-07：脱离 ForkJoinPool.commonPool——原 supplyAsync 无显式 executor，
-     *  与闸门 max-inflight=8 同量级且不可配，调高闸门会先爆 commonPool；显式池与闸门解耦可调） */
-    private final java.util.concurrent.Executor graphExecutor;
-    private final ConcurrentHashMap<String, CompletableFuture<?>> activeRuns = new ConcurrentHashMap<>();
+    private final Tracer tracer;
+    private final Executor executor;
+    private final ConcurrentHashMap<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
 
-    public GraphRunner(OrchestrationGraph orchestrationGraph,
-                       ChatMemoryFactory chatMemoryFactory,
-                       GraphObservability observability,
-                       org.springframework.beans.factory.ObjectProvider<LangfuseReporter> langfuseReporter,
-                       io.micrometer.tracing.Tracer tracer,
-                       @org.springframework.beans.factory.annotation.Qualifier("graphExecutor")
-                       java.util.concurrent.Executor graphExecutor) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
+    public GraphRunner(OrchestrationGraph orchestrationGraph, ChatMemoryFactory memory,
+                       GraphObservability observability, Tracer tracer,
+                       @Qualifier("graphExecutor") Executor executor) throws com.alibaba.cloud.ai.graph.exception.GraphStateException {
         this.graph = orchestrationGraph.compile();
-        this.chatMemoryFactory = chatMemoryFactory;
+        this.memory = memory;
         this.observability = observability;
-        this.langfuseReporter = langfuseReporter;
-        this.graphExecutor = graphExecutor;
         this.tracer = tracer;
+        this.executor = executor;
     }
 
-    /** 异步执行一轮图（线程池内阻塞调用模型）。 */
     public CompletableFuture<Map<String, Object>> runAsync(Map<String, Object> input, String threadId) {
-        injectHistory(input, threadId);
-        CompletableFuture<Map<String, Object>> future = CompletableFuture.supplyAsync(() -> {
-            // 显式图线程池执行（graphExecutor）——不再占用 JVM 共享 commonPool
-            // 全链路 trace 串联：恢复 HTTP 入口 span 的 trace 上下文（异步线程丢失请求作用域，
-            // 导致 LLM/embedding generation 变成孤立 root trace——见 2026-08-31 全链路测评）
-            io.micrometer.tracing.Span pipelineSpan = startPipelineSpan(input, threadId);
-            try (io.micrometer.tracing.Tracer.SpanInScope ws = tracer.withSpan(pipelineSpan)) {
-                RunnableConfig config = RunnableConfig.builder().threadId(threadId).build();
-                long t0 = System.currentTimeMillis();
-                OverAllState result = graph.invoke(input, config).get();
-                Map<String, Object> out = extract(result);
-                // agent / 视觉 路径由 GraphRunner 统一落库（普通/简答/沙盘由 ChatExecutor advisor 落库，避免重复）
-                if (ROUTE_AGENT.equals(out.get(ROUTE_KEY)) || ROUTE_VISION.equals(out.get(ROUTE_KEY))) {
-                    persistConversation(threadId, input, out);
-                }
-                // 图 trace（CAP-7）：路径 + 路由 + 总耗时
-                @SuppressWarnings("unchecked")
-                List<String> path = (List<String>) out.getOrDefault(GraphStateKeys.GRAPH_PATH, List.of());
-                long totalMs = System.currentTimeMillis() - t0;
-                observability.traceLog(String.valueOf(out.get(ROUTE_KEY)), path, totalMs);
-                // Langfuse 上报（参考 CodeForge：手写 2.x 签名 ingestion；fire-and-forget）
-                LangfuseReporter reporter = langfuseReporter.getIfAvailable();
-                if (reporter != null) {
-                    String msg = input.get(GraphStateKeys.MESSAGE) != null ? input.get(GraphStateKeys.MESSAGE).toString() : "";
-                    reporter.report(threadId, String.valueOf(out.get(ROUTE_KEY)), msg,
-                            String.valueOf(out.getOrDefault(GraphStateKeys.OUTPUT, "")), totalMs, null);
-                }
-                return out;
-            } catch (Exception e) {
-                pipelineSpan.error(e);
-                throw new IllegalStateException("OrchestrationGraph run failed", e);
-            } finally {
-                pipelineSpan.end();
-            }
-        }, graphExecutor);
-        activeRuns.put(threadId, future);
-        future.whenComplete((r, ex) -> activeRuns.remove(threadId));
-        return future;
-    }
-
-    /** 图执行根 span：有透传上下文则挂到 HTTP 入口 trace 下（跨线程父子串联），否则独立 root */
-    private io.micrometer.tracing.Span startPipelineSpan(Map<String, Object> input, String threadId) {
-        var builder = tracer.spanBuilder().name("chat.pipeline").tag("chat.id", threadId);
-        Object tid = input.get(GraphStateKeys.PIPELINE_TRACE_ID);
-        Object sid = input.get(GraphStateKeys.PIPELINE_SPAN_ID);
-        if (tid instanceof String t && sid instanceof String s) {
-            var parentCtx = tracer.traceContextBuilder()
-                    .traceId(t).spanId(s).sampled(Boolean.TRUE).build();
-            builder.setParent(parentCtx);
+        Map<String, Object> snapshot = new HashMap<>(input);
+        ActiveRun run = new ActiveRun(threadId, snapshot);
+        if (activeRuns.putIfAbsent(threadId, run) != null)
+            throw new BizException(409, "当前会话仍有请求处理中，请等待完成或先停止");
+        try { executor.execute(run.task); }
+        catch (RejectedExecutionException rejected) {
+            run.cancel();
+            throw new BizException(4003, "系统繁忙，请稍后再试", Map.of("retryAfterSec", 2));
         }
-        return builder.start();
+        return run.result;
     }
 
-    /** 同步执行（测试/内部调用用） */
     public Map<String, Object> run(Map<String, Object> input, String threadId) {
-        return runAsync(input, threadId).join();
+        CompletableFuture<Map<String, Object>> future = runAsync(input, threadId);
+        try { return future.get(); }
+        catch (InterruptedException e) { stop(threadId, future); Thread.currentThread().interrupt(); throw new CancellationException("Graph cancelled"); }
+        catch (ExecutionException e) { throw new CompletionException(e.getCause()); }
     }
 
-    /** 取消活跃执行（对应旧 AgentLoopExecutor.stop） */
-    public void stop(String threadId) {
-        CompletableFuture<?> f = activeRuns.remove(threadId);
-        if (f != null) {
-            f.cancel(true);
-            log.info("GraphRunner stopped: {}", threadId);
+    public void stop(String threadId) { ActiveRun run = activeRuns.get(threadId); if (run != null) run.cancel(); }
+    public void stop(String threadId, CompletableFuture<?> expected) {
+        ActiveRun run = activeRuns.get(threadId);
+        if (run != null && run.result == expected) run.cancel();
+    }
+    public int activeCount() { return activeRuns.size(); }
+
+    private final class ActiveRun {
+        final String key;
+        final CompletableFuture<Map<String, Object>> result = new CompletableFuture<>();
+        final AtomicInteger stage = new AtomicInteger(); // queued -> executing -> physically finished
+        final FutureTask<Void> task;
+        ActiveRun(String key, Map<String, Object> input) {
+            this.key = key;
+            this.task = new FutureTask<>(() -> {
+                if (!stage.compareAndSet(0, 1)) return null;
+                try {
+                    if (!result.isCancelled()) result.complete(execute(input, key));
+                } catch (Throwable e) {
+                    result.completeExceptionally(e);
+                } finally {
+                    stage.set(2);
+                    activeRuns.remove(key, this); // no old completion can remove a later run
+                }
+                return null;
+            });
+            result.whenComplete((out, error) -> { if (result.isCancelled()) cancel(); });
+        }
+        void cancel() {
+            task.cancel(true); // FutureTask interrupts the actual worker, unlike CompletableFuture.cancel alone.
+            if (stage.compareAndSet(0, 2)) activeRuns.remove(key, this);
+            result.cancel(false);
+            // An executing run stays registered until its finally block, fencing uninterruptible old work.
         }
     }
 
-    // ==================== 内部 ====================
+    private Map<String, Object> execute(Map<String, Object> input, String threadId) throws Exception {
+        String oldUser = TenantContext.getUserId(), oldTenant = TenantContext.getTenantId(), oldRole = TenantContext.getRole();
+        String user = Objects.toString(input.get(GraphStateKeys.USER_ID), "anonymous");
+        Span span = pipelineSpan(input, threadId);
+        long start = System.nanoTime();
+        try (var ignored = tracer.withSpan(span)) {
+            TenantContext.set("default", user, "USER");
+            // Persist only serializable identifiers; each node restores this parent explicitly.
+            input.put(GraphStateKeys.PIPELINE_TRACE_ID, span.context().traceId());
+            input.put(GraphStateKeys.PIPELINE_SPAN_ID, span.context().spanId());
+            input.put(GraphStateKeys.PIPELINE_SAMPLED, Boolean.TRUE.equals(span.context().sampled()));
+            injectHistory(input, threadId);
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+            RunnableConfig config = RunnableConfig.builder().threadId(threadId).build();
+            OverAllState state = graph.invoke(input, config).orElseThrow(() -> new IllegalStateException("Empty graph state"));
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+            Map<String, Object> output = extract(state);
+            String route = Objects.toString(output.get(ROUTE_KEY), "unknown");
+            if (Set.of("agent", "vision").contains(route)) persist(threadId, input, output);
+            span.tag("graph.route", route).tag("graph.outcome", "success");
+            @SuppressWarnings("unchecked") List<String> path = (List<String>) output.get(GraphStateKeys.GRAPH_PATH);
+            observability.traceLog(route, path, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+            return output;
+        } catch (Exception error) {
+            boolean cancelled = error instanceof InterruptedException || error instanceof CancellationException || Thread.currentThread().isInterrupted();
+            span.tag("graph.outcome", cancelled ? "cancelled" : "error");
+            if (!cancelled) {
+                span.tag("langfuse.observation.level", "ERROR");
+                span.error(new IllegalStateException("Graph execution failed"));
+            }
+            throw error;
+        } finally {
+            TenantContext.clear();
+            if (oldUser != null || oldTenant != null || oldRole != null) TenantContext.set(oldTenant, oldUser, oldRole);
+            span.end();
+        }
+    }
 
-    private Map<String, Object> extract(OverAllState result) {
+    private Span pipelineSpan(Map<String, Object> input, String threadId) {
+        var builder = tracer.spanBuilder().name("chat.pipeline");
+        Object tid = input.get(GraphStateKeys.PIPELINE_TRACE_ID), sid = input.get(GraphStateKeys.PIPELINE_SPAN_ID);
+        if (tid instanceof String t && sid instanceof String s && !t.isBlank() && !s.isBlank()) {
+            builder.setParent(tracer.traceContextBuilder().traceId(t).spanId(s)
+                    .sampled((Boolean) input.getOrDefault(GraphStateKeys.PIPELINE_SAMPLED, Boolean.TRUE)).build());
+        }
+        return builder.start().tag("langfuse.trace.name", "chat")
+                .tag("langfuse.session.id", AiTelemetry.pseudonym(threadId))
+                .tag("langfuse.user.id", AiTelemetry.pseudonym(Objects.toString(input.get(GraphStateKeys.USER_ID), null)));
+    }
+
+    private Map<String, Object> extract(OverAllState state) {
         Map<String, Object> out = new HashMap<>();
-        out.put(ROUTE_KEY, result.value(ROUTE_KEY).orElse(null));
-        out.put(GraphStateKeys.OUTPUT, result.value(GraphStateKeys.OUTPUT).orElse(""));
-        out.put(GraphStateKeys.ADVICE_TIERS, result.value(GraphStateKeys.ADVICE_TIERS).orElse(null));
-        Object path = result.value(GraphStateKeys.GRAPH_PATH).orElse(null);
-        out.put(GraphStateKeys.GRAPH_PATH, path instanceof List<?> l
-                ? l.stream().filter(String.class::isInstance).map(String.class::cast).toList() : List.of());
-        Object tools = result.value(GraphStateKeys.TOOL_EVENTS).orElse(null);
-        out.put(GraphStateKeys.TOOL_EVENTS, tools instanceof List<?> l
-                ? l.stream().filter(String.class::isInstance).map(String.class::cast).toList() : List.of());
+        out.put(ROUTE_KEY, state.value(ROUTE_KEY).orElse("unknown"));
+        out.put(GraphStateKeys.OUTPUT, state.value(GraphStateKeys.OUTPUT).orElse(""));
+        out.put(GraphStateKeys.ADVICE_TIERS, state.value(GraphStateKeys.ADVICE_TIERS).orElse(null));
+        for (String key : List.of(GraphStateKeys.GRAPH_PATH, GraphStateKeys.TOOL_EVENTS)) {
+            Object value = state.value(key).orElse(null);
+            out.put(key, value instanceof List<?> l ? l.stream().filter(String.class::isInstance).map(String.class::cast).toList() : List.of());
+        }
         return out;
     }
 
-    /** agent 路径多轮上下文：message 表窗口 + 本条用户消息 → MESSAGES（对其他路径无副作用） */
     private void injectHistory(Map<String, Object> input, String threadId) {
-        if (input.containsKey(GraphStateKeys.MESSAGES)) return;
-        try {
-            List<Message> window = chatMemoryFactory.create().get(threadId);
-            List<Message> msgs = new ArrayList<>(window == null ? new ArrayList<>() : window);
-            Object msg = input.get(GraphStateKeys.MESSAGE);
-            if (msg != null) {
-                msgs.add(new UserMessage(msg.toString()));
-            }
-            input.put(GraphStateKeys.MESSAGES, msgs);
-        } catch (Exception e) {
-            log.warn("GraphRunner history inject failed ({}): {}", threadId, e.getMessage());
-        }
+        if (input.containsKey(GraphStateKeys.MESSAGES) || input.containsKey(GraphStateKeys.SANDBOX_ID)) return;
+        // DB/history failure must not silently expose unrelated context or turn into a successful empty memory.
+        List<Message> window = memory.create().get(threadId);
+        List<Message> messages = new ArrayList<>(window == null ? List.of() : window);
+        if (input.get(GraphStateKeys.MESSAGE) != null) messages.add(new UserMessage(input.get(GraphStateKeys.MESSAGE).toString()));
+        input.put(GraphStateKeys.MESSAGES, messages);
     }
 
-    /** agent 路径落库：仅 user + 最终 assistant（工具消息不进 message 表） */
-    private void persistConversation(String threadId, Map<String, Object> input, Map<String, Object> out) {
-        try {
-            List<Message> toPersist = new ArrayList<>();
-            Object msg = input.get(GraphStateKeys.MESSAGE);
-            if (msg != null) {
-                toPersist.add(new UserMessage(msg.toString()));
-            }
-            Object output = out.get(GraphStateKeys.OUTPUT);
-            if (output != null && !output.toString().isBlank()) {
-                toPersist.add(new AssistantMessage(output.toString()));
-            }
-            if (!toPersist.isEmpty()) {
-                chatMemoryFactory.create().add(threadId, toPersist);
-            }
-        } catch (Exception e) {
-            log.warn("GraphRunner agent persist failed ({}): {}", threadId, e.getMessage());
-        }
+    private void persist(String key, Map<String, Object> input, Map<String, Object> output) {
+        List<Message> messages = new ArrayList<>();
+        if (input.get(GraphStateKeys.MESSAGE) != null) messages.add(new UserMessage(input.get(GraphStateKeys.MESSAGE).toString()));
+        String text = Objects.toString(output.get(GraphStateKeys.OUTPUT), "");
+        if (!text.isBlank()) messages.add(new AssistantMessage(text));
+        if (!messages.isEmpty()) memory.create().add(key, messages);
     }
 }

@@ -31,4 +31,4 @@ logging:
 # 需要链路追踪时：management.tracing.enabled=true + management.otlp.tracing.endpoint=真实 collector
 management:
   tracing:
-    enabled: false
+    enabled: ${LANGFUSE_ENABLED:false}

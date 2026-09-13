@@ -22,16 +22,20 @@ public class AdminController {
     private final org.springframework.ai.rag.retrieval.search.DocumentRetriever documentRetriever;
     /** 审计查询（V20 课3）：敏感操作事后取证 */
     private final cn.lwx.lwxaiagent.service.AuditService auditService;
+    /** 生产链路的 postretrieval 重排（ADR-25）：评测端点复用它，使检索评测能覆盖 rerank */
+    private final cn.lwx.lwxaiagent.rag.rerank.RerankDocumentPostProcessor rerankPostProcessor;
     public AdminController(GoldenSetRunner goldenSetRunner, AdminGuard adminGuard,
                            CanaryConfig canaryConfig, SkillIngestor skillIngestor,
                            cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever documentRetriever,
-                           cn.lwx.lwxaiagent.service.AuditService auditService) {
+                           cn.lwx.lwxaiagent.service.AuditService auditService,
+                           cn.lwx.lwxaiagent.rag.rerank.RerankDocumentPostProcessor rerankPostProcessor) {
         this.goldenSetRunner = goldenSetRunner;
         this.adminGuard = adminGuard;
         this.canaryConfig = canaryConfig;
         this.skillIngestor = skillIngestor;
         this.documentRetriever = documentRetriever;
         this.auditService = auditService;
+        this.rerankPostProcessor = rerankPostProcessor;
     }
 
     /** 审计日志查询（X-Admin-Key 保护）：?limit=50 最近 N 条敏感操作记录 */
@@ -87,9 +91,15 @@ public class AdminController {
      * 返回命中的父文档 filename 列表——检索评测从"日志嗅探"升级为显式 API。
      */
     @GetMapping("/rag/retrieve")
-    public Map<String, Object> ragRetrieve(@RequestParam String query, HttpServletRequest request) {
+    public Map<String, Object> ragRetrieve(@RequestParam String query,
+            @RequestParam(defaultValue = "false") boolean rerank, HttpServletRequest request) {
         adminGuard.check(request);
-        var docs = documentRetriever.retrieve(new org.springframework.ai.rag.Query(query));
+        var ragQuery = new org.springframework.ai.rag.Query(query);
+        var docs = documentRetriever.retrieve(ragQuery);
+        // 可选重排：复用生产 postretrieval 组件，使检索评测可量化 rerank（ADR-25）
+        if (rerank) {
+            docs = rerankPostProcessor.process(ragQuery, docs);
+        }
         var files = new java.util.LinkedHashSet<String>();
         for (var d : docs) {
             Object f = d.getMetadata().get("filename");
@@ -97,9 +107,9 @@ public class AdminController {
                 files.add(f.toString());
             }
         }
-        log.info("Admin rag/retrieve query='{}' hits={} files={}", query.length() > 40 ? query.substring(0, 40) : query,
-                docs.size(), files.size());
-        return Map.of("query", query, "hits", new java.util.ArrayList<>(files));
+        log.info("Admin rag/retrieve query='{}' rerank={} hits={} files={}", query.length() > 40 ? query.substring(0, 40) : query,
+                rerank, docs.size(), files.size());
+        return Map.of("query", query, "rerank", rerank, "hits", new java.util.ArrayList<>(files));
     }
 
 }

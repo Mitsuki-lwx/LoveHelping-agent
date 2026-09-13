@@ -80,7 +80,7 @@
 - [ ] `python scripts/retrieval_eval.py` MRR ≥ 0.85 —— **实测 0.824，未达标**（见下方说明）
 - [x] 新主题抽样 5 例人工核对：5/5 top1 命中（同性伴侣 / 不孕不育 / 自杀风险 / 网恋骗局 / 婚前协议）
 - [x] `README.md` 中「86 篇」全部更新为「131 篇」（grep 无残留）
-- [ ] git commit + push 完成
+- [x] git commit + push 完成（commit `8642931`，已推送 main）
 
 ---
 

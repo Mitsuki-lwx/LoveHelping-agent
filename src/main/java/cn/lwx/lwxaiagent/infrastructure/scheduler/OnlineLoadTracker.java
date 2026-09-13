@@ -44,20 +44,17 @@ public class OnlineLoadTracker {
      * @return true = 放行；false = 在线并发已满（调用方应给用户友好提示，而非 5xx）
      */
     public boolean enter() {
-        try {
-            int cur = inFlight.incrementAndGet();
-            touch();
-            if (cur > maxInFlight) {
-                exit(); // 立即回收本次占用
-                meterRegistry.counter("online.inflight.rejected").increment();
-                log.warn("Online inflight limit reached (max={}), rejecting request", maxInFlight);
+        while (true) {
+            int current = inFlight.get();
+            if (current >= maxInFlight) {
+                metric("online.inflight.rejected");
                 return false;
             }
-            meterRegistry.counter("online.inflight.entered").increment();
-            return true;
-        } catch (Exception e) {
-            log.warn("OnlineLoadTracker enter() failed (fail-open): {}", e.getMessage());
-            return true;
+            if (inFlight.compareAndSet(current, current + 1)) {
+                touch();
+                metric("online.inflight.entered");
+                return true;
+            }
         }
     }
 
@@ -90,7 +87,7 @@ public class OnlineLoadTracker {
     private static final double EMA_ALPHA = 0.2;
 
     /** 请求完成时更新 EMA（enter 与 exit 跨线程，时长由调用方显式传入） */
-    public void recordDuration(long durationMs) {
+    public synchronized void recordDuration(long durationMs) {
         if (durationMs <= 0) return;
         double cur = avgDurationMs;
         avgDurationMs = cur == 0.0 ? durationMs : (EMA_ALPHA * durationMs + (1 - EMA_ALPHA) * cur);
@@ -112,6 +109,10 @@ public class OnlineLoadTracker {
         } catch (Exception e) {
             return false; // 异常不阻塞后台（fail-open）
         }
+    }
+
+    private void metric(String name) {
+        try { meterRegistry.counter(name).increment(); } catch (RuntimeException ignored) { }
     }
 
     private void touch() {

@@ -15,6 +15,12 @@ shanghai_plan.md
 *约会*.txt
 升级方案*.txt
 
+# Local reranker assets, environment files and verification outputs
+ops/reranker/models/
+ops/reranker/__pycache__/
+.env
+outputs/
+
 ### Runtime generated files ###
 baidu_images/
 downloads/

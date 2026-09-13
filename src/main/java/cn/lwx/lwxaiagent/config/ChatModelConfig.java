@@ -50,11 +50,12 @@ public class ChatModelConfig {
      */
     @Bean("deepSeekChatModel")
     public ChatModel deepSeekFallbackModel(
-            @org.springframework.beans.factory.annotation.Value("${spring.ai.dashscope.api-key:}") String dashScopeKey) {
+            @org.springframework.beans.factory.annotation.Value("${spring.ai.dashscope.api-key:}") String dashScopeKey,
+            LlmGatewayProperties props) {
         // 降级备模型（2026-09-06 落地）：spring-ai-alibaba 原生 DashScopeChatModel（qwen-plus）。
         // 原生通道经 WebClient 调用 dashscope /api/v1 —— 与 embedding 同域，验证过可用；
         // 而 OpenAI 兼容 /v1 型网关（dashscope compatible-mode / sensenova）对框架 WebClient 返回
         // 404（curl 同 URL 200，排查 header/body/UA 非因）——不用兼容通道作备，记录待办。
-        return new RestFallbackChatModel(dashScopeKey, "qwen-plus");
+        return new RestFallbackChatModel(dashScopeKey, "qwen-plus", props.getConnectTimeoutMs(), props.getAttemptTimeoutMs());
     }
 }

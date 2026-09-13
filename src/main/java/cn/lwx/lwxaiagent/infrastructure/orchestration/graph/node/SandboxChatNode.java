@@ -41,19 +41,10 @@ public class SandboxChatNode {
         }
         String sandboxPrompt = sandboxService.buildSandboxPrompt(sandboxId, userId);
 
-        try {
-            AgentResult.ShallowResult sr = (AgentResult.ShallowResult)
-                    chatExecutor.executeWithRag(message, chatId, sandboxPrompt, false);
-            String full = sr.flux().collectList().block().stream().reduce(String::concat).orElse("");
-            Map<String, Object> out = new HashMap<>();
-            // advice=false：沙盘输出即正文，不剥 marker（防误剥，与 NormalChatNode 一致化）
-            out.put(GraphStateKeys.OUTPUT, full);
-            return out;
-        } catch (Exception e) {
-            log.error("SandboxChatNode failed (sandbox={}): {}", sandboxId, e.getMessage());
-            Map<String, Object> out = new HashMap<>();
-            out.put(GraphStateKeys.OUTPUT, "抱歉，沙盘对话出了点问题，请稍后再试。");
-            return out;
-        }
+        AgentResult.ShallowResult sr = chatExecutor.executeWithRag(message, chatId, sandboxPrompt, false);
+        String full = sr.flux().reduce(new StringBuilder(), StringBuilder::append)
+                .map(StringBuilder::toString).block();
+        // Failures must propagate so pipeline traces and task state cannot report false success.
+        return Map.of(GraphStateKeys.OUTPUT, full == null ? "" : full);
     }
 }

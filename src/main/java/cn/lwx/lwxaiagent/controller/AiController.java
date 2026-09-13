@@ -84,7 +84,7 @@ public class AiController {
             return Flux.just(e.getMessage());
         }
         if (result instanceof AgentResult.ShallowResult sr) {
-            return sr.flux();
+            return sr.flux().onErrorResume(e -> Flux.just(SseBridge.safeMessage(e)));
         }
         // Deep 结果走 SseEmitter → Flux 桥接（保持 SSE 格式兼容）
         SseEmitter emitter = ((AgentResult.DeepResult) result).emitter();
@@ -124,13 +124,14 @@ public class AiController {
             }
         };
         // 话术三级（FR-CORE-01）：@@ADVICE@@ 标记块转成独立 advice 事件，其余为纯文本 data 事件（向后兼容）
-        return stream.flatMap(s -> {
+        return stream.map(s -> {
             if (s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER)) {
                 String json = s.substring(ChatExecutor.ADVICE_EVENT_MARKER.length());
-                return Flux.just(org.springframework.http.codec.ServerSentEvent.<String>builder(json).event("advice").build());
+                return org.springframework.http.codec.ServerSentEvent.<String>builder(json).event("advice").build();
             }
-            return Flux.just(org.springframework.http.codec.ServerSentEvent.<String>builder(s).data(s).build());
-        });
+            return org.springframework.http.codec.ServerSentEvent.<String>builder(s).build();
+        }).onErrorResume(e -> Flux.just(org.springframework.http.codec.ServerSentEvent
+                .<String>builder(SseBridge.safeMessage(e)).event("error").build()));
     }
 
     /**
@@ -142,16 +143,7 @@ public class AiController {
         if (result instanceof AgentResult.DeepResult dr) {
             return dr.emitter();
         }
-        // ShallowResult → Flux → SseEmitter 桥接
-        SseEmitter emitter = new SseEmitter();
-        ((AgentResult.ShallowResult) result).flux()
-                .filter(s -> !s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER))
-                .subscribe(
-                trunk -> { try { emitter.send(trunk); } catch (Exception e) { emitter.completeWithError(e); } },
-                error -> emitter.completeWithError(error),
-                () -> emitter.complete()
-        );
-        return emitter;
+        return SseBridge.emitter(((AgentResult.ShallowResult) result).flux());
     }
 
     /**
@@ -160,7 +152,8 @@ public class AiController {
      */
     @GetMapping(value = "Love_app/chat/sse/rag", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatSseWithRAG(@RequestParam String prompt, @RequestParam String chatId) {
-        AgentResult result = chatEntry.chat(prompt, chatId, List.of(), true, null);
+        // 解忧信箱的 RAG 模式：内部走 agent 通道，但会话归属仍是 love（不是 agent 会话）
+        AgentResult result = chatEntry.chat(prompt, chatId, List.of(), true, false, null, "love");
         // 全部路径收编到图（ADR-19），结果统一为 ShallowResult
         return bridgeToEmitter(((AgentResult.ShallowResult) result).flux());
     }
@@ -203,16 +196,7 @@ public class AiController {
 
     /** ShallowResult 的 Flux → SseEmitter（文本分块 + 🔧 工具行透传；剥离 advice 标记避免 JSON 打在正文） */
     private static SseEmitter bridgeToEmitter(Flux<String> flux) {
-        // 长超时：agent 工具循环（查询改写 + 多轮 LLM）可能超过默认 30s（对齐旧 AgentLoopExecutor 600s）
-        SseEmitter emitter = new SseEmitter(600_000L);
-        flux
-                .filter(s -> !s.startsWith(ChatExecutor.ADVICE_EVENT_MARKER))
-                .subscribe(
-                        trunk -> { try { emitter.send(trunk); } catch (Exception e) { emitter.completeWithError(e); } },
-                        error -> emitter.completeWithError(error),
-                        () -> emitter.complete()
-                );
-        return emitter;
+        return SseBridge.emitter(flux);
     }
 
     /**

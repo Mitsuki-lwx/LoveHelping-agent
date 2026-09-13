@@ -7,6 +7,7 @@ import cn.lwx.lwxaiagent.infrastructure.orchestration.tools.AgentToolPolicy;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.tools.ToolResolver;
 import com.alibaba.cloud.ai.graph.OverAllState;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import reactor.core.publisher.Flux;
 
@@ -114,7 +115,7 @@ class GraphToolLoopTest {
         AgentLlmNode node = llmNode(model, kbTool());
 
         OverAllState state = runLlm(node, model, "搜索知识库非暴力沟通内容");
-        AgentToolNode toolNode = new AgentToolNode(node, mock(MeterRegistry.class), new StreamRegistry("discard"));
+        AgentToolNode toolNode = new AgentToolNode(node, new SimpleMeterRegistry(), new StreamRegistry("discard"));
         merge(state, toolNode.apply(state));
 
         Object messages = state.value(GraphStateKeys.MESSAGES).orElse(null);

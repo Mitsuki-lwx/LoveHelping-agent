@@ -44,7 +44,7 @@ class SandboxControllerTest {
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
     @MockBean
-    private GraphRunner graphRunner;
+    private cn.lwx.lwxaiagent.infrastructure.orchestration.ChatEntry chatEntry;
     @MockBean
     private GuardrailRuleService guardrailRuleService;
     @MockBean
