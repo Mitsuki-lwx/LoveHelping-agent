@@ -45,7 +45,17 @@ def inspect_trace(run, trace):
     check("model_attempts_present", bool(attempts))
     check("attempt_parentage", all((by_id.get(o.get("parentObservationId"),{}).get("name") or "").startswith("graph.node.") for o in attempts))
     check("model_success", all(attrs(o).get("llm.outcome")=="success" for o in attempts))
-    check("gateway_owns_generations", all(o.get("name")=="llm.attempt" for o in observations if o.get("type")=="GENERATION"))
+    # ADR-27: the gateway (llm.attempt) is the only *chat* generation owner; whenever the SDK
+    # emits its own chat span it must be demoted to a plain span. Embeddings are legitimate
+    # generations in their own right and are not duplicated chat generations.
+    # (Streaming calls emit no SDK chat span; model_attempts_present already asserts the
+    #  gateway generation exists, so an empty set is not a failure here.)
+    chat_like = [o for o in observations
+                 if attrs(o).get("gen_ai.operation.name")=="chat" or (o.get("name") or "").startswith("chat ")]
+    check("gateway_owns_chat_generations",
+          all(o.get("type")!="GENERATION" or o.get("name")=="llm.attempt" for o in chat_like))
+    check("sdk_chat_demoted_to_span",
+          all(o.get("type")=="SPAN" for o in chat_like if o.get("name")!="llm.attempt"))
     gateway_tokens = sum((o.get("usageDetails") or {}).get("total",0) for o in attempts)
     chat_tokens = sum((o.get("usageDetails") or {}).get("total",0) for o in observations
                       if o.get("name")=="llm.attempt" or (o.get("name") or "").startswith("chat "))
