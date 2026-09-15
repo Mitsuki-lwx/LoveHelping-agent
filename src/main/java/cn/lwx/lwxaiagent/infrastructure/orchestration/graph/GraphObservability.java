@@ -44,6 +44,11 @@ public class GraphObservability {
         }
         io.micrometer.tracing.Span nodeSpan = builder.start();
         nodeSpan.tag("graph.node", node);
+        nodeSpan.tag("langfuse.trace.name", "chat");
+        nodeSpan.tag("langfuse.session.id", cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry.pseudonym(
+                state.value(GraphStateKeys.CHAT_ID).map(Object::toString).orElse(null)));
+        nodeSpan.tag("langfuse.user.id", cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry.pseudonym(
+                state.value(GraphStateKeys.USER_ID).map(Object::toString).orElse(null)));
         String oldUser = cn.lwx.lwxaiagent.tenant.context.TenantContext.getUserId();
         String oldTenant = cn.lwx.lwxaiagent.tenant.context.TenantContext.getTenantId();
         String oldRole = cn.lwx.lwxaiagent.tenant.context.TenantContext.getRole();
@@ -54,7 +59,9 @@ public class GraphObservability {
                     state.value(GraphStateKeys.USER_ID).map(Object::toString).orElse("anonymous"), "USER");
             return action.apply(state);
         } catch (RuntimeException e) {
-            nodeSpan.error(new IllegalStateException("Graph node failed"));
+            String category = cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry.failureCategory(e);
+            nodeSpan.tag("error.category", category);
+            if (!"cancelled".equals(category)) nodeSpan.error(new IllegalStateException(category));
             throw e;
         } finally {
             cn.lwx.lwxaiagent.tenant.context.TenantContext.clear();

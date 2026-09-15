@@ -1,8 +1,10 @@
 package cn.lwx.lwxaiagent.rag;
 
 import cn.lwx.lwxaiagent.config.PgvectorProperties;
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import cn.lwx.lwxaiagent.rag.rerank.RerankProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.tracing.TraceContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import javax.sql.DataSource;
@@ -52,6 +54,8 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
     /** 向量粗召回数（app.rag.top-k；默认 8：top5 去重后父文档数常不足，扩到 8 稳 Recall） */
     private final int topK;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /** ADR-26：检索链路埋点（只观察，不改变检索行为） */
+    private final AiTelemetry telemetry;
 
     public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
                                         RerankProperties rerankProperties,
@@ -59,12 +63,14 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
                                         @Qualifier("dashscopeEmbeddingModel") org.springframework.ai.embedding.EmbeddingModel embeddingModel,
                                         @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled,
                                         @Value("${app.rag.log-score:false}") boolean logScore,
-                                        @Value("${app.rag.top-k:8}") int topK) {
+                                        @Value("${app.rag.top-k:8}") int topK,
+                                        AiTelemetry telemetry) {
         this.vectorStore = vectorStore;
         this.rerankProperties = rerankProperties;
         this.embeddingModel = embeddingModel;
         this.logScore = logScore;
         this.topK = Math.max(3, topK);
+        this.telemetry = telemetry;
         // 自建 pg JdbcTemplate（不注册为容器 bean，避免与 MySQL 默认 JdbcTemplate 按类型注入歧义）
         DataSource pgDataSource = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())
@@ -78,19 +84,38 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
 
     @Override
     public List<Document> retrieve(Query query) {
-        int k = rerankProperties.isEnabled() && "llm".equals(rerankProperties.getMode())
-                ? rerankProperties.getTopN() : topK;
-        List<Document> children = hybridEnabled
-                ? hybridRetrieve(query.text(), k)
-                : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k).build());
-        // 双轨收敛（2026-09-06）：过滤记忆/技能块（source=memory|evolution）——知识库检索只回文档
-        // （此前向量通道无过滤，用户记忆/已学技能可能被当知识库上下文注入，与显式注入重复/串扰）
-        children = children.stream()
-                .filter(d -> !"memory".equals(d.getMetadata().get("source"))
-                        && !"evolution".equals(d.getMetadata().get("source")))
-                .toList();
-        List<Document> parents = children.stream().map(this::toParent).collect(Collectors.toList());
-        logRetrieved(query.text(), children);
+        // ADR-26：观察者 span。只做 tag/end，不参与任何取值与分支，异常原样抛出。
+        Object propagated = query.context() == null ? null : query.context().get(AiTelemetry.PARENT_CONTEXT_KEY);
+        TraceContext captured = telemetry.capture();
+        var span = telemetry.start("rag.retrieve",
+                captured != null ? captured : (propagated instanceof TraceContext t ? t : null));
+        span.tag("rag.mode", hybridEnabled ? "hybrid" : "vector");
+        String outcome = "success";
+        List<Document> parents = List.of();
+        try (var ignored = telemetry.scope(span)) {
+            int k = rerankProperties.isEnabled() && "llm".equals(rerankProperties.getMode())
+                    ? rerankProperties.getTopN() : topK;
+            List<Document> children = hybridEnabled
+                    ? hybridRetrieve(query.text(), k)
+                    : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k).build());
+            // 双轨收敛（2026-09-06）：过滤记忆/技能块（source=memory|evolution）——知识库检索只回文档
+            // （此前向量通道无过滤，用户记忆/已学技能可能被当知识库上下文注入，与显式注入重复/串扰）
+            children = children.stream()
+                    .filter(d -> !"memory".equals(d.getMetadata().get("source"))
+                            && !"evolution".equals(d.getMetadata().get("source")))
+                    .toList();
+            span.tag("rag.candidates", String.valueOf(children.size()));
+            parents = children.stream().map(this::toParent).collect(Collectors.toList());
+            logRetrieved(query.text(), children);
+            if (parents.isEmpty()) outcome = "empty";
+        } catch (RuntimeException e) {
+            outcome = "degraded";
+            span.tag("langfuse.observation.level", "WARNING");
+            throw e;
+        } finally {
+            span.tag("rag.outcome", outcome).tag("rag.results", String.valueOf(parents.size()));
+            span.end();
+        }
         return parents;
     }
 

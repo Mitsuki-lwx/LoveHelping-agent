@@ -69,7 +69,7 @@ public class AiController {
      * 话术三级（FR-CORE-01）：advice 请求流末尾追加标记块 {@code data:@@ADVICE@@{json}}，
      * 非 advice 请求流与旧版完全一致（增量协议，05 §3.1）。
      */
-    @GetMapping(value = "Love_app/chat/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    // Kept as an internal Java compatibility helper, not a second HTTP mapping.
     public Flux<String> chatSse(@RequestParam String prompt, @RequestParam String chatId,
                                 @RequestParam(required = false) String mediaIds,
                                 @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
@@ -98,7 +98,7 @@ public class AiController {
     /**
      * SSE 流式聊天（返回 ServerSentEvent 格式包装）。
      */
-    @GetMapping(value = "Love_app/chat/sse")
+    @GetMapping(value = "Love_app/chat/sse", produces = "text/event-stream;charset=UTF-8")
     public Flux<org.springframework.http.codec.ServerSentEvent<String>> chatSseServer(
             @RequestParam String prompt, @RequestParam String chatId,
             @RequestParam(required = false) String mediaIds,

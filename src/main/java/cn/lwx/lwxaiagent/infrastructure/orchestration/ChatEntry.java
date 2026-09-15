@@ -144,6 +144,8 @@ public class ChatEntry {
                     });
                 } catch (RuntimeException error) { sink.error(error); }
             }, reactor.core.publisher.FluxSink.OverflowStrategy.ERROR)
+            // MVC requests one event at a time. Absorb short bursts, but never use an unbounded sink.
+            .onBackpressureBuffer(256, ignored -> metric("backpressure_rejected"), reactor.core.publisher.BufferOverflowStrategy.ERROR)
             // Real total deadline, not an idle timeout reset by every text chunk.
             .takeUntilOther(reactor.core.publisher.Mono.delay(Duration.ofMillis(timeoutMs))
                     .flatMap(t -> reactor.core.publisher.Mono.error(new java.util.concurrent.TimeoutException("Chat deadline exceeded"))))

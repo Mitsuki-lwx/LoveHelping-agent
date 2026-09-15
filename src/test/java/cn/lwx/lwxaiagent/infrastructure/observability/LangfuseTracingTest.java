@@ -70,6 +70,48 @@ class LangfuseTracingTest {
             assertEquals(expected, auth.get()); assertTrue(payload.get().length > 0);
         } finally { server.stop(0); }
     }
+    @Test void sdkChatDoesNotDoubleCountGatewayGenerationTokens() {
+        RecordingExporter recorder = new RecordingExporter();
+        try (var provider = SdkTracerProvider.builder()
+                .addSpanProcessor(new LangfuseTracingConfig.SessionProcessor())
+                .addSpanProcessor(SimpleSpanProcessor.create(new LangfuseTracingConfig.SafeExporter(recorder))).build()) {
+            var tracer = provider.get("test");
+            var attempt = tracer.spanBuilder("llm.attempt").startSpan();
+            attempt.setAttribute("langfuse.observation.type", "generation");
+            attempt.setAttribute("langfuse.observation.usage_details", "{\"input\":20,\"output\":4}");
+            try (var scope = attempt.makeCurrent()) {
+                var sdk = tracer.spanBuilder("chat test-model").startSpan();
+                sdk.setAttribute("gen_ai.operation.name", "chat");
+                sdk.setAttribute("gen_ai.request.model", "test-model");
+                sdk.setAttribute("gen_ai.usage.input_tokens", 20L);
+                sdk.setAttribute("gen_ai.usage.output_tokens", 4L);
+                sdk.setAttribute("langfuse.observation.status_message", "private upstream body");
+                sdk.end();
+            } finally { attempt.end(); }
+            var sdk = recorder.received.stream().filter(s -> s.getName().startsWith("chat ")).findFirst().orElseThrow();
+            assertEquals("span", sdk.getAttributes().get(AttributeKey.stringKey("langfuse.observation.type")));
+            assertNull(sdk.getAttributes().get(AttributeKey.longKey("gen_ai.usage.input_tokens")));
+            assertNull(sdk.getAttributes().get(AttributeKey.stringKey("langfuse.observation.status_message")));
+            assertEquals(attempt.getSpanContext().getSpanId(), sdk.getParentSpanId());
+            var gateway = recorder.received.stream().filter(s -> s.getName().equals("llm.attempt")).findFirst().orElseThrow();
+            assertNotNull(gateway.getAttributes().get(AttributeKey.stringKey("langfuse.observation.usage_details")));
+        }
+    }
+
+    @Test void standaloneSdkChatRetainsItsOwnUsage() {
+        RecordingExporter recorder = new RecordingExporter();
+        try (var provider = SdkTracerProvider.builder()
+                .addSpanProcessor(new LangfuseTracingConfig.SessionProcessor())
+                .addSpanProcessor(SimpleSpanProcessor.create(new LangfuseTracingConfig.SafeExporter(recorder))).build()) {
+            var sdk = provider.get("test").spanBuilder("chat standalone").startSpan();
+            sdk.setAttribute("gen_ai.operation.name", "chat");
+            sdk.setAttribute("gen_ai.usage.input_tokens", 12L);
+            sdk.end();
+            assertEquals(12L, recorder.received.getFirst().getAttributes().get(AttributeKey.longKey("gen_ai.usage.input_tokens")));
+            assertNull(recorder.received.getFirst().getAttributes().get(AttributeKey.stringKey("langfuse.observation.type")));
+        }
+    }
+
     @Test void missingLangfuseCredentialsFailFastNotSilently() {
         assertThrows(IllegalArgumentException.class, () -> new LangfuseTracingConfig().langfuseExporter(new LangfuseProperties()));
     }

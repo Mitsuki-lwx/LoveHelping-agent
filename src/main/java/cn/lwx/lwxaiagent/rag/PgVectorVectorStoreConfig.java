@@ -178,7 +178,7 @@ public class PgVectorVectorStoreConfig {
         if ("true".equalsIgnoreCase(System.getProperty("app.rag.reindex", "false"))) {
             log.info("Reindex flag set, clearing vector store and reloading...");
             try {
-                pgJdbcTemplate.execute("DELETE FROM vector_store");
+                pgJdbcTemplate.execute("DELETE FROM vector_store WHERE COALESCE(metadata->>'source', '') NOT IN ('memory', 'evolution')");
             } catch (Exception e) {
                 log.info("vector_store 表尚未创建（全新库首次启动），跳过清空");
             }
@@ -194,17 +194,8 @@ public class PgVectorVectorStoreConfig {
             log.info("vector_store 表尚未创建（全新库首次启动），存量检查跳过");
         }
 
-        // ---- 父子索引迁移检测（ADR-15）：表里若为旧格式（整篇文档，无 parent_id）则重建 ----
-        if (count != null && count > 0) {
-            Integer parentCount = pgJdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM vector_store WHERE metadata->>'parent_id' IS NOT NULL",
-                    Integer.class);
-            if (parentCount == null || parentCount == 0) {
-                log.warn("Vector store contains legacy whole-doc chunks, rebuilding with parent-child index...");
-                pgJdbcTemplate.update("DELETE FROM vector_store");
-                count = 0;
-            }
-        }
+        // ADR-28: overlap chunks intentionally have no parent_id. Never infer a destructive
+        // migration from its absence; retain existing vectors and use doc_hash incremental sync.
 
         // 只在表为空时执行数据导入（幂等性保证）
         if (count != null && count == 0) {

@@ -61,6 +61,8 @@ public class ObservabilityConfig {
      */
     @Value("${management.otlp.tracing.endpoint:}")
     private String otlpEndpoint;
+    @Value("${app.langfuse.enabled:false}")
+    private boolean langfuseEnabled;
 
     /**
      * <h3>应用启动时检查 OTLP 配置就绪状态</h3>
@@ -87,6 +89,10 @@ public class ObservabilityConfig {
      */
     @PostConstruct
     public void init() {
+        if (langfuseEnabled) {
+            log.info("Langfuse bounded OTLP exporter configured; readiness is verified by querying exact request traces.");
+            return;
+        }
         if (otlpEndpoint.isBlank()) {
             log.warn("OTLP endpoint not configured — no traces exported.");
             log.warn("Set management.otlp.tracing.endpoint in application-local.yml");

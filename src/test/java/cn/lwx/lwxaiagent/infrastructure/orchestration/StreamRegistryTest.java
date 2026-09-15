@@ -97,6 +97,34 @@ class StreamRegistryTest {
     }
 
     @Test
+    void unicodeSurrogatesAcrossChunksAreNeverEncodedSeparately() {
+        @SuppressWarnings("unchecked") FluxSink<String> raw = mock(FluxSink.class);
+        List<String> emitted = recordingSink(raw);
+        StreamRegistry.StreamSink sink = new StreamRegistry.StreamSink(raw, "discard");
+        sink.append("A\uD83D");
+        sink.append("\uDEE1\uFE0F B");
+        sink.flush();
+        assertEquals("A\uD83D\uDEE1\uFE0F B", String.join("", emitted));
+        for (String chunk : emitted) {
+            assertFalse(Character.isHighSurrogate(chunk.charAt(chunk.length() - 1)));
+            assertFalse(Character.isLowSurrogate(chunk.charAt(0)));
+        }
+    }
+
+    @Test
+    void adviceWindowCannotSplitEmojiEncoding() {
+        @SuppressWarnings("unchecked") FluxSink<String> raw = mock(FluxSink.class);
+        List<String> emitted = recordingSink(raw);
+        StreamRegistry.StreamSink sink = new StreamRegistry.StreamSink(raw, "discard");
+        sink.enableMarkerStripping();
+        String answer = "\uD83D\uDEE1\uFE0F 安全牌" + "x".repeat(60);
+        for (int i = 0; i < answer.length(); i++) sink.append(answer.substring(i, i + 1));
+        sink.append("@@ADVICE@@{}"); sink.flush();
+        assertEquals(answer, String.join("", emitted));
+        assertTrue(emitted.stream().noneMatch(s -> Character.isHighSurrogate(s.charAt(s.length() - 1))));
+    }
+
+    @Test
     void reasoningDiscardedByDefault() {
         @SuppressWarnings("unchecked")
         FluxSink<String> raw = mock(FluxSink.class);

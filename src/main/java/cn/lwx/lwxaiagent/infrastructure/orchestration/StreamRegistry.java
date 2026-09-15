@@ -52,7 +52,7 @@ public class StreamRegistry {
         this.reasoningMode = reasoningMode == null ? "discard" : reasoningMode;
     }
 
-    /** 注册（订阅建立时调用；重复注册以新 sink 覆盖，旧 sink 置 cancelled 防悬挂推送） */
+    /** Subscription-scoped registration. Duplicate sessions fail without replacing the original sink. */
     public StreamSink register(String chatId, FluxSink<String> sink) {
         StreamSink fresh = new StreamSink(sink, reasoningMode);
         if (sinks.putIfAbsent(chatId, fresh) != null) {
@@ -93,6 +93,7 @@ public class StreamRegistry {
         /** 工具事件（🔧）是否已由节点实时发出（AgentToolNode 置位，防 ChatEntry 重复发） */
         private volatile boolean toolsStreamed;
         private volatile boolean cancelled;
+        private String pendingHighSurrogate = "";
 
         StreamSink(FluxSink<String> sink, String reasoningMode) {
             this.sink = sink;
@@ -185,6 +186,18 @@ public class StreamRegistry {
 
         private void emit(String s) {
             if (cancelled || sink.isCancelled() || s.isEmpty()) {
+                return;
+            }
+            s = pendingHighSurrogate + s;
+            pendingHighSurrogate = "";
+            if (Character.isHighSurrogate(s.charAt(s.length() - 1))) {
+                pendingHighSurrogate = s.substring(s.length() - 1);
+                s = s.substring(0, s.length() - 1);
+            }
+            if (s.isEmpty()) return;
+            if (s.length() > 8192) {
+                cancelled = true;
+                sink.error(new cn.lwx.lwxaiagent.common.BizException(5000, "响应块超过安全上限，请稍后再试"));
                 return;
             }
             try {

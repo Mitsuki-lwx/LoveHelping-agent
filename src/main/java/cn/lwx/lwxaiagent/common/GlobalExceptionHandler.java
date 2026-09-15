@@ -144,6 +144,14 @@ public class GlobalExceptionHandler {
         return Result.fail(400, "缺少必填参数: " + e.getParameterName());
     }
 
+    /** Missing endpoints/assets are client 404s, not server failures (real E2E regression). */
+    @ExceptionHandler({org.springframework.web.servlet.resource.NoResourceFoundException.class,
+            org.springframework.web.servlet.NoHandlerFoundException.class})
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNotFound(Exception ignored) {
+        return Result.fail(404, "请求的资源不存在");
+    }
+
     /**
      * <b>兜底异常处理</b>——处理所有未被上面方法捕获的异常
      *

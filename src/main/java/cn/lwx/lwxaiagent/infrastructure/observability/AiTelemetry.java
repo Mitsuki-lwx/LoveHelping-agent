@@ -42,6 +42,20 @@ public class AiTelemetry {
         span.error(new IllegalStateException(reason));
     }
 
+    /** Fixed taxonomy only: useful diagnostics without private response bodies or exception messages. */
+    public static String failureCategory(Throwable error) {
+        java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Throwable e = error; e != null && seen.add(e); e = e.getCause()) {
+            if (reactor.core.Exceptions.isOverflow(e)) return "backpressure";
+            if (e instanceof java.util.concurrent.TimeoutException || e instanceof java.net.http.HttpTimeoutException) return "timeout";
+            if (e instanceof java.util.concurrent.CancellationException || e instanceof InterruptedException) return "cancelled";
+            if (e instanceof org.springframework.web.reactive.function.client.WebClientResponseException http) return "http_" + http.getStatusCode().value();
+            if (e instanceof org.springframework.web.client.RestClientResponseException http) return "http_" + http.getStatusCode().value();
+            if (e instanceof java.io.IOException) return "transport";
+        }
+        return "execution_failed";
+    }
+
     public static String pseudonym(String raw) {
         if (raw == null || raw.isBlank()) return "anonymous";
         try {

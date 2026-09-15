@@ -55,6 +55,8 @@ public class LangfuseTracingConfig {
         private static final List<String> KEYS = List.of("langfuse.session.id", "langfuse.user.id", "langfuse.trace.name");
         @Override public void onStart(Context parent, ReadWriteSpan span) {
             if (Span.fromContext(parent) instanceof ReadableSpan p) {
+                if ("llm.attempt".equals(p.getName()) || "gateway".equals(p.getAttribute(AttributeKey.stringKey("llm.usage.owner"))))
+                    span.setAttribute("llm.usage.owner", "gateway");
                 for (String key : KEYS) {
                     var attribute = AttributeKey.stringKey(key);
                     String value = p.getAttribute(attribute);
@@ -78,12 +80,25 @@ public class LangfuseTracingConfig {
                 "gen_ai.request.model", "gen_ai.response.model", "gen_ai.operation.name", "gen_ai.system",
                 "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.prompt_tokens", "gen_ai.usage.completion_tokens",
                 "llm.provider", "llm.attempt", "llm.outcome", "graph.route", "graph.node", "graph.outcome",
-                "rag.candidates", "rag.results", "rag.outcome", "rag.mode", "tool.name", "tool.outcome");
+                "rag.candidates", "rag.results", "rag.outcome", "rag.mode", "tool.name", "tool.outcome",
+                "error.category", "chat.outcome", "langfuse.observation.status_message");
         @Override public CompletableResultCode export(Collection<SpanData> spans) {
             List<SpanData> safe = spans.stream().map(s -> (SpanData) new DelegatingSpanData(s) {
                 @Override public Attributes getAttributes() {
                     var out = Attributes.builder();
-                    s.getAttributes().forEach((key, value) -> { if (EXACT.contains(key.getKey())) put(out, key, value); });
+                    // Only a span the gateway actually owns (marked by SessionProcessor under an
+                    // llm.attempt) loses its own usage. A standalone SDK chat span keeps its usage.
+                    boolean sdkChat = "gateway".equals(s.getAttributes().get(AttributeKey.stringKey("llm.usage.owner")));
+                    s.getAttributes().forEach((key, value) -> {
+                        if (!EXACT.contains(key.getKey()) || key.getKey().equals("langfuse.observation.status_message")) return;
+                        if (sdkChat && (key.getKey().startsWith("gen_ai.usage.") || key.getKey().equals("langfuse.observation.usage_details"))) return;
+                        put(out, key, value);
+                    });
+                    // The gateway is the single generation/usage owner. SDK timing remains a child span.
+                    if (sdkChat) out.put("langfuse.observation.type", "span");
+                    String category = s.getAttributes().get(AttributeKey.stringKey("error.category"));
+                    if (category != null && category.matches("backpressure|timeout|transport|cancelled|execution_failed|http_[0-9]{3}"))
+                        out.put("langfuse.observation.status_message", category);
                     return out.build();
                 }
                 @Override public List<EventData> getEvents() { return List.of(); }

@@ -80,6 +80,44 @@ class ChatEntryTest {
         assertSame(sink, streams.get("test")); first.dispose();
         assertEquals(0, online.inFlight()); verify(graph).runAsync(anyMap(), anyString());
     }
+    @Test void slowSseSubscriberMustNotCancelHealthyGraphAfterFirstChunk() {
+        CompletableFuture<Map<String,Object>> run = new CompletableFuture<>();
+        when(graph.runAsync(anyMap(), anyString())).thenReturn(run);
+        var received = new java.util.ArrayList<String>();
+        var error = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var subscriber = new reactor.core.publisher.BaseSubscriber<String>() {
+            @Override protected void hookOnSubscribe(org.reactivestreams.Subscription subscription) { request(1); }
+            @Override protected void hookOnNext(String value) { received.add(value); }
+            @Override protected void hookOnError(Throwable failure) { error.set(failure); }
+        };
+        flux("slow", null).subscribe(subscriber);
+        var sink = streams.get("slow");
+        sink.append("first");
+        sink.append("second");
+        sink.append("third");
+        assertNull(error.get(), "A normal MVC subscriber requests one chunk at a time; a burst must be buffered, not fail");
+        subscriber.request(2);
+        assertEquals(List.of("first", "second", "third"), received);
+        subscriber.dispose();
+    }
+
+    @Test void genuinelyStalledSubscriberHasBoundedBufferAndCancelsWork() {
+        CompletableFuture<Map<String,Object>> run = new CompletableFuture<>();
+        when(graph.runAsync(anyMap(), anyString())).thenReturn(run);
+        var subscriber = new reactor.core.publisher.BaseSubscriber<String>() {
+            @Override protected void hookOnSubscribe(org.reactivestreams.Subscription subscription) { request(1); }
+            @Override protected void hookOnNext(String value) { }
+            @Override protected void hookOnError(Throwable failure) { }
+        };
+        flux("stalled", null).subscribe(subscriber);
+        var sink = streams.get("stalled");
+        for (int i = 0; i < 300; i++) sink.append("x");
+        verify(graph, atLeastOnce()).stop("stalled", run);
+        subscriber.dispose();
+        assertEquals(0, online.inFlight());
+        assertEquals(0, streams.activeCount());
+    }
+
     @Test void ownershipFailureNeverCallsModel() {
         doThrow(new BizException(403, "denied")).when(memory).claimConversation(anyString(), anyString(), anyString());
         assertThrows(BizException.class, () -> flux("other", null).blockLast());

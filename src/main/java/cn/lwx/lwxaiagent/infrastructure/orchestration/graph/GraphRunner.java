@@ -122,6 +122,7 @@ public class GraphRunner {
         } catch (Exception error) {
             boolean cancelled = error instanceof InterruptedException || error instanceof CancellationException || Thread.currentThread().isInterrupted();
             span.tag("graph.outcome", cancelled ? "cancelled" : "error");
+            span.tag("error.category", AiTelemetry.failureCategory(error));
             if (!cancelled) {
                 span.tag("langfuse.observation.level", "ERROR");
                 span.error(new IllegalStateException("Graph execution failed"));

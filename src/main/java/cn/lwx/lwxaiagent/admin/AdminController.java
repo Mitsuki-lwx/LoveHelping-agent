@@ -92,8 +92,10 @@ public class AdminController {
      */
     @GetMapping("/rag/retrieve")
     public Map<String, Object> ragRetrieve(@RequestParam String query,
-            @RequestParam(defaultValue = "false") boolean rerank, HttpServletRequest request) {
+            @RequestParam(defaultValue = "false") boolean rerank,
+            @RequestParam(defaultValue = "false") boolean includeCandidates, HttpServletRequest request) {
         adminGuard.check(request);
+        if (query == null || query.isBlank() || query.length() > 8000) throw new cn.lwx.lwxaiagent.common.BizException(400, "查询长度无效");
         var ragQuery = new org.springframework.ai.rag.Query(query);
         var docs = documentRetriever.retrieve(ragQuery);
         // 可选重排：复用生产 postretrieval 组件，使检索评测可量化 rerank（ADR-25）
@@ -107,9 +109,18 @@ public class AdminController {
                 files.add(f.toString());
             }
         }
-        log.info("Admin rag/retrieve query='{}' rerank={} hits={} files={}", query.length() > 40 ? query.substring(0, 40) : query,
+        log.info("Admin rag/retrieve queryChars={} rerank={} hits={} files={}", query.length(),
                 rerank, docs.size(), files.size());
-        return Map.of("query", query, "rerank", rerank, "hits", new java.util.ArrayList<>(files));
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("query", query); result.put("rerank", rerank); result.put("hits", new java.util.ArrayList<>(files));
+        if (includeCandidates) {
+            // Admin-only bounded snapshot of the ACTUAL input to rerank. Never return memory/skill data.
+            result.put("candidates", docs.stream().filter(d -> !java.util.Set.of("memory", "evolution")
+                    .contains(java.util.Objects.toString(d.getMetadata().get("source"), ""))).limit(50)
+                    .map(d -> Map.of("id", d.getId(), "filename", java.util.Objects.toString(d.getMetadata().get("filename"), ""),
+                            "text", d.getText() == null ? "" : d.getText().substring(0, Math.min(1200, d.getText().length())))).toList());
+        }
+        return result;
     }
 
 }
