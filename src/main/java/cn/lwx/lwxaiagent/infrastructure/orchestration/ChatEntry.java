@@ -114,7 +114,8 @@ public class ChatEntry {
                     try { callback.accept(ok, reason); } catch (RuntimeException ignored) { metric("task_callback_error"); }
                 }
             };
-            if (!online.enter()) { notify.accept(false, "overloaded"); return Flux.error(overloaded()); }
+            OnlineLoadTracker.Admission admission = online.admit();
+            if (!admission.admitted()) { notify.accept(false, "overloaded"); return Flux.error(overloaded(admission)); }
             long start = System.nanoTime();
             AtomicReference<StreamRegistry.StreamSink> registered = new AtomicReference<>();
             AtomicReference<CompletableFuture<Map<String, Object>>> future = new AtomicReference<>();
@@ -170,9 +171,20 @@ public class ChatEntry {
         if (error instanceof java.util.concurrent.CompletionException && error.getCause() != null) return error.getCause();
         return error;
     }
-    private BizException overloaded() {
+    private BizException overloaded(OnlineLoadTracker.Admission admission) {
         int retry = Math.min(30, Math.max(2, (int) Math.ceil(online.avgDurationMs() / 1000.0)));
-        return new BizException(4003, "当前咨询较多，请稍后再试", Map.of("currentLoad", online.inFlight(), "maxLoad", online.maxInFlight(), "retryAfterSec", retry));
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("currentLoad", online.inFlight());
+        data.put("maxLoad", online.maxInFlight());
+        data.put("queueDepth", online.queueDepth());
+        data.put("retryAfterSec", retry);
+        data.put("reason", admission.reason());
+        data.put("waitedMs", admission.waitedMs());
+        // 排队等过仍没排到 → 告诉用户"等过了"；从未排上队（队列已满）→ 只给重试建议。
+        String message = "wait_timeout".equals(admission.reason())
+                ? String.format("当前咨询较多，已等待 %.1f 秒仍未排到，请稍后再试", admission.waitedMs() / 1000.0)
+                : "当前咨询较多，请稍后再试";
+        return new BizException(4003, message, data);
     }
     private void validate(String message, String id) {
         if (message == null || message.isBlank() || message.length() > 8000) throw new BizException(400, "消息不能为空且不能超过 8000 字符");
