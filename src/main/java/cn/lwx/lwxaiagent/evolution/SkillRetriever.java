@@ -133,9 +133,10 @@ public class SkillRetriever {
 
         log.info("SkillRetriever injected {} skills for tenant={}", count, tenantId);
         // 可观测（2026-09-05）：skill.injection——进化模块实际注入效果（08 §2.2 契约兑现）
-        if (count > 0) {
+        // 指标上报不得影响对话（2026-09-16 加固）：此处位于提示词装配路径上，异常会带崩整个请求。
+        try {
             meterRegistry.counter("skill.injection").increment();
-        }
+        } catch (Exception ignored) {}
         return sb.toString();
     }
 
@@ -159,11 +160,24 @@ public class SkillRetriever {
         // 双轨收敛（2026-09-06）：技能检索从门面(B)改为直查向量 + 源过滤（技能数据量小，纯向量足够）
         if (vectorStore != null) {
             log.info("SkillRetriever: searching vector store for '{}' (topK={})", query, topK);
-            var docs = vectorStore.similaritySearch(
-                    org.springframework.ai.vectorstore.SearchRequest.builder().query(query).topK(topK).build());
-            return docs.stream()
-                    .filter(d -> "evolution".equals(d.getMetadata().get("source")))
-                    .toList();
+            try {
+                var docs = vectorStore.similaritySearch(
+                        org.springframework.ai.vectorstore.SearchRequest.builder().query(query).topK(topK).build());
+                return docs.stream()
+                        .filter(d -> "evolution".equals(d.getMetadata().get("source")))
+                        .toList();
+            } catch (Exception e) {
+                // 契约兑现（2026-09-16）：技能注入是**增强项**，必须"不可用时跳过、不影响对话"
+                // （见类注释与 ADR-1）。embedding/向量库故障（上游 429、网络中断、pgvector 不可用）
+                // 曾在此处直接抛出，把整条聊天链路带崩为 5000「AI 服务暂时不可用」——
+                // 与 MemoryVectorStore.searchMemory 的既有降级姿势对齐。
+                log.warn("SkillRetriever: vector search failed, skipping skill injection: {}", e.getMessage());
+                // 指标上报本身不得再抛：否则降级路径会被二次异常击穿（与 ChatExecutor 的姿势一致）
+                try {
+                    meterRegistry.counter("skill.retrieve.degraded").increment();
+                } catch (Exception ignored) {}
+                return List.of();
+            }
         }
         log.debug("SkillRetriever: no vector store available, skipping skill search");
         return List.of();
