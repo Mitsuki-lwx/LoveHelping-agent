@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.scheduler;
 
+import cn.lwx.lwxaiagent.infrastructure.ai.CapacityLimitChanged;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +30,48 @@ class OnlineLoadTrackerTest {
         OnlineLoadTracker t = new OnlineLoadTracker(4, new SimpleMeterRegistry());
         t.exit(); // 未 enter 先 exit（防御）
         assertEquals(0, t.inFlight());
+    }
+
+    /**
+     * ADR-32：准入天花板必须跟随网关的自适应上限。
+     * 否则网关自适应收缩到 15 而准入仍放 24，多出的 9 个请求会被网关拒成 4003。
+     */
+    @Test
+    void admissionCeilingFollowsAdaptiveGatewayLimit() {
+        OnlineLoadTracker t = new OnlineLoadTracker(4, new SimpleMeterRegistry());
+        assertTrue(t.enter());
+        assertTrue(t.enter());
+        assertTrue(t.enter());
+        assertTrue(t.enter());
+        assertEquals(4, t.inFlight());
+
+        // 网关自适应收缩到 2：天花板立即下调（即便许可已全部借出）
+        t.onCapacityLimitChanged(new CapacityLimitChanged(2));
+        assertEquals(2, t.ceiling());
+        assertEquals(2, t.maxInFlight());
+        t.exit();
+        t.exit();
+        t.exit();
+        t.exit();
+        assertEquals(0, t.inFlight());
+        assertTrue(t.enter());
+        assertTrue(t.enter());
+        assertFalse(t.enter()); // 天花板 2 → 只放 2 个
+
+        // 网关回升到 4
+        t.onCapacityLimitChanged(new CapacityLimitChanged(4));
+        assertTrue(t.enter());
+        assertTrue(t.enter());
+        assertFalse(t.enter());
+    }
+
+    @Test
+    void ceilingIsClampedToConfiguredMaxAndAtLeastOne() {
+        OnlineLoadTracker t = new OnlineLoadTracker(8, new SimpleMeterRegistry());
+        t.onCapacityLimitChanged(new CapacityLimitChanged(100));
+        assertEquals(8, t.ceiling(), "不得超过配置的 app.online.max-inflight");
+        t.onCapacityLimitChanged(new CapacityLimitChanged(0));
+        assertEquals(1, t.ceiling(), "地板为 1，避免自我饿死");
     }
 
     @Test

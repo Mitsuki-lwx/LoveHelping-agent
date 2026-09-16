@@ -13,6 +13,7 @@ import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -32,38 +33,43 @@ public class LlmGateway implements ChatModel {
     private final LlmGatewayProperties props;
     private final MeterRegistry meters;
     private final AiTelemetry telemetry;
-    private final Semaphore permits;
+    private final AdaptiveConcurrencyLimiter limiter;
     private final ThreadPoolExecutor blocking;
     private final ProviderCircuit primaryCircuit;
     private final ProviderCircuit fallbackCircuit;
+    private final ApplicationEventPublisher events;
     private double retryTokens;
     private long refillNanos = System.nanoTime();
 
     @Autowired
     public LlmGateway(@Qualifier("openAiChatModel") ChatModel primary,
                       @Autowired(required = false) @Qualifier("deepSeekChatModel") ChatModel fallback,
-                      LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry) {
+                      LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry,
+                      ApplicationEventPublisher events) {
         this.primary = primary;
         this.fallback = fallback;
         this.props = props;
         this.meters = meters;
         this.telemetry = telemetry;
+        this.events = events;
         int max = Math.max(1, props.getMaxConcurrentCalls());
-        this.permits = new Semaphore(max);
+        this.limiter = new AdaptiveConcurrencyLimiter(max, props.getAdaptive());
         this.blocking = new ThreadPoolExecutor(max, max, 30, TimeUnit.SECONDS,
                 new SynchronousQueue<>(), Thread.ofPlatform().daemon().name("llm-call-", 0).factory(),
                 new ThreadPoolExecutor.AbortPolicy());
         blocking.allowCoreThreadTimeOut(true);
         var c = props.getCircuit();
-        primaryCircuit = new ProviderCircuit(c.isEnabled(), c.getFailureThreshold(), c.getOpenMs());
-        fallbackCircuit = new ProviderCircuit(c.isEnabled(), c.getFailureThreshold(), c.getOpenMs());
+        primaryCircuit = new ProviderCircuit(c);
+        fallbackCircuit = new ProviderCircuit(c);
         retryTokens = props.getRetry().getBudgetPerMinute();
-        meters.gauge("llm.inflight", permits, p -> max - p.availablePermits());
+        meters.gauge("llm.inflight", limiter, AdaptiveConcurrencyLimiter::inflight);
+        // ADR-32: 闸门不再是固定值，暴露自适应收敛结果便于观测"厂商现在能容忍多少"。
+        meters.gauge("llm.permits.limit", limiter, AdaptiveConcurrencyLimiter::limit);
     }
 
     /** Explicit NOOP tracing for isolated unit tests. */
     public LlmGateway(ChatModel primary, ChatModel fallback, LlmGatewayProperties props, MeterRegistry meters) {
-        this(primary, fallback, props, meters, new AiTelemetry(Tracer.NOOP));
+        this(primary, fallback, props, meters, new AiTelemetry(Tracer.NOOP), event -> { });
     }
 
     @Override
@@ -105,15 +111,16 @@ public class LlmGateway implements ChatModel {
         String outcome = "fail";
         try {
             work = blocking.submit(() -> {
-                if (!permits.tryAcquire()) throw new CapacityException();
+                if (!limiter.tryAcquire()) throw new CapacityException();
                 try (var ignored = telemetry.scope(span)) {
                     ChatResponse response = model.call(prompt);
                     if (!meaningful(response)) throw new EmptyResponseException();
                     return response;
-                } finally { permits.release(); }
+                } finally { limiter.release(); }
             });
             ChatResponse response = work.get(timeout, TimeUnit.MILLISECONDS);
             ticket.success();
+            if (limiter.onSuccess()) adaptive(provider, "grow");
             usage(response, provider, span);
             outcome = "success";
             return response;
@@ -130,6 +137,7 @@ public class LlmGateway implements ChatModel {
             Throwable cause = e.getCause();
             RuntimeException failure = cause instanceof RuntimeException r ? r : new CompletionException(cause);
             if (fallbackAllowed(failure)) ticket.failure(); else ticket.cancel();
+            if (throttled(failure) && limiter.onThrottled()) adaptive(provider, "shrink");
             outcome = cancelled(failure) ? "cancelled" : "fail";
             throw failure;
         } catch (RejectedExecutionException e) {
@@ -184,14 +192,14 @@ public class LlmGateway implements ChatModel {
         return Flux.defer(() -> {
             ProviderCircuit.Ticket ticket = circuit.acquire();
             if (ticket == null) { metric("llm.circuit", provider, "rejected"); return Flux.error(new CircuitOpenException()); }
-            if (!permits.tryAcquire()) { ticket.cancel(); return Flux.error(new CapacityException()); }
+            if (!limiter.tryAcquire()) { ticket.cancel(); return Flux.error(new CapacityException()); }
             Span span = attemptSpan(provider, attempt, parent);
             long start = System.nanoTime();
             AtomicBoolean content = new AtomicBoolean();
             AtomicReference<ChatResponse> lastUsage = new AtomicReference<>();
             AtomicReference<String> outcome = new AtomicReference<>("cancelled");
             AtomicBoolean released = new AtomicBoolean();
-            Runnable release = () -> { if (released.compareAndSet(false, true)) permits.release(); };
+            Runnable release = () -> { if (released.compareAndSet(false, true)) limiter.release(); };
             return Flux.defer(() -> {
                         try (var ignored = telemetry.scope(span)) { return model.stream(prompt); }
                     })
@@ -203,9 +211,15 @@ public class LlmGateway implements ChatModel {
                         if (hasUsage(r)) lastUsage.set(r);
                     })
                     .concatWith(Flux.defer(() -> content.get() ? Flux.empty() : Flux.error(new EmptyResponseException())))
-                    .doOnComplete(() -> { ticket.success(); outcome.set("success"); release.run(); })
+                    .doOnComplete(() -> {
+                        ticket.success();
+                        outcome.set("success");
+                        if (limiter.onSuccess()) adaptive(provider, "grow");
+                        release.run();
+                    })
                     .doOnError(e -> {
                         if (fallbackAllowed(e)) ticket.failure(); else ticket.cancel();
+                        if (throttled(e) && limiter.onThrottled()) adaptive(provider, "shrink");
                         outcome.set(e instanceof TimeoutException ? "timeout" : "fail");
                         release.run(); // Release before downstream retry/fallback subscribes.
                     })
@@ -236,6 +250,17 @@ public class LlmGateway implements ChatModel {
 
     private boolean canFallback(Throwable e) {
         return props.isFallbackEnabled() && fallback != null && e != null && fallbackAllowed(e);
+    }
+
+    /**
+     * 闸门收敛值发生变化时：记指标 + 广播给准入层（ADR-32）。
+     *
+     * <p>准入层必须跟随同一个收敛值，否则"网关放行 24、实际只跑 15"会让多出的请求
+     * 变成自家 4003——厂商的 429 只是被换成自家拒绝，用户可见失败率反而升高。</p>
+     */
+    private void adaptive(String provider, String outcome) {
+        metric("llm.adaptive", provider, outcome);
+        events.publishEvent(new CapacityLimitChanged(limiter.limit()));
     }
 
     private RuntimeException publicFailure(Throwable e) {

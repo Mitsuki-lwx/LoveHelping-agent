@@ -25,6 +25,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * 该上限必须 ≤ 上游厂商可承受的并发（2026-09-15 实测 glm-4-flash ≈ 24），
  * 否则超额会透传成厂商 429 并被重试放大；启动期由 {@code CapacityGuard} 校验。</p>
  *
+ * <p><b>动态天花板（ADR-32，2026-09-16）</b>：{@code app.online.max-inflight} 现在只是**设计上限**，
+ * 实际准入天花板由网关的 AIMD 自适应上限驱动（见 {@link #onCapacityLimitChanged}）——
+ * 两层闸门必须用同一个收敛值，否则网关会把自己放行的请求拒成 4003。</p>
+ *
  * <p><b>有界排队（Phase 6，ADR-29）</b>：闸门满时不再立即拒绝，而是在
  * {@code app.online.wait-ms} 内排队等待腾出的额度；等待者数量受
  * {@code app.online.queue-capacity} 限制（超出的立即拒绝，保护容器线程）。
@@ -47,10 +51,27 @@ public class OnlineLoadTracker {
     private final long waitMs;
     /** 等待者上限：超出直接拒绝，避免无界堆积阻塞容器线程 */
     private final int queueCapacity;
-    /** 公平信号量：按到达顺序发放额度，避免高并发下的饥饿 */
-    private final Semaphore permits;
+    /**
+     * 动态天花板（ADR-32）：默认 = {@link #maxInFlight}，由网关的自适应上限驱动下调/回升。
+     * 准入不得高于网关实际能跑的并发，否则多出的请求只会被网关拒成 4003。
+     */
+    private volatile int ceiling;
+    /** 公平信号量：按到达顺序发放额度，避免高并发下的饥饿。容量可随天花板收缩/回升。 */
+    private final ResizableSemaphore permits;
     private final AtomicInteger waiters = new AtomicInteger();
     private final MeterRegistry meterRegistry;
+
+    /**
+     * 可收缩的公平信号量。{@link Semaphore#reducePermits(int)} 是 protected，故子类化暴露。
+     * 计数可转负——因此即便许可已全部借出，天花板下调也能立即生效（后续 release 先还债再加容量）。
+     */
+    private static final class ResizableSemaphore extends Semaphore {
+        ResizableSemaphore(int permits, boolean fair) { super(permits, fair); }
+
+        void shrink(int delta) { reducePermits(delta); }
+
+        void grow(int delta) { release(delta); }
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public OnlineLoadTracker(@Value("${app.online.max-inflight:8}") int maxInFlight,
@@ -60,7 +81,8 @@ public class OnlineLoadTracker {
         this.maxInFlight = Math.max(1, maxInFlight);
         this.waitMs = Math.max(0, waitMs);
         this.queueCapacity = Math.max(0, queueCapacity);
-        this.permits = new Semaphore(this.maxInFlight, true);
+        this.ceiling = this.maxInFlight;
+        this.permits = new ResizableSemaphore(this.maxInFlight, true);
         this.meterRegistry = meterRegistry;
         try {
             Gauge.builder("online.inflight.current", this, OnlineLoadTracker::inFlight)
@@ -75,6 +97,27 @@ public class OnlineLoadTracker {
     /** 兼容构造（测试与旧装配用）：关闭排队、队列容量与闸门等同 */
     public OnlineLoadTracker(int maxInFlight, MeterRegistry meterRegistry) {
         this(maxInFlight, 0L, Math.max(1, maxInFlight), meterRegistry);
+    }
+
+    /**
+     * ADR-32：跟随网关的自适应并发上限，动态调整准入天花板。
+     *
+     * <p>只下调到 {@code adaptive.min-concurrent-calls}、不上调到超过配置的
+     * {@code app.online.max-inflight}（后者仍是设计上限）。</p>
+     */
+    @org.springframework.context.event.EventListener
+    public synchronized void onCapacityLimitChanged(cn.lwx.lwxaiagent.infrastructure.ai.CapacityLimitChanged event) {
+        int target = Math.max(1, Math.min(maxInFlight, event.limit()));
+        int delta = target - ceiling;
+        if (delta == 0) return;
+        if (delta < 0) permits.shrink(-delta); else permits.grow(delta);
+        ceiling = target;
+        log.info("admission ceiling follows adaptive gateway limit: {} (configured max={})", target, maxInFlight);
+    }
+
+    /** 当前准入天花板（= min(配置上限, 网关自适应上限)） */
+    public int ceiling() {
+        return ceiling;
     }
 
     /** 一次准入的结果与拒绝原因（供调用方生成可读提示与指标） */
@@ -147,7 +190,7 @@ public class OnlineLoadTracker {
     /** 在线请求结束（SSE 流完成/取消/异常） */
     public void exit() {
         try {
-            if (permits.availablePermits() < maxInFlight) {
+            if (permits.availablePermits() < ceiling) {
                 permits.release();
             }
             touch();
@@ -156,10 +199,10 @@ public class OnlineLoadTracker {
         }
     }
 
-    /** 当前在途在线请求数 */
+    /** 当前在途在线请求数（相对动态天花板口径） */
     public int inFlight() {
-        int used = maxInFlight - permits.availablePermits();
-        return Math.max(0, Math.min(maxInFlight, used));
+        int used = ceiling - permits.availablePermits();
+        return Math.max(0, Math.min(ceiling, used));
     }
 
     /** 当前排队等待者数量 */
@@ -167,9 +210,9 @@ public class OnlineLoadTracker {
         return waiters.get();
     }
 
-    /** 闸门上限（排队长度估算用） */
+    /** 准入天花板（动态；排队长度估算与用户提示用） */
     public int maxInFlight() {
-        return maxInFlight;
+        return ceiling;
     }
 
     /** 有界等待上限（毫秒） */

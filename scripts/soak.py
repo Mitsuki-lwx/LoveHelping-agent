@@ -66,6 +66,10 @@ GAUGE_KEYS = [
     ("hikari_idle", "hikaricp_connections_idle"),
     ("hikari_pending", "hikaricp_connections_pending"),
     ("hikari_max", "hikaricp_connections_max"),
+    # ADR-32：自适应闸门的收敛值必须随时间可见——只看首尾差值无法区分
+    # "稳定收敛在某值" 与 "AIMD 在 [min,max] 间锯齿摆动"。
+    ("llm_limit", "llm_permits_limit"),
+    ("llm_inflight", "llm_inflight"),
 ]
 COUNTER_KEYS = [
     ("entered", "online_inflight_entered"),
@@ -231,7 +235,8 @@ def weighted_plan():
 
 def fmt_row(row):
     return "|".join("%s=%s" % (k, row.get(k)) for k in
-                    ("ts", "inflight", "queue_depth", "hikari_active", "hikari_idle", "hikari_pending", "heap_used"))
+                    ("ts", "inflight", "llm_limit", "llm_inflight", "queue_depth",
+                     "hikari_active", "hikari_idle", "hikari_pending", "heap_used"))
 
 
 def summarize(samples, requests, args, started_at, load_ended_at):

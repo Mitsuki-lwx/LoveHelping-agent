@@ -131,10 +131,71 @@ class LlmGatewayTest {
         verify(primary, times(12)).call(any(Prompt.class));
     }
     @Test void circuitOpensAndRejectsWithoutCallingSupplier() {
-        props.getRetry().setMaxAttempts(1); props.getCircuit().setFailureThreshold(2); props.setFallbackEnabled(false);
+        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false);
+        // ADR-32：滑窗失败率判定。2 个样本全部失败 = 100% >= 50% → 打开。
+        props.getCircuit().setSlidingWindowSize(2);
+        props.getCircuit().setMinimumNumberOfCalls(2);
+        props.getCircuit().setFailureRateThreshold(0.5);
         when(primary.call(any(Prompt.class))).thenThrow(http(503)); var g = create();
         for (int i = 0; i < 5; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
         verify(primary, times(2)).call(any(Prompt.class));
+    }
+
+    /** S10 回归锁：厂商个位数~两成百分比的背景拒绝不得把熔断打开（旧连续计数实现在此会打开）。 */
+    @Test void transientThrottleBurstDoesNotTripCircuit() {
+        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false);
+        AtomicInteger calls = new AtomicInteger();
+        when(primary.call(any(Prompt.class))).thenAnswer(i -> {
+            if (calls.incrementAndGet() % 5 == 0) throw http(429);
+            return response("ok");
+        });
+        var g = create();
+        for (int i = 0; i < 60; i++) {
+            try { g.call(new Prompt("test")); } catch (BizException expected) { /* 20% 背景拒绝 */ }
+        }
+        verify(primary, times(60)).call(any(Prompt.class)); // 60 次全部真正打到供应商，零次被熔断快速失败
+        assertNull(meters.find("llm.circuit").counter(), "20% 背景拒绝不应触发熔断");
+    }
+
+    /** ADR-32：闸门遇限流乘性收缩、连续成功加性回升（厂商上限不固定，让闸门自己收敛）。 */
+    @Test void adaptiveGateShrinksOnThrottleAndGrowsAfterSuccesses() {
+        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
+        var g = create();
+        assertEquals(24, limit());
+        when(primary.call(any(Prompt.class))).thenThrow(http(429));
+        assertThrows(BizException.class, () -> g.call(new Prompt("test")));
+        assertEquals(16, limit(), "floor(24 * 0.7) = 16");
+        when(primary.call(any(Prompt.class))).thenReturn(response("ok"));
+        for (int i = 0; i < 20; i++) g.call(new Prompt("test"));
+        assertEquals(17, limit(), "连续 20 次成功后加性回升 1");
+    }
+
+    /** 收缩有地板：厂商持续限流也不会把闸门压到自我饿死。 */
+    @Test void adaptiveGateNeverShrinksBelowFloor() {
+        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
+        when(primary.call(any(Prompt.class))).thenThrow(http(429));
+        var g = create();
+        for (int i = 0; i < 20; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
+        assertEquals(4, limit(), "地板 = adaptive.min-concurrent-calls");
+    }
+
+    private double limit() {
+        return meters.get("llm.permits.limit").gauge().value();
+    }
+
+    /** ADR-32：闸门收缩/回升必须广播给准入层，否则两层闸门会不一致。 */
+    @Test void adaptiveChangeBroadcastsAdmissionCeiling() {
+        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
+        List<Integer> broadcast = new java.util.ArrayList<>();
+        gateway = new LlmGateway(primary, fallback, props, meters,
+                new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP),
+                event -> broadcast.add(((CapacityLimitChanged) event).limit()));
+        when(primary.call(any(Prompt.class))).thenThrow(http(429));
+        assertThrows(BizException.class, () -> gateway.call(new Prompt("test")));
+        assertEquals(List.of(16), broadcast);
+        when(primary.call(any(Prompt.class))).thenReturn(response("ok"));
+        for (int i = 0; i < 20; i++) gateway.call(new Prompt("test"));
+        assertEquals(List.of(16, 17), broadcast);
     }
     @Test void delayParsesHttpDateAndNeverShortensRetryAfter() {
         long now = java.time.Instant.parse("2026-09-13T00:00:00Z").toEpochMilli();

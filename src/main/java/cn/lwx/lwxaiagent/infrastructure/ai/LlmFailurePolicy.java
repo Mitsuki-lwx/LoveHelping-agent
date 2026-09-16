@@ -51,6 +51,38 @@ final class LlmFailurePolicy {
         return retryable(e);
     }
 
+    /**
+     * 厂商限流信号（ADR-32）：驱动并发闸门乘性收缩。
+     *
+     * <p>只认"被下游拒了"这一类证据，不认本地闸门拒绝（{@link CapacityException} 是自家队列满，
+     * 收缩并发只会让本地更饿）、不认超时/连接失败（那是链路问题，不是配额问题）。</p>
+     *
+     * <p>识别两层：HTTP 429 直接判定；SDK 把错误体包成无状态码的
+     * {@link TransientAiException} 时，退化为报文关键字匹配（bigmodel 的限流码是 1302）。</p>
+     */
+    static boolean throttled(Throwable e) {
+        if (cancelled(e) || e instanceof CapacityException) return false;
+        for (Throwable t : causes(e)) {
+            Integer s = status(t);
+            if (s != null && s == 429) return true;
+        }
+        for (Throwable t : causes(e)) {
+            String message = t.getMessage();
+            if (message == null) continue;
+            String lower = message.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("429") || lower.contains("too many requests")
+                    || lower.contains("rate limit") || lower.contains("rate_limit")
+                    || lower.contains("concurrency limit") || lower.contains("concurrency_limit")) return true;
+            // bigmodel 把限流包在错误体里（无 HTTP 状态码透出），错误码 1302 = 并发/速率超限。
+            if (THROTTLE_CODE.matcher(message).find()) return true;
+        }
+        return false;
+    }
+
+    /** 匹配 {@code "code":"1302"} / {@code "code": 1302} 等错误体写法。 */
+    private static final java.util.regex.Pattern THROTTLE_CODE =
+            java.util.regex.Pattern.compile("\"code\"\\s*:\\s*\"?1302\"?");
+
     static long delayMs(Throwable e, int failedAttempt, LlmGatewayProperties.Retry p, long nowMs) {
         long exponential = (long) Math.min(p.getMaxBackoffMs(), p.getBackoffMs() * Math.pow(2, failedAttempt - 1));
         double jitter = p.getJitter();

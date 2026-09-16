@@ -182,10 +182,24 @@ app:
       max-backoff-ms: 5000
       jitter: 0.5
       budget-per-minute: 30
+    # ADR-32：熔断按"滑窗失败率"判定（原连续 N 次计数已删除——它把厂商个位数百分比的
+    # 背景拒绝经重试放大成 15s 全量降级）。50 次窗口 + 20 个样本起判 + 50% 阈值，
+    # 与 Resilience4j 默认形状一致：噪声（<10%）判不开，真故障（≈100%）立刻开。
     circuit:
       enabled: true
-      failure-threshold: 5
       open-ms: 15000
+      max-open-ms: 60000
+      sliding-window-size: 50
+      minimum-number-of-calls: 20
+      failure-rate-threshold: 0.5
+      half-open-probes: 3
+    # ADR-32：厂商并发上限会漂移（实测 16~28），闸门不再硬编码在实测值上，改为 AIMD 自收敛。
+    # 收到限流（429/厂商限流码）乘性收缩，连续成功 20 次加性回升 1，区间 [min, max-concurrent-calls]。
+    adaptive:
+      enabled: ${LLM_ADAPTIVE_ENABLED:true}
+      min-concurrent-calls: 4
+      decrease-factor: 0.7
+      increase-after-successes: 20
     fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
     # 视觉模型（ADR-11）：基于 GoPlan 端点换 model 即多模态；未配置则图片聊天不可用
     vision-model: mimo-v2.5
