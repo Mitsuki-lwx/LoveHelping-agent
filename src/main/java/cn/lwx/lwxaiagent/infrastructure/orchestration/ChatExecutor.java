@@ -237,8 +237,19 @@ public class ChatExecutor {
     }
 
     /**
+     * 三牌协议上限（ADR-18）：对外承诺"最多三档建议"。
+     *
+     * <p>模型偶尔会多输出一个牌位（2026-09-16 实测约 1/3 概率多给一档，属 ADR-18
+     * 已知的"LLM 生成格式有波动"代价），正则切片会**忠实**切出第 4 段。
+     * 这里按协议**截断**：由代码保证确定性，不依赖 prompt 约束模型自觉
+     * （glm-flash 对 prompt 约束并不稳定）。将来若要支持 4/5 档，只改这个常量。</p>
+     */
+    public static final int MAX_ADVICE_TIERS = 3;
+
+    /**
      * 三牌切片（FR-CORE-01）：按 🛡️/⚡/🌸 分块，每块抽 content 与 reaction。
      * 公开静态便于单测；解析失败/不足两牌的块整体降级为纯文本。
+     * 结果按 {@link #MAX_ADVICE_TIERS} 截断，超出的牌位丢弃。
      */
     public static List<AdviceTier> sliceTiers(String text) {
         if (text == null || text.isBlank()) return List.of();
@@ -258,7 +269,10 @@ public class ChatExecutor {
             };
             tiers.add(parseTier(name, body));
         }
-        return tiers;
+        // 协议上限截断（ADR-18）：确定性由代码保证，判据只验"三牌齐全且内容非空"。
+        return tiers.size() > MAX_ADVICE_TIERS
+                ? List.copyOf(tiers.subList(0, MAX_ADVICE_TIERS))
+                : tiers;
     }
 
     private static AdviceTier parseTier(String name, String body) {

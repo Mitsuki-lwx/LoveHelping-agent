@@ -44,6 +44,23 @@ class ChatExecutorTierSliceTest {
     }
 
     @Test
+    void sliceTiers_truncatesBeyondProtocolLimit() {
+        // 模型多输出一个牌位（2026-09-16 实测约 1/3 概率）→ 按协议上限截断，
+        // 确定性由代码保证，不依赖 prompt 约束模型自觉。
+        String text = """
+                🛡️ 安全牌（保守）: 发一句最近还好吗，先不施压看看她的反应。
+                ⚡ 进击牌（主动）: 直接约周末见面，当面把话说清楚表达诚意。
+                🌸 后撤牌（给空间）: 暂时不打扰，给她几天时间自己消化情绪。
+                🛡️ 又一个安全牌: 或者先发条轻松的消息试探，别一上来就谈这件事。
+                """;
+        List<ChatExecutor.AdviceTier> tiers = ChatExecutor.sliceTiers(text);
+        assertEquals(ChatExecutor.MAX_ADVICE_TIERS, tiers.size(), "超出协议上限的牌位应被截断");
+        assertEquals("安全牌", tiers.get(0).name());
+        assertEquals("进击牌", tiers.get(1).name());
+        assertEquals("后撤牌", tiers.get(2).name(), "截断应保留前 N 档且保持原顺序");
+    }
+
+    @Test
     void sliceTiers_blankOrNull_returnsEmpty() {
         assertTrue(ChatExecutor.sliceTiers(null).isEmpty());
         assertTrue(ChatExecutor.sliceTiers("  ").isEmpty());
