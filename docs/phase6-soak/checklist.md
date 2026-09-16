@@ -94,8 +94,12 @@
 - [x] F1 `docs/09` 新增 §8.9（本轮实测：E2E 复验 + 30 分钟采样曲线与判定表）
 - [x] F2 `docs/03` ADR-29 的"未验收"行更新（**据实改写**：应用侧 12/13 通过，S10 不通过并归因环境）
 - [x] F3 `docs/phase6-concurrency/checklist.md` 的 30 分钟项与 `docs/09` §6.1 步骤 6 同步勾选
-- [ ] F4 提交并推送；无密钥入库 —— **提交已做**；**推送受阻**：`git ls-remote` 被拒
-      （`Connection closed by 198.18.0.126 port 22`，与本机代理环境同源），待网络恢复后推送
+- [x] F4 提交并推送；无密钥入库 —— 提交 2 个（`adaa5b5` 修复 + `929b166` 落档），
+      已推送至 `origin/main`（`387a929..929b166`），远端 `refs/heads/main` 与本地 HEAD 一致；
+      待提交文件密钥扫描无命中，`application-local.yml` / `logs/` / `outputs/` 均未入库
+      （**推送绕行**：本机代理只放行 443，`github.com:22` 被 `198.18.0.126` 关闭 →
+      用 `-c core.sshCommand="ssh -o Hostname=ssh.github.com -o Port=443"` 一次性绕行，
+      未改动用户 `~/.ssh/config`）
 - [x] F5 项目记忆（`.workbuddy/memory`）更新本轮结论
 
 ## G. 明确不做（防范围蔓延，逐条确认未越界）
