@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ADR-33：上游故障期第三方日志噪音限流。
+
+  背景：DashScope 不可达时，若干第三方 logger 每次失败都打完整堆栈，实测 30 分钟
+  产出 1.78 GB（93.9% 是堆栈行，≈3.6 GB/h）。同一失败我们已在入口层处理并导出为
+  指标与结构化降级日志，故对这些"已知重复噪音"做时间窗限流。
+
+  行为：白名单 logger 每 window-ms 最多放行 max-per-window 条（含完整堆栈），
+  其余丢弃；窗口结束时输出一条汇总（logger=app.log.throttled）告知抑制条数。
+  白名单之外的日志完全不受影响。
+
+  回退：app.logging.throttle.enabled=false（或删掉本文件）即恢复原行为。
+
+  说明：base.xml 保持 Spring Boot 默认的 console 输出、日志格式与级别行为不变；
+  application.yml 里的 logging.level.* 仍然照常生效。
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+
+    <springProperty name="THROTTLE_ENABLED" source="app.logging.throttle.enabled" defaultValue="true"/>
+    <springProperty name="THROTTLE_WINDOW_MS" source="app.logging.throttle.window-ms" defaultValue="10000"/>
+    <springProperty name="THROTTLE_MAX" source="app.logging.throttle.max-per-window" defaultValue="3"/>
+    <springProperty name="THROTTLE_LOGGERS" source="app.logging.throttle.loggers"
+                    defaultValue="org.springframework.ai.chat.model.MessageAggregator,org.springframework.ai.retry.autoconfigure.SpringAiRetryAutoConfiguration,com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel"/>
+
+    <turboFilter class="cn.lwx.lwxaiagent.infrastructure.logging.LogThrottleFilter">
+        <enabled>${THROTTLE_ENABLED}</enabled>
+        <windowMs>${THROTTLE_WINDOW_MS}</windowMs>
+        <maxPerWindow>${THROTTLE_MAX}</maxPerWindow>
+        <loggers>${THROTTLE_LOGGERS}</loggers>
+    </turboFilter>
+
+</configuration>

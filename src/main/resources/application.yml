@@ -152,6 +152,23 @@ app:
   # 而应用的闸门恰好是 24，把真实并发压住了。直连上游阶梯探测（绕过应用）实测：
   #   ≤16 全通；32 → 7~10/32 得 429；64 → 37~38/64；96 → 73/96（超额立即 429，不排队）。
   #   → 厂商有效并发上限 ≈ 24，这就是真正的吞吐天花板；调高内部阈值只会把压力透传成 429。
+  # ======================== 日志降噪（ADR-33）========================
+  # 上游（DashScope 等）不可达时，若干第三方 logger 每次失败都打完整堆栈：
+  # 实测 30 分钟产出 1.78 GB（1.91 GB 文件 / 1600 万行，堆栈行占 93.9%），≈3.6 GB/h，
+  # 长时上游故障会打满磁盘。而同一失败我们已在入口层处理（SSE error 事件 / 降级日志 /
+  # Prometheus 指标），故只对这些"已知重复噪音"按时间窗限流。
+  #   → 白名单内每 window-ms 最多放行 max-per-window 条（含完整堆栈），其余丢弃；
+  #     窗口结束输出一条汇总（logger=app.log.throttled，含被抑制条数）——排障信息不丢。
+  #   → 白名单之外的日志完全不受影响。
+  # 一键回退：enabled=false（或删除 src/main/resources/logback-spring.xml）。
+  logging:
+    throttle:
+      enabled: ${LOG_THROTTLE_ENABLED:true}
+      window-ms: ${LOG_THROTTLE_WINDOW_MS:10000}
+      max-per-window: ${LOG_THROTTLE_MAX_PER_WINDOW:3}
+      # 逗号分隔的 logger 白名单（与 logback-spring.xml 的默认值保持一致）
+      loggers: org.springframework.ai.chat.model.MessageAggregator,org.springframework.ai.retry.autoconfigure.SpringAiRetryAutoConfiguration,com.alibaba.cloud.ai.dashscope.embedding.DashScopeEmbeddingModel
+
   # 闸门只限"在途模型请求"——真实在线用户数远高于此（多数时间在阅读/输入）。
   online:
     max-inflight: ${ONLINE_MAX_INFLIGHT:24}
