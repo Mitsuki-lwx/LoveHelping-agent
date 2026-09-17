@@ -24,6 +24,10 @@ import java.util.*;
 /**
  * 对话洞察服务（非诊断，ADR-10 无风险）。
  * 分析用户上传的聊天记录，输出观察性反馈，不做心理诊断。
+ *
+ * <p>模型调用经容器里 {@code @Primary} 的 {@code LlmGateway}（ADR-23 唯一准入/重试点）。
+ * 此前用 {@code @Qualifier("openAiChatModel")} 直连供应商模型，绕过了并发许可、
+ * 供应商熔断与用量归因（ADR-31 发现三，2026-09-17 修正）。</p>
  */
 @Slf4j
 @Service
@@ -35,7 +39,8 @@ public class InsightService {
     private final MessageMediaMapper mediaMapper;
     private final InsightRecordMapper recordMapper;
 
-    public InsightService(@Qualifier("openAiChatModel") ChatModel chatModel,
+    /** {@code chatModel} 由 {@code @Primary} 解析为 {@code LlmGateway}，不指定 {@code @Qualifier}。 */
+    public InsightService(ChatModel chatModel,
                           VisionPort visionPort,
                           MessageMediaMapper mediaMapper,
                           InsightRecordMapper recordMapper) {

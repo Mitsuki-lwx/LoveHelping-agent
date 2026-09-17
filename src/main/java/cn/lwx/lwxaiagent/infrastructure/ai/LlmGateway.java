@@ -76,6 +76,19 @@ public class LlmGateway implements ChatModel {
     public ChatResponse call(Prompt prompt) {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(props.getTotalTimeoutMs());
         TraceContext parent = telemetry.capture();
+        // ADR-31 发现二：并发许可覆盖"重试 + 降级"整条链路，而不是每次尝试各借还一次。
+        // 原来的写法会在两次尝试之间留下准入空窗——凭证被放回池中可能立即易主，
+        // 而厂商侧那次调用未必已经结束，于是瞬时在途会突破收敛后的容量口径；
+        // 本次请求自己的重试也可能因别人取走凭证而被自家 4003 拒掉。
+        if (!limiter.tryAcquire()) throw new CapacityException();
+        try {
+            return callWithRetries(prompt, deadline, parent);
+        } finally {
+            limiter.release();
+        }
+    }
+
+    private ChatResponse callWithRetries(Prompt prompt, long deadline, TraceContext parent) {
         RuntimeException failure = null;
         for (int attempt = 1; attempt <= props.getRetry().getMaxAttempts(); attempt++) {
             try {
@@ -111,12 +124,12 @@ public class LlmGateway implements ChatModel {
         String outcome = "fail";
         try {
             work = blocking.submit(() -> {
-                if (!limiter.tryAcquire()) throw new CapacityException();
+                // 并发许可由 call() 在整个链路外层统一持有（ADR-31 发现二），worker 内不再借还。
                 try (var ignored = telemetry.scope(span)) {
                     ChatResponse response = model.call(prompt);
                     if (!meaningful(response)) throw new EmptyResponseException();
                     return response;
-                } finally { limiter.release(); }
+                }
             });
             ChatResponse response = work.get(timeout, TimeUnit.MILLISECONDS);
             ticket.success();
@@ -156,6 +169,12 @@ public class LlmGateway implements ChatModel {
     public Flux<ChatResponse> stream(Prompt prompt) {
         TraceContext captured = telemetry.capture();
         return Flux.deferContextual(context -> {
+            // ADR-31 发现二：并发许可在订阅入口获取一次，覆盖该请求的全部重试与降级尝试，
+            // 直到整条流终止（complete / error / cancel）才归还。此前每次尝试各借还一次，
+            // 尝试之间的空窗会让凭证易主，厂商侧瞬时在途因此可突破容量上限。
+            if (!limiter.tryAcquire()) return Flux.error(publicFailure(new CapacityException()));
+            AtomicBoolean permitReleased = new AtomicBoolean();
+            Runnable releasePermit = () -> { if (permitReleased.compareAndSet(false, true)) limiter.release(); };
             TraceContext parent = context.getOrDefault(AiTelemetry.PARENT_CONTEXT_KEY, captured);
             AtomicBoolean emitted = new AtomicBoolean();
             long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(props.getTotalTimeoutMs());
@@ -169,7 +188,8 @@ public class LlmGateway implements ChatModel {
                     })
                     .takeUntilOther(Mono.delay(Duration.ofMillis(props.getTotalTimeoutMs()))
                             .flatMap(t -> Mono.error(new TimeoutException("LLM total deadline exceeded"))))
-                    .onErrorMap(this::publicFailure);
+                    .onErrorMap(this::publicFailure)
+                    .doFinally(signal -> releasePermit.run());
         });
     }
 
@@ -192,14 +212,12 @@ public class LlmGateway implements ChatModel {
         return Flux.defer(() -> {
             ProviderCircuit.Ticket ticket = circuit.acquire();
             if (ticket == null) { metric("llm.circuit", provider, "rejected"); return Flux.error(new CircuitOpenException()); }
-            if (!limiter.tryAcquire()) { ticket.cancel(); return Flux.error(new CapacityException()); }
+            // 并发许可不在此处借还：由 stream() 在整条链路外层统一持有（ADR-31 发现二）。
             Span span = attemptSpan(provider, attempt, parent);
             long start = System.nanoTime();
             AtomicBoolean content = new AtomicBoolean();
             AtomicReference<ChatResponse> lastUsage = new AtomicReference<>();
             AtomicReference<String> outcome = new AtomicReference<>("cancelled");
-            AtomicBoolean released = new AtomicBoolean();
-            Runnable release = () -> { if (released.compareAndSet(false, true)) limiter.release(); };
             return Flux.defer(() -> {
                         try (var ignored = telemetry.scope(span)) { return model.stream(prompt); }
                     })
@@ -215,17 +233,14 @@ public class LlmGateway implements ChatModel {
                         ticket.success();
                         outcome.set("success");
                         if (limiter.onSuccess()) adaptive(provider, "grow");
-                        release.run();
                     })
                     .doOnError(e -> {
                         if (fallbackAllowed(e)) ticket.failure(); else ticket.cancel();
                         if (throttled(e) && limiter.onThrottled()) adaptive(provider, "shrink");
                         outcome.set(e instanceof TimeoutException ? "timeout" : "fail");
-                        release.run(); // Release before downstream retry/fallback subscribes.
                     })
                     .doFinally(signal -> {
                         ticket.cancel();
-                        release.run();
                         usage(lastUsage.get(), provider, span); // Cumulative usage is recorded ONCE, not per chunk.
                         finish(span, provider, outcome.get(), start);
                     });

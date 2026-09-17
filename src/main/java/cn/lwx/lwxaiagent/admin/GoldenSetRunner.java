@@ -21,10 +21,14 @@ import java.util.*;
 public class GoldenSetRunner {
 
     private final ChatExecutor chatExecutor;
-    private final ChatModel judgeModel; // LLM-as-judge（独立模型）
+    /**
+     * LLM-as-judge。<b>经 {@code @Primary} 解析为 {@code LlmGateway}</b>，不指定 {@code @Qualifier}——
+     * ADR-23 的"单一准入点"不允许例外，评测调用也要受并发许可/熔断约束并计入用量归因
+     * （ADR-31 发现三的第三处，2026-09-17 修正）。
+     */
+    private final ChatModel judgeModel;
 
-    public GoldenSetRunner(ChatExecutor chatExecutor,
-                           @org.springframework.beans.factory.annotation.Qualifier("openAiChatModel") ChatModel judgeModel) {
+    public GoldenSetRunner(ChatExecutor chatExecutor, ChatModel judgeModel) {
         this.chatExecutor = chatExecutor;
         this.judgeModel = judgeModel;
     }

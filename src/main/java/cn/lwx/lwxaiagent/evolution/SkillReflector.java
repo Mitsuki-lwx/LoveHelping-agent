@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.evolution;
 
+import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.entity.KnowledgeVote;
 import cn.lwx.lwxaiagent.mapper.EvolutionSkillMapper;
 import cn.lwx.lwxaiagent.mapper.KnowledgeVoteMapper;
@@ -125,8 +126,10 @@ public class SkillReflector {
      * </ol>
      *
      * <h4>异常处理：</h4>
-     * <p>整个方法被 try-catch 包裹，任何异常都会以 ERROR 级别记录日志，
-     * 不会向上抛出，避免影响定时任务的后续执行。</p>
+     * <p>整个方法被 try-catch 包裹，异常不会向上抛出，避免影响定时任务的后续执行。
+     * 其中<b>容量类拒绝</b>（{@code LlmGateway} 返回 4003，即"闸门已满"）属于<b>预期结果</b>——
+     * 后台任务应当为用户流量让路，且反思是幂等的（下一轮调度会再来），故只记 WARN 单行；
+     * 其余异常仍记 ERROR 全栈，不掩盖真实故障（ADR-33 降噪口径）。</p>
      *
      * @param chatId   会话 ID，对应 Spring AI 的 {@code conversation_id}
      * @param tenantId 租户 ID，用于多租户隔离（默认为 "default"）
@@ -172,8 +175,26 @@ public class SkillReflector {
             }
 
         } catch (Exception e) {
-            log.error("Failed to reflect session {}: {}", chatId, e.getMessage(), e);
+            if (capacityRejection(e)) {
+                // 后台任务为用户流量让路：闸门满时跳过本轮，下一轮调度会再来（幂等，无需人工介入）。
+                log.warn("Reflection for session {} deferred: LLM gateway at capacity", chatId);
+            } else {
+                log.error("Failed to reflect session {}: {}", chatId, e.getMessage(), e);
+            }
         }
+    }
+
+    /**
+     * 判定异常是否为"自家容量拒绝"（闸门满，非上游故障）。
+     *
+     * @param e 反思链路上抛出的异常
+     * @return 异常链上存在 {@code code == 4003} 的 {@link BizException}
+     */
+    private static boolean capacityRejection(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof BizException biz && biz.getCode() == 4003) return true;
+        }
+        return false;
     }
 
     /**

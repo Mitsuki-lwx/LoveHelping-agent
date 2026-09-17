@@ -2,7 +2,6 @@ package cn.lwx.lwxaiagent.evolution.config;
 
 import cn.lwx.lwxaiagent.evolution.SkillReflector;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -92,20 +91,21 @@ public class EvolutionConfig {
      *
      * <p>实例化 {@link SkillReflector}，注入以下依赖：</p>
      * <ul>
-     *   <li><b>chatModel：</b>通过 {@code @Qualifier("deepSeekChatModel")} 指定使用 DeepSeek 聊天模型，
-     *       因为反思操作需要较强的推理能力，DeepSeek 适合此类复杂分析任务</li>
+     *   <li><b>chatModel：</b>注入容器里 {@code @Primary} 的 {@link ChatModel}——即 {@code LlmGateway}。
+     *       ADR-23 规定它是<b>唯一的重试归属者与准入点</b>：反思调用同样要受并发许可、供应商熔断、
+     *       重试预算约束，用量也需能被 {@code llm.usage.owner=gateway} 归因。此前这里用
+     *       {@code @Qualifier("openAiChatModel")} 直连供应商模型，绕过了上述全部保护
+     *       （ADR-31 发现三，2026-09-17 修正）。</li>
      *   <li><b>qualityThreshold：</b>从 {@link EvolutionProperties#getQualityThreshold()} 获取质量阈值，
      *       只有评分达到此阈值的技能才会被保存</li>
      * </ul>
      *
-     * @param chatModel DeepSeek 聊天模型实例（由 Spring AI 自动配置 + @Qualifier 指定）
+     * @param chatModel {@code @Primary} 聊天模型实例（即 {@code LlmGateway}，经唯一准入点）
      * @param props     进化系统配置属性，提供质量阈值等参数
      * @return 配置完成的 SkillReflector 实例
      */
     @Bean
-    public SkillReflector skillReflector(
-            @Qualifier("openAiChatModel") ChatModel chatModel,
-            EvolutionProperties props) {
+    public SkillReflector skillReflector(ChatModel chatModel, EvolutionProperties props) {
         return new SkillReflector(chatModel, props.getQualityThreshold());
     }
 }

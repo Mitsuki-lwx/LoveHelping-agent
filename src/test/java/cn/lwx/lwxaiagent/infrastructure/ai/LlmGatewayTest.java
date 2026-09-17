@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -211,5 +212,73 @@ class LlmGatewayTest {
         when(fallback.call(any(Prompt.class))).thenReturn(response("backup"));
         assertTimeoutPreemptively(Duration.ofSeconds(1), () -> create().call(new Prompt("test")));
         verify(primary).call(any(Prompt.class));
+    }
+
+    private double inflight() { return meters.get("llm.inflight").gauge().value(); }
+
+    /**
+     * ADR-31 发现二：重试等待期间必须继续持有并发许可。
+     *
+     * <p>改造前许可在每次尝试结束时归还，两次尝试之间出现"准入空窗"——凭证可能被别的请求取走，
+     * 而厂商侧那次调用未必已结束，瞬时在途因此能突破收敛后的容量口径。</p>
+     */
+    @Test void permitIsHeldAcrossSyncRetryGap() throws Exception {
+        props.setMaxConcurrentCalls(1);
+        props.getRetry().setMaxAttempts(2);
+        props.getRetry().setBackoffMs(400);
+        props.getRetry().setJitter(0);
+        props.setFallbackEnabled(false);
+        props.getCircuit().setEnabled(false);
+        when(primary.call(any(Prompt.class))).thenThrow(http(503));
+        var g = create();
+        var finished = new CountDownLatch(1);
+        var caller = new Thread(() -> {
+            try { g.call(new Prompt("test")); }
+            catch (RuntimeException expected) { /* 供应商恒 503 */ }
+            finally { finished.countDown(); }
+        });
+        caller.start();
+        try {
+            Thread.sleep(150); // 落在第一次失败与第二次尝试之间的 backoff 窗口
+            assertEquals(1.0, inflight(), "重试等待期间必须仍持有同一张并发许可");
+        } finally {
+            assertTrue(finished.await(3, TimeUnit.SECONDS));
+        }
+        assertEquals(0.0, inflight(), "整条重试链路结束后必须归还许可");
+    }
+
+    /** ADR-31 发现二（对偶断言）：重试等待期间许可不得被其他请求取走。 */
+    @Test void streamPermitIsNotGivenAwayDuringRetryGap() throws Exception {
+        props.setMaxConcurrentCalls(1);
+        props.getRetry().setMaxAttempts(2);
+        props.getRetry().setBackoffMs(600);
+        props.getRetry().setJitter(0);
+        props.setFallbackEnabled(false);
+        props.getCircuit().setEnabled(false);
+        when(primary.stream(any(Prompt.class))).thenReturn(Flux.error(http(503)));
+        var g = create();
+        var first = g.stream(new Prompt("first")).subscribe(r -> { }, e -> { });
+        Thread.sleep(150); // first 正处于重试 backoff
+        var failure = new AtomicReference<Throwable>();
+        g.stream(new Prompt("second")).subscribe(r -> { }, failure::set);
+        assertInstanceOf(BizException.class, failure.get(), "重试等待期间并发许可不得易主");
+        assertEquals(4003, ((BizException) failure.get()).getCode());
+        first.dispose();
+        for (int i = 0; i < 50 && inflight() > 0; i++) Thread.sleep(20);
+        assertEquals(0.0, inflight(), "取消后许可必须归还（不得泄漏）");
+    }
+
+    /** ADR-31 发现二：同步链路整体失败后许可必须归还，连续请求可串行进行。 */
+    @Test void permitIsReturnedAfterFailedRetryChain() {
+        props.setMaxConcurrentCalls(1);
+        props.getRetry().setMaxAttempts(2);
+        props.getRetry().setBackoffMs(1);
+        props.getRetry().setJitter(0);
+        props.setFallbackEnabled(false);
+        props.getCircuit().setEnabled(false);
+        when(primary.call(any(Prompt.class))).thenThrow(http(503));
+        var g = create();
+        for (int i = 0; i < 3; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
+        assertEquals(0.0, inflight(), "重复失败不得累积占用许可");
     }
 }
