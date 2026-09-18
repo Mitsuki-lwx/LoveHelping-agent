@@ -93,6 +93,10 @@
       改为 `throw publicFailure(new CapacityException())`（映射为 `BizException(4003)`）
 - [x] H6 不变式确认：`retryable` / `fallbackAllowed` 对 `CapacityException` 仍为 `false`
       （容量拒绝不可重试、不可降级，本次未改）
+- [x] H6.1 判据校准（2026-09-19 追加）：不变式精确表述为"**出网关**的异常都是 `publicFailure()` 的产物"，
+      自查看**位置**不看文本 —— `syncAttempt()` 内的裸抛会被 `callWithRetries` 末尾兜住，
+      `grep "throw new CapacityException"` 会误报；只有映射边界外的 `call()` 最外层与 `stream()` 订阅入口
+      必须自己映射（详见 `docs/09` §8.11(3)）
 - [x] H7 全量单测 **207/207**（基线 206 + 新增 1）
 - [x] H8 真实 E2E `scripts/e2e_live.py` **22/22**（`outputs/e2e-live-adr31-final.json`）
 - [x] H9 `docs/09` 新增 §8.11；本节 F6.3 据实划掉；ADR-31 补"实施补记"段
