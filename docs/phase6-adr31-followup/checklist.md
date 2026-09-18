@@ -173,23 +173,36 @@
 - [x] J4 反思路径证据：同产物记录 20 轮扫描、**76 条**带 `llm.attempt` 的 trace
       （样例 usage 614/616/620/1020/1110）→ **能**看到 `llm.attempt`
 - [x] J5 ⚠️ **但归属断裂**：`outputs/adr31-langfuse-probe.json`（抽样 100 条 = 后台区 36 + 其它 64）显示
-      任务 trace（`task reflection-scheduler.scan-and-reflect` ×9、`task agent-task-scheduler.compensate-stale` ×1）
-      的 `observations` **只有任务 span 自己一个**（`has_llm_attempt=false`），
-      而 `llm.attempt` 是**另一条独立 trace**（26 条）。同一次反思任务 `07:26:35.307` →
-      `llm.attempt` `07:26:35.383`，**只能靠时间戳邻近推断归属**
+      **反思**任务 trace（`task reflection-scheduler.scan-and-reflect` ×9）的 `observations`
+      **只有任务 span 自己一个**（`has_llm_attempt=false`），而 `llm.attempt` 是**另一条独立 trace**（26 条）。
+      同一次反思任务 `07:26:35.307` → `llm.attempt` `07:26:35.383`，**只能靠时间戳邻近推断归属**
 - [x] J5b **断裂比"父节点缺失"更彻底**：26 条 `llm.attempt` trace 的 observations
       **零例外**都是同一形状 `{http post, chat glm-4-flash, llm.attempt}`，
-      **没有任何一条**含 `task *` span → 网关出站调用**自成了以 `http post` 为根的新 trace**，
-      调度线程的 trace 上下文**根本没传进去**；断点定位在**调度线程 → 网关**这一跳
-- [x] J6 根因有据而非猜测：`task <bean>.<method>` 字面量**不在项目源码**中，
-      且 `~/.m2/.../io/opentelemetry/instrumentation/` 下**无** scheduling/spring 埋点
-      → 由**框架自动埋点**产生；**确切来源与断点待实例复验**
+      **没有任何一条**含 `task *` span → 网关出站调用**自成了以 `llm.attempt` 为根的新 trace**，
+      调度线程的 trace 上下文**根本没传进去**
+- [x] J5c **精度更正（自查抓出）**：`compensate-stale` **不算缺陷** ——
+      `AgentTaskScheduler.compensateStale()` 无 `@Async`，`AgentTaskService.compensateStaleTasks()`
+      **纯 DB 扫描/标记、不调用 LLM** → 本就无 `llm.attempt` 可挂。
+      原文把 10 条任务 trace 一并算作"断裂"，已改为**只算反思的 9 条**
+- [x] J6 **断点已由静态代码链定位**（`docs/09` §8.13(4)，**代码级证据，待平台确认**）：
+      `@Scheduled`（调度线程，**此环节为推断、不承载结论**）→ `SkillReflector.reflect` `@Async("evolutionExecutor")`(换线程)
+      → `EvolutionConfig.evolutionExecutor()` **无 `TaskDecorator`**（全仓 grep 无任何
+      `TaskDecorator`/`ContextPropagating*`/`TransmittableThreadLocal`）
+      → 新线程 `AiTelemetry.capture()` 返回 `null` → `LlmGateway` L78 → `attemptSpan` L312
+      → `AiTelemetry.start()` **跳过 `setParent`** → **新根 trace**。
+      对照：HTTP 入口靠 `ChatExecutor` L198–204 显式塞 `PARENT_CONTEXT_KEY` 传播；
+      且 `call()` 只有 `capture()`、**无** advisor 回退，故只在"线程自带 span"时正确
+- [x] J6b **附带发现（文档缺口）**：`docs/03` 的 ADR 只规定**检索/advisor 路径**的父上下文策略，
+      **从未规定调度器路径** → 不是"实现偏离文档"，而是**文档未覆盖**；修复应连带补 ADR
 - [x] J7 **判据裁定**：F6.1"应能看到 `llm.attempt` 子 observation"**只部分满足** ——
-      HTTP 入口成立、**调度器任务不成立**。不按"通过"结案，也不按"未做"结案
+      HTTP 入口成立、**反思任务不成立**。不按"通过"结案，也不按"未做"结案
 - [x] J8 **本轮不修**：实例未运行 → 改了也无法在平台侧确认（会违反 DoD）。
-      修复方向（让调度线程的 trace 上下文传入网关）已记入 `docs/09` §8.13(3)
-- [x] J9 **新增挂账**：后台任务的 `llm.attempt` 归属断裂（需实例复验后再修）
-- [x] J10 `docs/09` 新增 §8.13；§8.10(5) 第一条与本节 F6.1 据实更新
+      两个候选修法已记入 `docs/09` §8.13(4)：
+      **(a)** 给 `evolutionExecutor` 加 `TaskDecorator`（一次覆盖所有 `@Async` 后台任务）；
+      **(b)** 由 `ReflectionScheduler` 显式捕获传参（照抄 `ChatExecutor` 形态）
+- [x] J9 **新增挂账**：反思任务的 `llm.attempt` 归属断裂（断点已定位，需实例复验后再修）
+- [x] J10 `docs/09` 新增 §8.13（含 (4) 静态定位）；§8.10(5) 第一条与本节 F6.1 据实更新；
+      J5c 精度更正已同步回 `docs/09` §8.13(2)
 - [x] J11 提交并推送；`ls-remote` 复核远端 == 本地
 
 ## G. 明确不做（防范围蔓延）
