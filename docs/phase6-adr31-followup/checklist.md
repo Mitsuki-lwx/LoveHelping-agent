@@ -5,7 +5,7 @@
 **结论（2026-09-17，2026-09-18 / 2026-09-19 追加）**：A–G 全部通过；F6 的三个未验证项中
 **第 3 项（反思容量让路分支）已于 2026-09-18 实证关闭并顺带修复一处缺陷，见 H 段**；
 **第 2 项（permit 持有代价）已于 2026-09-19 量化关闭，见 I 段**（结论：代价 ≈ 0）；
-第 1 项仍挂账（Langfuse 实例未运行）。
+**第 1 项（Langfuse 平台侧）已于 2026-09-19 归档证据，但判据只部分满足、并新发现一处归属断裂，见 J 段**。
 
 ---
 
@@ -70,8 +70,11 @@
 - [x] F4 提交前密钥扫描：无 `sk-` / `pk-lf-` / `sk-lf-` / 真实 token 入库
 - [x] F5 项目记忆更新（不变式 + 新踩坑）
 - [x] F6 **明确列出未验证项**：
-      1. **Langfuse 平台侧复验未做** —— 自托管实例本次未运行（`/api/public/health` = 000）；
-         三处走网关的调用在平台侧应能看到 `llm.attempt` 子 observation，待实例启动后复验。
+      1. ~~**Langfuse 平台侧复验未做** —— 自托管实例本次未运行（`/api/public/health` = 000）；
+         三处走网关的调用在平台侧应能看到 `llm.attempt` 子 observation，待实例启动后复验。~~
+         → **⚠️ 2026-09-19 核查：该复验已于 2026-09-18 执行并留下产物**（`verified-langfuse-adr31.json`
+         11/11、洞察/反思的 `llm.attempt` 证据），结论本轮归档；**但发现"子 observation"对
+         调度器任务不成立**（`llm.attempt` 独立成 trace），判据**只部分满足**，见 J 段与 `docs/09` §8.13。
       2. ~~**permit 持有时间变长的代价未量化** —— 只验证了无功能回归，未做负载对照。~~
          → **✅ 2026-09-19 已量化（代价 ≈ 0，低于分辨率），并顺带推翻该建议的一个收益前提，见 I 段。**
       3. ~~**反思的容量让路分支未触发** —— 本次 `容量推迟=0`，该 WARN 分支仅有单测级保障。~~
@@ -152,6 +155,42 @@
       ADR-31 的"已知代价"改为实测数字并**修正发现二的表述**（旧源码里重试**会**重新 `tryAcquire`）；
       本节 F6.2 据实划掉
 - [x] I16 提交并推送；`ls-remote` 复核远端 == 本地
+
+## J. 追加核查：Langfuse 平台侧复验的证据归档与一处归属断裂（2026-09-19）
+
+> 起因：F6.1 是 F 段最后一条挂账。核查发现**复验其实已于 2026-09-18 15:25–15:33 执行过**，
+> 产物在 `outputs/`，但**结论从未写进 docs**（与 I 段的 permit 代价同一模式）。
+> 本轮实例仍未运行（`localhost:3000` health=`000`），故**只做产物核对与归档，不声称重新复验**。
+
+- [x] J1 实例可达性确认：`localhost:3000` health=`000`、3000 端口无监听 → **本轮无法复验**（已声明）
+- [x] J2 用户路径证据：`outputs/verified-langfuse-adr31.json` **11/11**，
+      19 类判据全绿（含 `attempt_parentage`×7、`gateway_owns_chat_generations`×7、
+      `sdk_chat_demoted_to_span`×7、`node_parentage`×7、`retrieval_parentage`×5），
+      覆盖 11 场景（simple / rag / guardrail×4 / advice×2 / plain / agent / sandbox）
+- [x] J3 洞察路径证据：`outputs/adr31-langfuse-admission.json` 中
+      `http post /insight/analyze` 下含 `llm.attempt` **GENERATION**（`glm-4-flash`、`usage=554`）
+      → 归属**正确**
+- [x] J4 反思路径证据：同产物记录 20 轮扫描、**76 条**带 `llm.attempt` 的 trace
+      （样例 usage 614/616/620/1020/1110）→ **能**看到 `llm.attempt`
+- [x] J5 ⚠️ **但归属断裂**：`outputs/adr31-langfuse-probe.json`（抽样 100 条 = 后台区 36 + 其它 64）显示
+      任务 trace（`task reflection-scheduler.scan-and-reflect` ×9、`task agent-task-scheduler.compensate-stale` ×1）
+      的 `observations` **只有任务 span 自己一个**（`has_llm_attempt=false`），
+      而 `llm.attempt` 是**另一条独立 trace**（26 条）。同一次反思任务 `07:26:35.307` →
+      `llm.attempt` `07:26:35.383`，**只能靠时间戳邻近推断归属**
+- [x] J5b **断裂比"父节点缺失"更彻底**：26 条 `llm.attempt` trace 的 observations
+      **零例外**都是同一形状 `{http post, chat glm-4-flash, llm.attempt}`，
+      **没有任何一条**含 `task *` span → 网关出站调用**自成了以 `http post` 为根的新 trace**，
+      调度线程的 trace 上下文**根本没传进去**；断点定位在**调度线程 → 网关**这一跳
+- [x] J6 根因有据而非猜测：`task <bean>.<method>` 字面量**不在项目源码**中，
+      且 `~/.m2/.../io/opentelemetry/instrumentation/` 下**无** scheduling/spring 埋点
+      → 由**框架自动埋点**产生；**确切来源与断点待实例复验**
+- [x] J7 **判据裁定**：F6.1"应能看到 `llm.attempt` 子 observation"**只部分满足** ——
+      HTTP 入口成立、**调度器任务不成立**。不按"通过"结案，也不按"未做"结案
+- [x] J8 **本轮不修**：实例未运行 → 改了也无法在平台侧确认（会违反 DoD）。
+      修复方向（让调度线程的 trace 上下文传入网关）已记入 `docs/09` §8.13(3)
+- [x] J9 **新增挂账**：后台任务的 `llm.attempt` 归属断裂（需实例复验后再修）
+- [x] J10 `docs/09` 新增 §8.13；§8.10(5) 第一条与本节 F6.1 据实更新
+- [x] J11 提交并推送；`ls-remote` 复核远端 == 本地
 
 ## G. 明确不做（防范围蔓延）
 
