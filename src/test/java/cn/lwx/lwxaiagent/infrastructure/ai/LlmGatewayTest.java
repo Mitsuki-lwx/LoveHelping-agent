@@ -281,4 +281,41 @@ class LlmGatewayTest {
         for (int i = 0; i < 3; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
         assertEquals(0.0, inflight(), "重复失败不得累积占用许可");
     }
+
+    /**
+     * 自家闸门满必须映射为 {@code BizException(4003)}，而不是把裸 {@link LlmFailurePolicy.CapacityException}
+     * 抛给调用方。
+     *
+     * <p>回归来源（2026-09-18）：ADR-31 建议 3 把许可获取上提到 {@code call()} 最外层时写成
+     * {@code throw new CapacityException()}，漏了 {@code publicFailure} 映射。后果是
+     * {@code SkillReflector} 的容量让路分支（按 4003 判定）永不触发，反而把预期结果当故障
+     * 打 ERROR 全栈 —— 由"反思撞闸门"故障注入实验暴露。</p>
+     */
+    @Test void syncCapacityRejectionIsMappedToBizException4003() throws Exception {
+        props.setMaxConcurrentCalls(1);
+        props.getRetry().setMaxAttempts(1);
+        props.setFallbackEnabled(false);
+        props.getCircuit().setEnabled(false);
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(primary.call(any(Prompt.class))).thenAnswer(i -> {
+            started.countDown();
+            release.await(3, TimeUnit.SECONDS);
+            return response("ok");
+        });
+        var g = create();
+        var holder = new Thread(() -> {
+            try { g.call(new Prompt("hold")); } catch (RuntimeException ignored) { /* 测试结束 */ }
+        });
+        holder.start();
+        try {
+            assertTrue(started.await(2, TimeUnit.SECONDS), "第一个请求应已持有唯一许可");
+            var ex = assertThrows(BizException.class, () -> g.call(new Prompt("second")),
+                    "自家闸门满必须是 BizException，不能是裸 CapacityException");
+            assertEquals(4003, ex.getCode());
+        } finally {
+            release.countDown();
+            holder.join(3000);
+        }
+    }
 }

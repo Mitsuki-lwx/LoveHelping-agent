@@ -80,7 +80,9 @@ public class LlmGateway implements ChatModel {
         // 原来的写法会在两次尝试之间留下准入空窗——凭证被放回池中可能立即易主，
         // 而厂商侧那次调用未必已经结束，于是瞬时在途会突破收敛后的容量口径；
         // 本次请求自己的重试也可能因别人取走凭证而被自家 4003 拒掉。
-        if (!limiter.tryAcquire()) throw new CapacityException();
+        // 必须经 publicFailure 映射：调用方（如 SkillReflector）靠 BizException(4003) 识别
+        // "自家闸门满"这一预期结果；裸 CapacityException 会被它当成真故障打 ERROR 全栈（回归）。
+        if (!limiter.tryAcquire()) throw publicFailure(new CapacityException());
         try {
             return callWithRetries(prompt, deadline, parent);
         } finally {

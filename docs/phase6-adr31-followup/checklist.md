@@ -2,7 +2,9 @@
 
 验收标准（AC）。一行一条，可独立判定通过与否。**未通过项必须在汇报中显式说明原因。**
 
-**结论（2026-09-17）**：全部通过。未验证项见 F6。
+**结论（2026-09-17，2026-09-18 追加）**：A–G 全部通过；F6 的三个未验证项中
+**第 3 项（反思容量让路分支）已于 2026-09-18 实证关闭并顺带修复一处缺陷，见 H 段**；
+第 1、2 项仍挂账（Langfuse 实例未运行 / permit 持有代价未量化）。
 
 ---
 
@@ -70,7 +72,31 @@
       1. **Langfuse 平台侧复验未做** —— 自托管实例本次未运行（`/api/public/health` = 000）；
          三处走网关的调用在平台侧应能看到 `llm.attempt` 子 observation，待实例启动后复验。
       2. **permit 持有时间变长的代价未量化** —— 只验证了无功能回归，未做负载对照。
-      3. **反思的容量让路分支未触发** —— 本次 `容量推迟=0`，该 WARN 分支仅有单测级保障。
+      3. ~~**反思的容量让路分支未触发** —— 本次 `容量推迟=0`，该 WARN 分支仅有单测级保障。~~
+         → **✅ 2026-09-18 已通过故障注入真实触发（`容量推迟=30`），并因此炸出并修掉一处真缺陷，见 H 段。**
+
+## H. 追加收尾：容量让路分支实证 + 一处映射缺陷（2026-09-18）
+
+> 起因：F6.3 是 F 段最后一个未验证项。做"反思撞闸门"故障注入时，该分支**没能触发**——
+> 顺着查下去发现不是环境问题，而是 ADR-31 建议 3 的**代码缺陷**。详见 `docs/09` §8.11。
+
+- [x] H1 故障注入设计可排除其他拒绝来源：假上游 hang（请求永不返回）+ `gate=1` / `wait-ms=0` /
+      `max-concurrent-calls=1` + 自适应与熔断**均关闭** + 三个 timeout 调 180s +
+      `yield-to-online=false`（否则反思主动让路，测不到撞闸门）
+- [x] H2 副作用受控：`evolution.quality-threshold=101` → 提取结果全被质量过滤，只写 skip mark，
+      **不污染技能库**
+- [x] H3 **对照实验（硬规矩）**：修复前 `REFLECTION_DEFERRAL=FAIL`（WARN=0 / ERROR 全栈=6）；
+      修复后 `PASS`（WARN=**30** / ERROR 全栈=**0**）
+- [x] H4 单测层对照：新测试 `syncCapacityRejectionIsMappedToBizException4003` 在修复前
+      **精确失败**（`Tests run: 1, Failures: 1`），修复后通过 —— 不是"测空气"
+- [x] H5 修复：`LlmGateway.call()` 最外层闸门拒绝由裸 `throw new CapacityException()`
+      改为 `throw publicFailure(new CapacityException())`（映射为 `BizException(4003)`）
+- [x] H6 不变式确认：`retryable` / `fallbackAllowed` 对 `CapacityException` 仍为 `false`
+      （容量拒绝不可重试、不可降级，本次未改）
+- [x] H7 全量单测 **207/207**（基线 206 + 新增 1）
+- [x] H8 真实 E2E `scripts/e2e_live.py` **22/22**（`outputs/e2e-live-adr31-final.json`）
+- [x] H9 `docs/09` 新增 §8.11；本节 F6.3 据实划掉；ADR-31 补"实施补记"段
+- [x] H10 提交并推送；工作区干净
 
 ## G. 明确不做（防范围蔓延）
 
