@@ -91,4 +91,111 @@ class TenantContextTest {
         assertEquals("main", TenantContext.getTenantId());
         TenantContext.clear();
     }
+
+    /**
+     * <b>跨线程原语：capture / restore 往返</b>
+     *
+     * <p>提交线程抓快照，执行线程还原——这是线程池边界传递租户身份的标准姿势。</p>
+     */
+    @Test
+    void captureAndRestoreRoundTrip() {
+        TenantContext.set("t1", "u1", "USER");
+        TenantContext.Snapshot snapshot = TenantContext.capture();
+
+        TenantContext.set("t2", "u2", "ADMIN");  // 模拟执行线程上的另一个任务
+        assertEquals("t2", TenantContext.getTenantId());
+
+        TenantContext.restore(snapshot);
+        assertEquals("t1", TenantContext.getTenantId());
+        assertEquals("u1", TenantContext.getUserId());
+        assertEquals("USER", TenantContext.getRole());
+        TenantContext.clear();
+    }
+
+    /**
+     * <b>空快照还原 == clear</b>（而不是 set(null) 留残留条目）
+     *
+     * <p>场景：线程池复用时，任务收尾必须把本线程上被写入的租户身份清干净，
+     * 否则下一个任务会读到上一个任务的租户。</p>
+     */
+    @Test
+    void restoreOfEmptySnapshotClearsInsteadOfLeavingResidue() {
+        TenantContext.clear();
+        TenantContext.Snapshot empty = TenantContext.capture();
+        assertTrue(empty.isEmpty());
+
+        TenantContext.set("leaked", "leakedUser", "ADMIN");
+        TenantContext.restore(empty);
+
+        assertNull(TenantContext.getTenantId());
+        assertNull(TenantContext.getUserId());
+        assertNull(TenantContext.getRole());
+    }
+
+    /** 防御性：snapshot 为 null 时按空快照处理，不得抛 NPE（finally 块里最怕再抛异常）。 */
+    @Test
+    void restoreOfNullSnapshotClears() {
+        TenantContext.set("t", "u", "ADMIN");
+        TenantContext.restore(null);
+        assertNull(TenantContext.getTenantId());
+        assertNull(TenantContext.getUserId());
+        assertNull(TenantContext.getRole());
+    }
+
+    /** 嵌套边界（请求线程 → 图线程 → 子任务）必须逐层还原，不能跳层。 */
+    @Test
+    void nestedCaptureRestoreUnwindsLayerByLayer() {
+        TenantContext.set("outer", "outerUser", "USER");
+        TenantContext.Snapshot outer = TenantContext.capture();
+
+        TenantContext.set("inner", "innerUser", "ADMIN");
+        TenantContext.Snapshot inner = TenantContext.capture();
+
+        TenantContext.set("graph", "graphUser", "USER");
+
+        TenantContext.restore(inner);
+        assertEquals("inner", TenantContext.getTenantId());
+        assertEquals("innerUser", TenantContext.getUserId());
+
+        TenantContext.restore(outer);
+        assertEquals("outer", TenantContext.getTenantId());
+        assertEquals("USER", TenantContext.getRole());
+
+        TenantContext.clear();
+    }
+
+    /** 只要有一个维度非空就不是空快照——否则 restore 会静默丢掉这个维度。 */
+    @Test
+    void snapshotIsEmptyOnlyWhenEveryDimensionIsNull() {
+        assertTrue(new TenantContext.Snapshot(null, null, null).isEmpty());
+        assertFalse(new TenantContext.Snapshot("t", null, null).isEmpty());
+        assertFalse(new TenantContext.Snapshot(null, "u", null).isEmpty());
+        assertFalse(new TenantContext.Snapshot(null, null, "USER").isEmpty());
+    }
+
+    /**
+     * <b>本类存在的理由的一半</b>：线程池换线程后 ThreadLocal 不会跟过去，
+     * 读它会<b>静默拿到 null</b>（不抛异常）——这正是需要用 capture/restore 显式搬运的原因。
+     */
+    @Test
+    void threadLocalIsSilentlyNullOnAnotherThreadButSnapshotTravels() throws InterruptedException {
+        TenantContext.set("t-cross", "u-cross", "USER");
+        TenantContext.Snapshot snapshot = TenantContext.capture();
+
+        java.util.concurrent.atomic.AtomicReference<String> before = new java.util.concurrent.atomic.AtomicReference<>("未执行");
+        java.util.concurrent.atomic.AtomicReference<String> after = new java.util.concurrent.atomic.AtomicReference<>("未执行");
+
+        Thread worker = new Thread(() -> {
+            before.set(TenantContext.getTenantId());      // 不显式传递：null（静默）
+            TenantContext.restore(snapshot);              // 显式传递：拿回提交线程的身份
+            after.set(TenantContext.getTenantId());
+            TenantContext.clear();                       // 池化线程必须自己收尾
+        });
+        worker.start();
+        worker.join();
+
+        assertNull(before.get(), "跨线程读 ThreadLocal 应当是 null —— 这就是必须有 capture/restore 的原因");
+        assertEquals("t-cross", after.get());
+        TenantContext.clear();
+    }
 }

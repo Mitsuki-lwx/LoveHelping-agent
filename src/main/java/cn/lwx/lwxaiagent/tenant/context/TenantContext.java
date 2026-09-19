@@ -45,9 +45,28 @@ package cn.lwx.lwxaiagent.tenant.context;
  * <ul>
  *   <li>Spring 的 {@code @Async} 异步方法会复用线程池中的线程，
  *       如果使用 InheritableThreadLocal，子线程结束后同样存在清理问题</li>
+ *   <li>线程池复用线程时，继承只发生在<b>线程创建</b>那一刻，池化后语义完全错乱</li>
  *   <li>在多线程并行处理场景下，需要更成熟的上下文传播方案
  *       （如 SLF4J MDC 或 Micrometer Context Propagation）</li>
  * </ul>
+ *
+ * <h2>跨线程边界规则（2026-09-19 立，勿违反）</h2>
+ * <p>
+ * <strong>这是 {@link ThreadLocal}，不跨线程。任何跨线程边界都必须显式传递租户身份，
+ * 禁止依赖"自动继承"或"线程是同一个"这类错觉。</strong>现状与做法：
+ * </p>
+ * <table border="1">
+ *   <tr><th>边界</th><th>做法</th></tr>
+ *   <tr><td>HTTP 请求链</td><td>同线程，{@code TenantFilter}/{@code TenantInterceptor} 写入即可</td></tr>
+ *   <tr><td>线程池 / 图执行</td><td>{@link #capture()} 取快照 → 执行线程 {@link #restore(Snapshot)}；
+ *       或直接以<b>方法参数</b>传租户（优先，更显式）</td></tr>
+ *   <tr><td>定时任务 / {@code @Async}</td><td>不读本类；租户身份从数据里取、或由调用方以参数传入</td></tr>
+ * </table>
+ * <p>
+ * 反面情形：跨线程读 {@link #getTenantId()} 会<strong>静默返回 {@code null}</strong>（不抛异常），
+ * 于是数据归属写错却没有任何报错。因此需要租户的异步代码，
+ * 要么在入口 {@link #restore(Snapshot)}，要么把租户当参数传进来——没有第三种正确写法。
+ * </p>
  *
  * <h2>存储的三个维度</h2>
  * <table border="1">
@@ -185,5 +204,63 @@ public class TenantContext {
         TENANT_ID.remove();
         USER_ID.remove();
         ROLE.remove();
+    }
+
+    /**
+     * <h3>租户上下文快照 —— 跨线程传递的载体</h3>
+     * <p>
+     * 不可变值对象。三个维度<b>允许同时为 {@code null}</b>（表示"当时没有租户身份"），
+     * 这种快照 {@link #isEmpty()} 为 {@code true}，还原时等价于 {@link #clear()}。
+     * </p>
+     *
+     * @param tenantId 提交线程当时的租户 ID，可为 {@code null}
+     * @param userId   提交线程当时的用户 ID，可为 {@code null}
+     * @param role     提交线程当时的角色，可为 {@code null}
+     * @see #capture()
+     */
+    public record Snapshot(String tenantId, String userId, String role) {
+        /** @return 三个维度是否全为 {@code null}（即"空快照"） */
+        public boolean isEmpty() {
+            return tenantId == null && userId == null && role == null;
+        }
+    }
+
+    /**
+     * <h3>在提交线程抓取上下文快照</h3>
+     * <p>
+     * 与 {@link #restore(Snapshot)} 配对使用，是跨线程边界（线程池、图执行）传递租户身份的
+     * 标准姿势：提交线程 {@code capture()}，执行线程 {@code finally} 里 {@code restore()}。
+     * </p>
+     *
+     * <h4>为什么必须先 capture 再执行</h4>
+     * <p>
+     * 若执行线程不先记下自己的旧值，任务结束后就无法把执行线程还原成原样，
+     * 在线程池复用场景下会把本次任务的租户身份<b>泄漏给下一个任务</b>。
+     * </p>
+     *
+     * @return 当前线程的上下文快照；线程无租户身份时返回空快照（非 {@code null}）
+     */
+    public static Snapshot capture() {
+        return new Snapshot(TENANT_ID.get(), USER_ID.get(), ROLE.get());
+    }
+
+    /**
+     * <h3>把快照还原到当前线程</h3>
+     * <p>
+     * 空快照（或 {@code null}）等价于 {@link #clear()}——会 {@code remove()} 而不是 {@code set(null)}，
+     * 因此不会在 {@link ThreadLocalMap} 里留残留条目。
+     * </p>
+     * <p>
+     * 必须在 {@code finally} 中调用：任务异常退出时若不还原，线程池复用时下一个任务会读到本次的租户身份。
+     * </p>
+     *
+     * @param snapshot 由 {@link #capture()} 得到的快照；允许为 {@code null}
+     */
+    public static void restore(Snapshot snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            clear();
+            return;
+        }
+        set(snapshot.tenantId(), snapshot.userId(), snapshot.role());
     }
 }

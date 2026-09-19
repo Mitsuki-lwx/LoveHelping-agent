@@ -97,7 +97,9 @@ public class GraphRunner {
     }
 
     private Map<String, Object> execute(Map<String, Object> input, String threadId) throws Exception {
-        String oldUser = TenantContext.getUserId(), oldTenant = TenantContext.getTenantId(), oldRole = TenantContext.getRole();
+        // 跨线程边界：本方法跑在 graph-* 线程池上，本线程的 ThreadLocal 不是请求线程的那一份，
+        // 故先快照、finally 中还原（TenantContext 的跨线程规则，2026-09-19）。
+        TenantContext.Snapshot previous = TenantContext.capture();
         String user = Objects.toString(input.get(GraphStateKeys.USER_ID), "anonymous");
         Span span = pipelineSpan(input, threadId);
         long start = System.nanoTime();
@@ -129,8 +131,7 @@ public class GraphRunner {
             }
             throw error;
         } finally {
-            TenantContext.clear();
-            if (oldUser != null || oldTenant != null || oldRole != null) TenantContext.set(oldTenant, oldUser, oldRole);
+            TenantContext.restore(previous);
             span.end();
         }
     }
