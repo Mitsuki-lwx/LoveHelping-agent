@@ -374,7 +374,8 @@ def summarize(samples, requests, args, started_at, load_ended_at):
         # 持续满载会触发，因此该断言按**突发**口径成立、按**持续**口径不成立——据实判 fail
         # 并单独记录，不调参掩盖（见 docs/09 §8.9）。
         "s10_vendor_429": {"upstream_degraded": upstream, "rate": round(upstream / total, 4),
-                           "note": "上游 429 → 重试耗尽 → 优雅降级为可读文案；按持续口径该断言不成立",
+                           "note": "上游 429 → 重试耗尽 → 优雅降级为可读文案；按持续口径该断言不成立。"
+                                   "本项计入 all_pass 但不计入 app_side_pass，亦不作退出码门禁（§5.1 S10d）",
                            "pass": upstream == 0},
         "s11_heap": {"head_mean": round(heap_head), "tail_mean": round(heap_tail),
                      "max": max(heap) if heap else None, "max_heap": heap_max,
@@ -472,7 +473,13 @@ def main():
     print("[soak] LLM 计数器增量: " + json.dumps(summary["llm_counters_delta"], ensure_ascii=False), flush=True)
     print("[soak] 上游归因: " + json.dumps(summary["llm_attribution"], ensure_ascii=False), flush=True)
     print("[soak] 汇总: " + json.dumps({k: v for k, v in summary.items() if k != "per_scenario"}, ensure_ascii=False), flush=True)
-    return 0 if summary["all_pass"] else 1
+    # 退出码以**应用侧**判定为准，不含厂商 429（spec §5.1 S10d：「不判应用失败」；
+    # 亦据 Mitsuki 2026-09-19「厂商不管」）。厂商项仍在 verdict / summary 中**完整报告**
+    # （`s10_vendor_429`、`all_pass`），只是不作为门禁。
+    # 修正原因（2026-09-20 实测）：原退出码取 `all_pass`，而厂商按**速率**限流，
+    # 持续满载下 429 必然偶发（本轮 4/2411 = 0.17%），导致一个 0 拒收 / 0 5xx /
+    # 闸门余量充足的额定档轮次也返回 1 —— 门禁信号失真，且 `&&` 链会误中断。
+    return 0 if summary["app_side_pass"] else 1
 
 
 if __name__ == "__main__":
