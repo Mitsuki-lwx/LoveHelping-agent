@@ -244,7 +244,7 @@ def summarize(samples, requests, args, started_at, load_ended_at):
     clean = [s for s in samples if s.get("sample_error") is None and s.get("inflight") is not None]
     def phase(rows, lo, hi):
         return [r for r in rows if lo <= (r["ts"] - started_at) < hi]
-    warm, steady = phase(clean, 0, 300), phase(clean, 300, 10 ** 9)
+    warm, steady = phase(clean, 0, args.warmup_sec), phase(clean, args.warmup_sec, 10 ** 9)
     def values(rows, key):
         return [r[key] for r in rows if r.get(key) is not None]
     q = values(steady, "queue_depth")
@@ -291,6 +291,27 @@ def summarize(samples, requests, args, started_at, load_ended_at):
     err = kinds.get("err", 0)
     upstream = kinds.get("upstream", 0)
 
+    # S9 口径修订（2026-09-19，见 docs/phase6-soak/spec.md §5.2）：
+    # ADR-32 之后闸门是 AIMD 自适应，"在途 = 24"不再是**可持续**工作点
+    # （24 并发本身就会触发厂商 429 → 乘性收缩 → 有效天花板降到 12 上下）。
+    # 因此判据必须按「过订阅倍数 = offered 并发 / 稳态收敛天花板」分档，
+    # 而不是按固定 worker 数——否则固定 32 worker 在任何自适应实现下都必然"不通过"。
+    llm_limit = values(steady, "llm_limit")
+    limit_end = llm_limit[-1] if llm_limit else None
+    limit_mean = statistics.mean(llm_limit) if llm_limit else None
+    oversub = (args.workers / limit_mean) if limit_mean else None
+    # S9a/S9b 互斥分档（见下方 verdict 注释）。oversub 为 None 时两者都不适用，
+    # 但此时**两条都判失败**（证据缺失不得真空通过），故此处只表达"适用性"。
+    s9a_applies = oversub is not None and oversub <= 1.0
+    s9b_applies = oversub is not None and oversub > 1.0
+    # 三态，别写成 `s9x_applies and ...`（不适用时会误判为失败，实测踩过两次）：
+    #   证据缺失（oversub is None）→ 失败
+    #   本档适用                   → 按断言判
+    #   本档不适用                 → 自动通过
+    s9a_pass = (oversub is not None) and ((rejected / total <= 0.20) if s9a_applies else True)
+    s9b_pass = (oversub is not None) and (
+        (len(bare_rejects) == 0 and http5xx == 0 and rejected > 0) if s9b_applies else True)
+
     heap_ok = bool(heap) and heap_tail <= heap_head * 1.3 and (heap_max is None or max(heap) < heap_max)
     active_ok = (active_peak is not None and pool_max is not None and active_peak < pool_max
                  and (not active_after or active_baseline is None
@@ -314,8 +335,40 @@ def summarize(samples, requests, args, started_at, load_ended_at):
         "s8_inflight_zero": {"last": inflight_after[-1] if inflight_after else None,
                              "samples_after_load": len(inflight_after),
                              "pass": bool(inflight_after) and inflight_after[-1] == 0},
-        "s9_reject_rate": {"rejected": rejected, "total": total, "rate": round(rejected / total, 4),
-                           "pass": rejected / total <= 0.20},
+        # S9 拆两条（口径修订 2026-09-19，spec §5.2）。原「固定 32 worker 下拒绝率 ≤ 20%」
+        # 与 ADR-32 的自适应闸门互相矛盾：32 worker 在收敛到 12 时就是 2.7 倍过订阅，
+        # 高拒绝率是**背压的设计行为**，不是缺陷。故按过订阅倍数分档：
+        #   S9a（额定档位，offered ≤ 收敛值）→ 设拒绝率门禁
+        #   S9b（过载，offered > 收敛值）→ **不设拒绝率门禁**，只断言"降级可读且有界"
+        # 两者互斥：未适用的一条**自动通过**（applies=false → pass=true），
+        # 否则会把它当成失败（实测踩过：8 worker 那轮 s9b 误判 pass=false）。
+        # 但 oversub 算不出来（缺 llm_permits_limit 采样）时**两条都判失败**——
+        # 同 S5/S6/S7 纪律，不得因证据缺失而真空通过。
+        "s9a_rated_reject_rate": {
+            "applies": s9a_applies,
+            "oversubscription": round(oversub, 2) if oversub is not None else None,
+            "limit_mean": round(limit_mean, 2) if limit_mean is not None else None,
+            "workers": args.workers,
+            "rejected": rejected, "total": total, "rate": round(rejected / total, 4),
+            "pass": s9a_pass,
+            "note": ("额定档位（未过订阅）下闸门不得误伤：硬拒率 ≤ 20%" if oversub is not None
+                     else "缺少 llm_permits_limit 采样，无法分档 → 判失败（不得真空通过）"),
+        },
+        "s9b_overload_graceful": {
+            "applies": s9b_applies,
+            "oversubscription": round(oversub, 2) if oversub is not None else None,
+            "limit_mean": round(limit_mean, 2) if limit_mean is not None else None,
+            "limit_end": limit_end,
+            "workers": args.workers,
+            "rejected": rejected, "total": total, "rate": round(rejected / total, 4),
+            "bare_rejects": len(bare_rejects), "http5xx": http5xx,
+            # 只断言"降级可读且有界"：拒绝必须带可读文案（S2）、不得出现 5xx（S1）、
+            # 且确实发生了背压（否则这一轮并没有真正过载，结论无意义）。
+            "pass": s9b_pass,
+            "note": ("过载下高拒绝率是背压的设计行为；本项不设拒绝率门禁，只断言可读+有界"
+                     if oversub is not None
+                     else "缺少 llm_permits_limit 采样，无法分档 → 判失败（不得真空通过）"),
+        },
         # S10 原判据是"厂商 429 = 0"，其前提是"闸门 24 对齐厂商并发上限即可不触发 429"。
         # 实测暴露：厂商还按**速率**（bigmodel code 1302 / dashscope Throttling.RateQuota）限流，
         # 持续满载会触发，因此该断言按**突发**口径成立、按**持续**口径不成立——据实判 fail
@@ -342,6 +395,9 @@ def summarize(samples, requests, args, started_at, load_ended_at):
             "ttft_ms": {"median": round(statistics.median([r["ttft_ms"] for r in requests if r.get("ttft_ms")]), 1)
                         if any(r.get("ttft_ms") for r in requests) else None},
             "reject_rate": round(rejected / total, 4), "upstream_rate": round(upstream / total, 4),
+            "oversubscription": round(oversub, 2) if oversub is not None else None,
+            "llm_limit_mean": round(limit_mean, 2) if limit_mean is not None else None,
+            "llm_limit_end": limit_end,
             "verdict": verdict,
             "app_side_pass": all(v.get("pass", True) for k, v in verdict.items() if k != "s10_vendor_429"),
             "all_pass": all(v.get("pass", True) for v in verdict.values())}
@@ -353,6 +409,9 @@ def main():
     parser.add_argument("--minutes", type=float, default=30.0)
     parser.add_argument("--workers", type=int, default=32, help="连续 worker 数（闸门 24 + 队列 8）")
     parser.add_argument("--sample-sec", type=float, default=15.0)
+    parser.add_argument("--warmup-sec", type=float, default=300.0,
+                        help="预热段秒数（默认 300 = spec §5 的正式门禁口径；短程逻辑验证可调小，"
+                             "但正式验收必须用默认值，且需 sample-sec 配合使稳态采样 ≥ 80 点）")
     parser.add_argument("--cool-down", type=float, default=120.0, help="负载结束后继续采样秒数（验证 permit 回收）")
     parser.add_argument("--output", required=True, help="证据文件前缀，实际写 -samples.jsonl / -requests.jsonl / -summary.json")
     args = parser.parse_args()
