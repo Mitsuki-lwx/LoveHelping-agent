@@ -1,6 +1,8 @@
 package cn.lwx.lwxaiagent.evolution.config;
 
 import cn.lwx.lwxaiagent.evolution.SkillReflector;
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
+import cn.lwx.lwxaiagent.infrastructure.observability.TraceContextTaskDecorator;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,18 +73,24 @@ public class EvolutionConfig {
      *   <li><b>队列容量（queueCapacity）：</b>100 —— 最多积压 100 个待处理任务</li>
      *   <li><b>线程名前缀（threadNamePrefix）：</b>"evolution-" —— 日志中便于识别</li>
      *   <li><b>守护线程（daemon）：</b>true —— JVM 关闭时无需等待此线程池</li>
+     *   <li><b>任务装饰器（TaskDecorator）：</b>把父 trace 上下文从提交线程带到执行线程
+     *       （ADR-34）——否则 {@code @Async} 换线程后父上下文丢失，后台任务的
+     *       {@code llm.attempt} 会自成新根 trace，平台上无法按 traceId 追溯归属</li>
      * </ul>
      *
+     * @param telemetry 遥测门面，供装饰器在提交线程捕获父上下文
      * @return 进化系统专用的线程池执行器，Bean 名称为 "evolutionExecutor"
      */
     @Bean(name = "evolutionExecutor")
-    public Executor evolutionExecutor() {
+    public Executor evolutionExecutor(AiTelemetry telemetry) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(1);
         executor.setMaxPoolSize(2);
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("evolution-");
         executor.setDaemon(true);
+        // ADR-34：@Async 跨线程后父 trace 上下文会丢失，显式在此边界传播。
+        executor.setTaskDecorator(new TraceContextTaskDecorator(telemetry, "task evolution.reflect"));
         return executor;
     }
 
