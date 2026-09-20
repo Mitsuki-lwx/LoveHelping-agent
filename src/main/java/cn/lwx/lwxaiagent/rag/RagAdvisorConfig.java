@@ -41,7 +41,9 @@ public class RagAdvisorConfig {
                 .documentRetriever(new DegradingDocumentRetriever(documentRetriever, meterRegistry))
                 .queryAugmenter(ContextualQueryAugmenter.builder().allowEmptyContext(true).build())
                 .documentPostProcessors(rerankDocumentPostProcessor); // 重排：关闭态原样透传
-        // 查询改写默认开（application.yml app.rag.query-rewrite.enabled=true）
+        // 查询改写**默认关**（application.yml app.rag.query-rewrite.enabled=false，
+        // 可用环境变量 QUERY_REWRITE_ENABLED 覆盖）。注意：此注释此前写成"默认开"，
+        // 与配置相反 —— 2026-09-20 更正。
         if (queryRewriteEnabled) {
             QueryRewriter rewriter = queryRewriter.getIfAvailable();
             if (rewriter != null) {
