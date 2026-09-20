@@ -61,6 +61,9 @@ SCENARIOS = [
 # 需要采样的 Prometheus 指标（Micrometer: 点号→下划线；Counter 带 _total 后缀）
 GAUGE_KEYS = [
     ("inflight", "online_inflight_current"),
+    # 准入天花板（动态）：ADR-32 后它跟随网关自适应上限。S10a 修订判据要用它做
+    # 「两层闸门是否对齐」的比对（见 docs/phase6-soak/spec.md §5.4）。
+    ("inflight_ceiling", "online_inflight_ceiling"),
     ("queue_depth", "online_queue_depth"),
     ("hikari_active", "hikaricp_connections_active"),
     ("hikari_idle", "hikaricp_connections_idle"),

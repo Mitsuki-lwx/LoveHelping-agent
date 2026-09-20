@@ -89,6 +89,11 @@ public class OnlineLoadTracker {
                     .description("当前在途在线请求数").register(meterRegistry);
             Gauge.builder("online.queue.depth", waiters, AtomicInteger::get)
                     .description("当前排队等待额度的请求数").register(meterRegistry);
+            // 只读：准入天花板（**动态**，= min(配置 max-inflight, 网关自适应上限)）。
+            // 名字必须叫 ceiling 而不是 max —— maxInFlight() 返回的是随 ADR-32 下调的 ceiling，
+            // 叫成 .max 会让人误以为它是配置上限（2026-09-20 我先踩过这个命名坑）。
+            Gauge.builder("online.inflight.ceiling", this, OnlineLoadTracker::maxInFlight)
+                    .description("准入天花板（动态，= min(配置上限, 网关自适应上限)）").register(meterRegistry);
         } catch (RuntimeException ignored) {
             // 指标注册失败不影响准入本身
         }
