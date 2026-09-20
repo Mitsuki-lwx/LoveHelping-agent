@@ -255,4 +255,28 @@ class ChatEntryTest {
             assertEquals(0, stub.calls().get(), "词典已判 L3 时不得调用 Jev");
         }
     }
+
+    /**
+     * 审计补全（2026-09-20）：词典 L3 拦截必须落库。
+     *
+     * <p>此前这里只记 meters，SQL 看不出"词典兜底拦了多少条"——与 ADR-6"用于误报率监控"的初衷不符。</p>
+     */
+    @Test void dictionaryL3BlockIsAudited() {
+        doReturn(new GuardrailRuleService.Verdict(3, "self_harm")).when(guards).check(anyString());
+        assertThrows(BizException.class,
+                () -> entry.chat(SELF_HARM_TEXT, "dict-2", List.of(), false, false, null));
+        GuardrailEvent event = onlyRecordedEvent();
+        assertEquals("BLOCKED", event.getAction());
+        assertEquals("self_harm", event.getRuleId(), "ruleId 必须原样取自词典判定，便于按规则统计");
+        assertEquals(3, event.getLevel());
+        assertNull(event.getSignalScore(), "词典路径没有第二信号概率，不得写 0 冒充");
+        assertNotEquals(SELF_HARM_TEXT, event.getContentHmac(), "不得存原文");
+    }
+
+    /** 只补 L3：L1/L2 不阻断、请求会继续走到 LLM，而那条路径已由 GuardrailAdvisor 记 LOGGED。 */
+    @Test void dictionaryL1L2IsNotRecordedHereToAvoidDoubleCounting() {
+        doReturn(new GuardrailRuleService.Verdict(1, "vague")).when(guards).check(anyString());
+        assertDoesNotThrow(() -> entry.chat("你好", "dict-3", List.of(), false, false, null));
+        verify(eventMapper, never()).insert(any(GuardrailEvent.class));
+    }
 }

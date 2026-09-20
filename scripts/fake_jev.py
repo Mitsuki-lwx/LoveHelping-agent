@@ -8,11 +8,17 @@
 
     FAKE_JEV_MODE=ok         -> 立即返回一个合法 noul（概率取 FAKE_JEV_PROB）
     FAKE_JEV_MODE=slow       -> 延迟 FAKE_JEV_DELAY 秒后返回（默认 30s，远大于客户端 timeout）
+                                **并在延迟期间探测客户端是否断开**（见下方 stats.client_disconnected）
     FAKE_JEV_MODE=slow_error -> 延迟后返回 500（长在途 + 触发错误分支）
     FAKE_JEV_MODE=error      -> 立即 500
     FAKE_JEV_MODE=hang       -> 永不返回（占住请求线程直到客户端超时）
 
     GET /stats  -> 上游侧看到的并发统计（current / max / total）+ 各模式计数
+                   + client_disconnected：延迟期间探测到"客户端已关闭连接"的次数
+
+  为什么要探测 client_disconnected：把上游指向一个不存在的端口只能测"立即拒绝"，
+  测不出"客户端超时后到底有没有放弃这次请求"。这条决定了我们会不会在对方侧堆一堆废请求。
+  做法：延迟期间用 select() 轮询连接，读回 b'' 即对端已关闭（FIN）。
     GET /reset  -> 清零并返回清零前的快照
 
 ⚠️ `/reset` 是必需的，不是便利：`max` 是**进程内累计值**，
@@ -23,6 +29,8 @@
 """
 import json
 import os
+import select
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -32,7 +40,8 @@ DELAY = float(os.environ.get("FAKE_JEV_DELAY", "30"))
 PROB = float(os.environ.get("FAKE_JEV_PROB", "0.97"))
 
 _lock = threading.Lock()
-_state = {"current": 0, "max": 0, "total": 0, "max_at": None, "by_mode": {}}
+_state = {"current": 0, "max": 0, "total": 0, "max_at": None, "by_mode": {},
+          "client_disconnected": 0}
 
 
 def _enter():
@@ -57,8 +66,25 @@ def _snapshot():
 def _reset():
     with _lock:
         previous = dict(_state)
-        _state.update({"current": 0, "max": 0, "total": 0, "max_at": None, "by_mode": {}})
+        _state.update({"current": 0, "max": 0, "total": 0, "max_at": None, "by_mode": {},
+                       "client_disconnected": 0})
         return previous
+
+
+def _client_gone(conn):
+    """对端是否已关闭连接：可读且 recv 返回 b'' 即收到 FIN。"""
+    try:
+        readable, _, _ = select.select([conn], [], [], 0)
+        if not readable:
+            return False
+        return conn.recv(1, socket.MSG_PEEK) == b""
+    except (OSError, ValueError):
+        return True
+
+
+def _mark_disconnected():
+    with _lock:
+        _state["client_disconnected"] += 1
 
 
 def _body(probability):
@@ -109,7 +135,14 @@ class Handler(BaseHTTPRequestHandler):
             elif MODE == "error":
                 self._send(500, b'{"error":"injected failure"}')
             elif MODE == "slow":
-                time.sleep(DELAY)
+                # 分片睡眠 + 轮询对端：客户端超时后若真的中止了这次交换，
+                # 我们能在这里观察到 FIN，并提前结束（不再白占一个线程）。
+                deadline = time.time() + DELAY
+                while time.time() < deadline:
+                    if _client_gone(self.connection):
+                        _mark_disconnected()
+                        return
+                    time.sleep(0.2)
                 self._send(200, _body(PROB))
             elif MODE == "slow_error":
                 time.sleep(DELAY)

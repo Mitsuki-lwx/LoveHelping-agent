@@ -216,6 +216,11 @@ public class ChatEntry {
         if (verdict.level() > 0) meters.counter("guardrail.trigger", "level", String.valueOf(verdict.level()), "rule_id", verdict.ruleId()).increment();
         if (verdict.level() >= 3) {
             metric("l3_blocked");
+            // 审计补全（2026-09-20）：此前这里**只记 meters、不落 guardrail_event**，
+            // 于是 SQL 看不出"有多少条消息被词典兜底拦下"——与 ADR-6"用于误报率监控"的初衷不符。
+            // 只补 L3：L1/L2 不阻断、请求会继续走到 LLM，而 GuardrailAdvisor 那条路径已记 LOGGED，
+            // 在这里再记一次会**双计**。L3 是throw 出去的，advisor 根本不会跑到，故不冲突。
+            recorder.record(prompt, 3, verdict.ruleId(), GuardrailEventRecorder.ACTION_BLOCKED);
             throw new BizException(4001, "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT);
         }
         // Jev 第二信号（2026-09-20，docs/phase7-guardrail-recall + phase7-jev-shadow）：**只加召回，不替兜底**。
