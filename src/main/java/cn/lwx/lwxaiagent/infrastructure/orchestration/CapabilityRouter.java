@@ -24,20 +24,75 @@ public class CapabilityRouter {
         return hasToolIntent(message);
     }
 
-    /** 工具意图检测：搜索/查一下/天气/规划/帮我做等 */
+    /**
+     * 工具意图检测。
+     *
+     * <p><b>2026-09-20 修复</b>：原实现是
+     * {@code message.matches("(?i).{0,5}(...关键字...).{0,30}")} —— {@code matches()} 要求<b>全串匹配</b>，
+     * 而模式以 {@code .{0,5}} 开头，等价于"关键字必须出现在<b>前 6 个字符内</b>"。
+     * 实测三个明确要工具的用例全部漏判（"北京今天适合户外约会吗？查下天气"、
+     * "帮我搜一下附近适合第一次约会的咖啡馆"、"…帮我查证一下"）→ 被路由到 {@code R_NORMAL}，
+     * 用户要实时信息却拿不到工具。同时关键词表也缺"查下/搜一下/查证"这类口语说法。</p>
+     *
+     * <p>修法：按信号强度分三类，而不是把原模式简单放宽成 {@code contains} ——
+     * 后者会让"天气/地图/最新"这类<b>弱主题词</b>在情感叙述里误命中
+     * （"那天下雨天气很糟，他都没来接我"），而误判成 Agent 的代价是<b>多轮 LLM 调用</b>，比漏判更贵。</p>
+     */
     private boolean hasToolIntent(String message) {
-        return message.matches("(?i).{0,5}(搜索|查一下|查查|查询|天气|地图|约会方案|帮我做|帮我规划|帮我下载|下载图片|生成PDF|生成文件|搜索图片).{0,30}");
+        if (message == null || message.isBlank()) return false;
+        return STRONG_TOOL_INTENT.matcher(message).find()
+                || ACTION_ON_TOPIC.matcher(message).find()
+                || HEAD_TOPIC.matcher(message).find();
     }
+
+    /** ① 强意图短语：语义上就是"去外部取信息"，出现在句中任意位置都算。 */
+    private static final java.util.regex.Pattern STRONG_TOOL_INTENT = java.util.regex.Pattern.compile(
+            "搜索|搜一搜|搜一下|搜下|查一下|查下|查查|查询|查证|联网|上网查|"
+                    + "帮我搜|帮我查|帮我找|帮我下载|下载图片|生成PDF|生成文件|搜索图片|导航到");
+
+    /**
+     * ② 动作 + 主题：动词与主题词必须**同句相邻**（≤8 字，不跨句读）。
+     * 用于"天气/地图/最新"这类弱主题词——只允许被"查/搜/看/推荐"等动作带着出现。
+     */
+    private static final java.util.regex.Pattern ACTION_ON_TOPIC = java.util.regex.Pattern.compile(
+            "(查|搜|找|看|问|了解|推荐|导航)[^。！？]{0,8}"
+                    + "(天气|地图|路况|新闻|政策|最新|附近|票价|营业时间|餐厅|咖啡馆|酒店)");
+
+    /**
+     * ③ 句首主题词：短消息的典型形态（"今天天气怎么样"）。**保留修复前的行为，本轮只加不改**——
+     * 它对短句是对的，也避免"改了 A 坏了 B"。它带来的既有误判（叙述句前 6 字含"天气"）
+     * 本轮不扩大、也不修，已如实记在 `docs/phase7-router-fix/checklist.md`。
+     */
+    private static final java.util.regex.Pattern HEAD_TOPIC = java.util.regex.Pattern.compile(
+            "^.{0,5}(天气|地图|约会方案|帮我做|帮我规划|导航)");
 
     /**
      * 话术建议意图检测（FR-CORE-01）：沟通建议请求 → 触发话术三级。
      * 与 {@link #needTools} 相互独立：话术请求不需要工具，仍走 ChatExecutor。
      * 启发式规则（ADR-18 代价项：可能漏触发/误触发，靠"先澄清问题"原则对冲）——
      * 刻意避开"怎么说/说什么/怎么回"等会被"这个单词怎么说/怎么回家"撞中的宽泛词。
+     * <p>2026-09-20 补两类同样明确但原先漏掉的形态："求说法/话术"与"求方法+沟通动作"（见
+     * {@link #ASK_WORDING} / {@link #ASK_METHOD}）；宽泛词仍然不用。</p>
      */
     public boolean isAdviceRequest(String message) {
-        return message.matches("(?i).*(怎么回复|如何回复|怎么回她|怎么回他|怎么回消息|怎么哄|怎么道歉|怎么开口|如何开口|怎么拒绝她|怎么拒绝他|怎么表白|怎么挽回|怎么搭讪|怎么接话|怎么继续聊|怎么聊下去|开场白|怎么让话题).*");
+        if (message == null || message.isBlank()) return false;
+        // 2026-09-20 补：原规则只认"怎么X"的固定说法，漏掉"求说法/求办法"这两种同样明确的形态
+        // （实测漏判："消息老是已读不回，有什么办法能让他主动找我聊"、"刚认识一周，想约她出来，有什么自然的说法"）。
+        return ASK_WORDING.matcher(message).find()
+                || ASK_METHOD.matcher(message).find()
+                || message.matches("(?i).*(怎么回复|如何回复|怎么回她|怎么回他|怎么回消息|怎么哄|怎么道歉|怎么开口|如何开口|怎么拒绝她|怎么拒绝他|怎么表白|怎么挽回|怎么搭讪|怎么接话|怎么继续聊|怎么聊下去|开场白|怎么让话题).*");
     }
+
+    /** "有什么自然的说法 / 讨个话术"——"说法/话术"本身只属于沟通场景，误伤面小。 */
+    private static final java.util.regex.Pattern ASK_WORDING = java.util.regex.Pattern.compile(
+            "(有什么|有没有|有啥).{0,4}(说法|话术)");
+
+    /**
+     * "有什么办法能让他主动找我聊"——"求方法"之后必须**紧跟沟通动作**，
+     * 以此挡住"有什么办法提高网速"这类域外请求（`isOffTopic` 只锁工程/学术类，网不住它）。
+     */
+    private static final java.util.regex.Pattern ASK_METHOD = java.util.regex.Pattern.compile(
+            "(有什么|有没有|有啥).{0,4}(办法|方法|方式|招).{0,12}(回|聊|约|开口|说|追|挽回|道歉)");
 
     /**
      * 域外话题检测（2026-09-05，agent_eval off 用例驱动）：明显与恋爱/关系无关的请求
