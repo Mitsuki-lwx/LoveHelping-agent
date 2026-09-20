@@ -52,6 +52,11 @@ app.jev.guardrail.min-probability   # 升级阈值（默认 0.9）
 
 两个开关分开：情绪打分的替换与安全边界的变更**必须能独立开关**。
 
+> **后续变更（2026-09-20，见 `docs/phase7-jev-shadow`）**：`app.jev.guardrail.enabled` 已被
+> **`app.jev.guardrail.mode`**（`off` / `shadow` / `enforce`，默认 `off`）取代——
+> 布尔开关无法表达"判定但不拦截"的影子观测态，而那段观测是打开拦截前的前置条件。
+> 本文档其余内容（接点选在 `ChatEntry`、词典命中即短路、只加召回不替兜底）仍然有效。
+
 ## S5 验证
 
 1. **单测**（本地 `HttpServer` 桩）：

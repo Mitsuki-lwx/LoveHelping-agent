@@ -41,11 +41,31 @@ public class JevProperties {
     @Valid
     private Guardrail guardrail = new Guardrail();
 
+    /**
+     * 护栏第二信号的运行模式。
+     *
+     * <p><b>为什么是枚举而不是"再加一个 shadow 布尔"</b>：{@code enabled=false} + {@code shadow=true}
+     * 是非法态，两个布尔值迟早会被人配出这种组合。关 / 观测 / 拦截本身就是一条有序轴。</p>
+     */
+    public enum Mode {
+        /** 不调用 Jev，行为等于接入前（默认）。 */
+        OFF,
+        /**
+         * 判定并落库（{@code action=SHADOW}），但<b>绝不改变响应</b>。
+         *
+         * <p>影子观测的全部价值在于"看到真实流量长什么样"；一旦它会影响用户，
+         * 那就不是影子而是灰度拦截，拿到的分布也被自己污染了。</p>
+         */
+        SHADOW,
+        /** 判定 + 越阈值拦截（抛 4001 + 转介文案）。 */
+        ENFORCE
+    }
+
     @Getter
     @Setter
     public static class Guardrail {
-        /** 默认关。开启后每条用户消息多一次 Jev 调用（同步，计入首字延迟）。 */
-        private boolean enabled;
+        /** 默认 {@link Mode#OFF}。开启后每条用户消息多一次 Jev 调用（同步，计入首字延迟）。 */
+        private Mode mode = Mode.OFF;
         /**
          * 升级阈值：Jev 判"有自伤意愿"的概率达到此值才升级为 L3 自伤处理。
          *

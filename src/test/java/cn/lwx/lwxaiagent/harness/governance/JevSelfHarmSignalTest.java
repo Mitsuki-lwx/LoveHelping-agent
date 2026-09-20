@@ -13,8 +13,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 第二信号的单测：**只加召回、不替兜底**，且任何失败都必须安静地返回 false。
+ * 第二信号的单测：**只加召回、不替兜底**，且任何失败都必须安静地返回空。
  * 用本地 HttpServer 桩（非 mock 框架），模式同 {@code LangfuseTracingTest}。
+ *
+ * <p>本类还守着"判定与决策分离"（{@code docs/phase7-jev-shadow}）：
+ * {@code judge()} 必须把<b>低于阈值</b>的概率也返回出来，否则影子观测只能看到分布的高尾，
+ * 而那恰恰是它要测量的主体。</p>
  */
 class JevSelfHarmSignalTest {
 
@@ -41,21 +45,24 @@ class JevSelfHarmSignalTest {
                 + "}},\"usage\":{\"input_tokens\":300,\"output_tokens\":6}}";
     }
 
-    private JevSelfHarmSignal signal(Stub stub, boolean enabled, double threshold) {
+    private JevSelfHarmSignal signal(Stub stub, JevProperties.Mode mode, double threshold) {
         JevProperties props = new JevProperties();
         props.setEnabled(true);
         props.setApiKey("apikey_test_only");
         props.setBaseUrl("http://127.0.0.1:" + stub.server().getAddress().getPort());
         props.setTimeoutMs(2000);
-        props.getGuardrail().setEnabled(enabled);
+        props.getGuardrail().setMode(mode);
         props.getGuardrail().setMinProbability(threshold);
         return new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
     }
 
     @Test
-    void flagsWhenProbabilityReachesThreshold() throws Exception {
+    void exceedsThresholdWhenProbabilityReachesIt() throws Exception {
         try (Stub stub = Stub.start(200, noulBody(0.97))) {
-            assertTrue(signal(stub, true, 0.9).flagged("我真的撑不下去了，感觉活着好累"));
+            var risk = signal(stub, JevProperties.Mode.ENFORCE, 0.9).judge("我真的撑不下去了，感觉活着好累");
+            assertTrue(risk.isPresent());
+            assertEquals(0.97, risk.get().probability(), 1e-9);
+            assertTrue(risk.get().exceedsThreshold());
             assertEquals(1, stub.calls().get());
         }
     }
@@ -65,55 +72,92 @@ class JevSelfHarmSignalTest {
     void thresholdBoundaryIsInclusive() throws Exception {
         try (Stub exactly = Stub.start(200, noulBody(0.9));
              Stub below = Stub.start(200, noulBody(0.89))) {
-            assertTrue(signal(exactly, true, 0.9).flagged("x"));
-            assertFalse(signal(below, true, 0.9).flagged("x"));
+            assertTrue(signal(exactly, JevProperties.Mode.ENFORCE, 0.9).judge("x").orElseThrow().exceedsThreshold());
+            assertFalse(signal(below, JevProperties.Mode.ENFORCE, 0.9).judge("x").orElseThrow().exceedsThreshold());
         }
     }
 
+    /**
+     * 影子观测的关键前提：<b>低于阈值也要把概率返回出来</b>。
+     *
+     * <p>若这里返回空，观测就只剩高尾，算不出"阈值 0.6 会拦掉真实流量的百分之几"。</p>
+     */
     @Test
-    void disabledNeverCallsHttp() throws Exception {
+    void shadowModeStillReturnsProbabilityBelowThreshold() throws Exception {
+        try (Stub stub = Stub.start(200, noulBody(0.05))) {
+            var risk = signal(stub, JevProperties.Mode.SHADOW, 0.6).judge("今天上班，没什么特别的");
+            assertTrue(risk.isPresent(), "低于阈值也必须返回概率，否则影子观测看不到分布主体");
+            assertEquals(0.05, risk.get().probability(), 1e-9);
+            assertFalse(risk.get().exceedsThreshold());
+        }
+    }
+
+    /** 落库要记阈值，日后阈值改了才能复算"这条当时为什么没拦"。 */
+    @Test
+    void thresholdIsExposedForAudit() {
+        JevProperties props = new JevProperties();
+        props.getGuardrail().setMinProbability(0.42);
+        var signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
+        assertEquals(0.42, signal.threshold(), 1e-9);
+    }
+
+    @Test
+    void offModeNeverCallsHttp() throws Exception {
         try (Stub stub = Stub.start(200, noulBody(0.99))) {
-            assertFalse(signal(stub, false, 0.9).flagged("我不想活了"));
-            assertEquals(0, stub.calls().get(), "未启用时不得发出任何请求");
+            var signal = signal(stub, JevProperties.Mode.OFF, 0.9);
+            assertFalse(signal.enabled());
+            assertTrue(signal.judge("我不想活了").isEmpty());
+            assertEquals(0, stub.calls().get(), "off 模式下不得发出任何请求");
         }
     }
 
     /** 失败即"不加召回"，且不得抛异常——护栏路径上抛异常比漏召回更危险。 */
     @Test
-    void failuresReturnFalseAndNeverThrow() throws Exception {
+    void failuresReturnEmptyAndNeverThrow() throws Exception {
         try (Stub rateLimited = Stub.start(429, "{\"error\":\"rate limited\"}");
              Stub overloaded = Stub.start(529, "{}");
              Stub malformed = Stub.start(200, "{\"answers\":{\"self_harm\":{\"type\":\"noul\"}}}")) {
             for (Stub stub : new Stub[]{rateLimited, overloaded, malformed}) {
-                assertFalse(signal(stub, true, 0.9).flagged("我不想活了"), "失败必须安静地返回 false");
+                assertTrue(signal(stub, JevProperties.Mode.ENFORCE, 0.9).judge("我不想活了").isEmpty(),
+                        "失败必须安静地返回空");
             }
         }
     }
 
     @Test
-    void unreachableEndpointReturnsFalse() {
+    void unreachableEndpointReturnsEmpty() {
         JevProperties props = new JevProperties();
         props.setEnabled(true);
         props.setApiKey("apikey_test_only");
         props.setBaseUrl("http://127.0.0.1:1");
         props.setTimeoutMs(500);
-        props.getGuardrail().setEnabled(true);
+        props.getGuardrail().setMode(JevProperties.Mode.ENFORCE);
         JevSelfHarmSignal signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
-        assertDoesNotThrow(() -> assertFalse(signal.flagged("我不想活了")));
+        assertDoesNotThrow(() -> assertTrue(signal.judge("我不想活了").isEmpty()));
     }
 
-    /** 总开关关掉时，即使护栏开关开着也不得发出请求。 */
     @Test
-    void masterSwitchOverridesGuardrailSwitch() throws Exception {
+    void blankInputIsNotSent() throws Exception {
+        try (Stub stub = Stub.start(200, noulBody(0.99))) {
+            var signal = signal(stub, JevProperties.Mode.SHADOW, 0.6);
+            assertTrue(signal.judge(null).isEmpty());
+            assertTrue(signal.judge("   ").isEmpty());
+            assertEquals(0, stub.calls().get(), "空文本不发请求");
+        }
+    }
+
+    /** 总开关关掉时，即使护栏模式是 enforce 也不得发出请求。 */
+    @Test
+    void masterSwitchOverridesGuardrailMode() throws Exception {
         try (Stub stub = Stub.start(200, noulBody(0.99))) {
             JevProperties props = new JevProperties();
             props.setEnabled(false);
             props.setApiKey("apikey_test_only");
             props.setBaseUrl("http://127.0.0.1:" + stub.server().getAddress().getPort());
-            props.getGuardrail().setEnabled(true);
+            props.getGuardrail().setMode(JevProperties.Mode.ENFORCE);
             JevSelfHarmSignal signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
             assertFalse(signal.enabled());
-            assertFalse(signal.flagged("我不想活了"));
+            assertTrue(signal.judge("我不想活了").isEmpty());
             assertEquals(0, stub.calls().get());
         }
     }

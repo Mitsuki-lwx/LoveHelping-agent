@@ -1,8 +1,10 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration;
 
 import cn.lwx.lwxaiagent.common.BizException;
+import cn.lwx.lwxaiagent.harness.governance.GuardrailEventRecorder;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
 import cn.lwx.lwxaiagent.harness.governance.JevSelfHarmSignal;
+import cn.lwx.lwxaiagent.infrastructure.ai.JevProperties;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphRunner;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker;
@@ -38,6 +40,7 @@ public class ChatEntry {
             "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
     private final GuardrailRuleService guardrails;
     private final JevSelfHarmSignal jevSignal;
+    private final GuardrailEventRecorder recorder;
     private final RateLimiter rateLimiter;
     private final CapabilityRouter router;
     private final GraphRunner graphRunner;
@@ -50,14 +53,15 @@ public class ChatEntry {
     private final int brakeStart, brakeEnd;
     private final long timeoutMs;
 
-    public ChatEntry(GuardrailRuleService guardrails, JevSelfHarmSignal jevSignal, RateLimiter rateLimiter, CapabilityRouter router,
+    public ChatEntry(GuardrailRuleService guardrails, JevSelfHarmSignal jevSignal,
+                     GuardrailEventRecorder recorder, RateLimiter rateLimiter, CapabilityRouter router,
                      GraphRunner graphRunner, StreamRegistry streams, OnlineLoadTracker online,
                      MeterRegistry meters, Tracer tracer, MemoryService memory,
                      @Value("${app.emotion-brake.enabled:true}") boolean brakeEnabled,
                      @Value("${app.emotion-brake.start-hour:23}") int brakeStart,
                      @Value("${app.emotion-brake.end-hour:6}") int brakeEnd,
                      @Value("${app.chat.timeout-ms:90000}") long timeoutMs) {
-        this.guardrails = guardrails; this.jevSignal = jevSignal;
+        this.guardrails = guardrails; this.jevSignal = jevSignal; this.recorder = recorder;
         this.rateLimiter = rateLimiter; this.router = router;
         this.graphRunner = graphRunner; this.streams = streams; this.online = online;
         this.meters = meters; this.tracer = tracer; this.memory = memory;
@@ -214,16 +218,33 @@ public class ChatEntry {
             metric("l3_blocked");
             throw new BizException(4001, "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT);
         }
-        // Jev 第二信号（2026-09-20，docs/phase7-guardrail-recall）：**只加召回，不替兜底**。
+        // Jev 第二信号（2026-09-20，docs/phase7-guardrail-recall + phase7-jev-shadow）：**只加召回，不替兜底**。
         // 位置在词典 L3 分支**之后**——词典已判 L3 的消息根本走不到这里，Jev 无法放行它；
         // 反过来说，词典命中过的消息也不会多付这一次网络往返（实测拦截响应仍是 10~50ms）。
         // 放在 ChatEntry 而不是 GuardrailAdvisor：这里拿到的是**用户原话**，
         // 而 advisor 那层的 user message 已掺入技能/检索注入，同一句话的概率会被稀释。
-        if (jevSignal.flagged(prompt)) {
-            metric("l3_blocked");
-            meters.counter("guardrail.trigger", "level", "3", "rule_id", JevSelfHarmSignal.RULE_ID).increment();
-            log.warn("Guardrail L3 blocked by Jev second signal: {}", prompt.length() > 40 ? prompt.substring(0, 40) + "…" : prompt);
-            throw new BizException(4001, REFERRAL_TEXT);
+        var jevMode = jevSignal.mode();
+        if (jevMode != JevProperties.Mode.OFF) {
+            var risk = jevSignal.judge(prompt);
+            if (risk.isPresent()) {
+                var r = risk.get();
+                if (jevMode == JevProperties.Mode.SHADOW) {
+                    // 影子观测：判定、记账，**绝不改变响应**。一旦它影响用户就不再是影子，
+                    // 拿到的分布也被自己污染了。level=3 表示"判为 L3 候选"，是否真拦看 action。
+                    recorder.record(prompt, 3, JevSelfHarmSignal.RULE_ID, GuardrailEventRecorder.ACTION_SHADOW,
+                            r.probability(), jevSignal.threshold());
+                    meters.counter("guardrail.shadow", "rule_id", JevSelfHarmSignal.RULE_ID,
+                            "exceeds", String.valueOf(r.exceedsThreshold())).increment();
+                } else if (r.exceedsThreshold()) {
+                    metric("l3_blocked");
+                    meters.counter("guardrail.trigger", "level", "3", "rule_id", JevSelfHarmSignal.RULE_ID).increment();
+                    recorder.record(prompt, 3, JevSelfHarmSignal.RULE_ID, GuardrailEventRecorder.ACTION_BLOCKED,
+                            r.probability(), jevSignal.threshold());
+                    log.warn("Guardrail L3 blocked by Jev second signal: {}",
+                            prompt.length() > 40 ? prompt.substring(0, 40) + "…" : prompt);
+                    throw new BizException(4001, REFERRAL_TEXT);
+                }
+            }
         }
         if (brakeEnabled && !continueBrake && verdict.level() >= 2 && isLateNight() && guardrails.matchesEmotionBrake(prompt))
             throw new BizException(4002, "我注意到你现在情绪比较激动。可以先冷静一下再继续；确认仍要发送时请携带 continueBrake=true。");

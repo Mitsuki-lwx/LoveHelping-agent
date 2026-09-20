@@ -1,10 +1,7 @@
 package cn.lwx.lwxaiagent.harness.governance;
 
-import cn.lwx.lwxaiagent.entity.GuardrailEvent;
 
 
-import cn.lwx.lwxaiagent.mapper.GuardrailEventMapper;
-import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClientMessageAggregator;
 import org.springframework.ai.chat.client.ChatClientRequest;
@@ -19,9 +16,6 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.time.LocalDateTime;
 
 /**
  * <h1>安全护栏拦截器（ADR-6 升级：规则外置 + 三级梯度 + 事件审计）</h1>
@@ -52,13 +46,14 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
 
     private final OutputGuardrail outputGuardrail;
     private final GuardrailRuleService ruleService;
-    private final GuardrailEventMapper eventMapper;
+    private final GuardrailEventRecorder recorder;
+
     public GuardrailAdvisor(OutputGuardrail outputGuardrail,
                             GuardrailRuleService ruleService,
-                            GuardrailEventMapper eventMapper) {
+                            GuardrailEventRecorder recorder) {
         this.outputGuardrail = outputGuardrail;
         this.ruleService = ruleService;
-        this.eventMapper = eventMapper;
+        this.recorder = recorder;
         log.info("GuardrailAdvisor bean created");
     }
 
@@ -79,13 +74,13 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         GuardrailRuleService.Verdict verdict = ruleService.check(userText);
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked ({}): {}", verdict.ruleId(), truncate(userText));
-            recordEvent(userText, verdict.level(), verdict.ruleId(), "BLOCKED");
+            recorder.record(userText, verdict.level(), verdict.ruleId(), "BLOCKED");
             String fallback = "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT;
             return fallbackResponse(fallback);
         }
         if (verdict.level() > 0) {
             log.info("Guardrail L{} logged ({}): {}", verdict.level(), verdict.ruleId(), truncate(userText));
-            recordEvent(userText, verdict.level(), verdict.ruleId(), "LOGGED");
+            recorder.record(userText, verdict.level(), verdict.ruleId(), "LOGGED");
         }
         ChatClientResponse response = chain.nextCall(request);
         String outputText = getOutputText(response);
@@ -105,13 +100,13 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         GuardrailRuleService.Verdict verdict = ruleService.check(userText);
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked (stream) ({}): {}", verdict.ruleId(), truncate(userText));
-            recordEvent(userText, verdict.level(), verdict.ruleId(), "BLOCKED");
+            recorder.record(userText, verdict.level(), verdict.ruleId(), "BLOCKED");
             String fallback = "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT;
             return Flux.just(fallbackResponse(fallback));
         }
         if (verdict.level() > 0) {
             log.info("Guardrail L{} logged (stream) ({}): {}", verdict.level(), verdict.ruleId(), truncate(userText));
-            recordEvent(userText, verdict.level(), verdict.ruleId(), "LOGGED");
+            recorder.record(userText, verdict.level(), verdict.ruleId(), "LOGGED");
         }
         Flux<ChatClientResponse> responses = chain.nextStream(request);
         return new ChatClientMessageAggregator()
@@ -122,36 +117,6 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
                         log.warn("Output guardrail (stream): {}", outputCheck.reason());
                     }
                 });
-    }
-
-    /** 审计事件：只存 content_hmac（07 §6），不存原文 */
-    private void recordEvent(String userText, int level, String ruleId, String action) {
-        try {
-            GuardrailEvent event = new GuardrailEvent();
-            event.setUserId(TenantContext.getUserId());
-            event.setLevel(level);
-            event.setRuleId(ruleId);
-            event.setContentHmac(sha256(userText));
-            event.setAction(action);
-            event.setCreatedAt(LocalDateTime.now());
-            eventMapper.insert(event);
-        } catch (Exception e) {
-            log.warn("Failed to record guardrail event: {}", e.getMessage());
-        }
-    }
-
-    private String sha256(String text) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(text.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : digest) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return "";
-        }
     }
 
     private String getUserText(ChatClientRequest request) {

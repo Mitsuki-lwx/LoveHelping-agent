@@ -271,7 +271,11 @@ app:
     timeout-ms: 3000                  # 故意设短：失败就回退，不许拖慢请求
     guardrail:
       # 护栏口语化危机"加召回"：只升级、不放行，词典仍是唯一兜底（详见 docs/phase7-guardrail-recall）
-      enabled: ${JEV_GUARDRAIL_ENABLED:false}
+      # mode 三态（docs/phase7-jev-shadow）：
+      #   off     = 不调用，行为等于接入前（默认）
+      #   shadow  = 判定并落库 action=SHADOW，**绝不改变响应**；用来量真实分布与误报率
+      #   enforce = 判定 + 越阈值拦截（抛 4001 转介文案）
+      mode: ${JEV_GUARDRAIL_MODE:off}
       min-probability: 0.6            # 标定值（0.3~0.6 召回 8/8 且误报 0；0.9 只剩 3/8）
 
   # 编排图能力治理（ADR-19）：agent 节点工具白名单（能力域，逗号分隔）

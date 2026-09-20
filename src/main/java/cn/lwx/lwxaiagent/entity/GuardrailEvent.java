@@ -30,9 +30,17 @@ public class GuardrailEvent {
     @TableField("content_hmac")
     private String contentHmac;
 
-    /** BLOCKED（阻断）/ LOGGED（仅记录） */
+    /** BLOCKED（阻断）/ LOGGED（仅记录）/ SHADOW（影子观测：判定但不拦截，V24） */
     @TableField("action")
     private String action;
+
+    /** 第二信号概率 0~1（仅 Jev 判定写入，V24）；不含内容信息，不构成新的隐私面。 */
+    @TableField("signal_score")
+    private java.math.BigDecimal signalScore;
+
+    /** 判定时所用阈值，便于事后复算"这条当时为什么没拦"（V24）。 */
+    @TableField("signal_threshold")
+    private java.math.BigDecimal signalThreshold;
 
     @TableField("created_at")
     private LocalDateTime createdAt;
