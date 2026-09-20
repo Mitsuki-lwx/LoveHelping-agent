@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.ai;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -31,4 +32,30 @@ public class JevProperties {
      * 宁可回退到原有路径，也不许把请求拖慢。
      */
     @Min(200) @Max(30000) private long timeoutMs = 3000;
+
+    /**
+     * 护栏加召回（安全边界）。
+     *
+     * <p>与"情绪打分替换"分开开关：安全边界的变更必须能独立控制、独立回滚。</p>
+     */
+    @Valid
+    private Guardrail guardrail = new Guardrail();
+
+    @Getter
+    @Setter
+    public static class Guardrail {
+        /** 默认关。开启后每条用户消息多一次 Jev 调用（同步，计入首字延迟）。 */
+        private boolean enabled;
+        /**
+         * 升级阈值：Jev 判"有自伤意愿"的概率达到此值才升级为 L3 自伤处理。
+         *
+         * <p><b>0.6 是标定出来的，不是拍的</b>（`scripts/jev_guardrail_threshold_probe.py`，
+         * 12 例人工标注实测）：阈值 0.3~0.6 召回都是 8/8 且误报 0；0.7 掉到 6/8；0.9 只剩 3/8。
+         * 正例最低概率 0.61、负例最高只有 0.05（分离度 12 倍），故 0.6 落在分离带里、且留有余量。</p>
+         *
+         * <p>⚠️ 初始我拍的是 0.9（"误报会让用户拿不到答案，取高位"）——实测那样会白丢一半召回。
+         * 保持这条注释是为了提醒：**门槛类参数应当标定，不要凭直觉取整**。</p>
+         */
+        @DecimalMin("0.1") @DecimalMax("1.0") private double minProbability = 0.6;
+    }
 }

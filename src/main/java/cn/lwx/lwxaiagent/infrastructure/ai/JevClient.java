@@ -21,8 +21,8 @@ import java.util.Optional;
  *
  * <p>官方定位（{@code docs.typesafe.ai/concepts/how-to-build-with-system-one}）：
  * "代码拥有流程，AI 只做窄的、结构化判定"；并且"答案永远被约束在你给的选项里，
- * 代码不需要从生成的散文里取值"。本类据此只用 {@code score} 类型，返回<b>档位下标</b>与<b>档位描述</b>，
- * 调用方拿到的值是受约束的枚举，而不是需要正则去抠的自由文本。</p>
+ * 代码不需要从生成的散文里取值"。本类据此只用 {@code score} 与 {@code noul} 两种类型，
+ * 调用方拿到的都是受约束的值，而不是需要正则去抠的自由文本。</p>
  *
  * <p>失败语义：任何异常/非 200/缺字段都返回 {@link Optional#empty()} 并记一趟 WARN 单行
  * （ADR-33 降噪口径），<b>绝不抛给调用方</b>——由调用方决定回退。</p>
@@ -65,27 +65,76 @@ public class JevClient {
     }
 
     /**
-     * 求一个 Score 判定。
+     * Score 判定：档位下标 + 档位描述。
      *
      * @param instructions 完整的问题（必须自带上下文；问题 id 不会发给模型）
      * @param stateField   状态里承载被判定文本的字段名，instructions 里用反引号引用它
      * @param stateValue   被判定的文本
-     * @return 档位；任何失败都返回空，由调用方回退
      */
     public Optional<Mood> score(String instructions, String stateField, String stateValue) {
+        ObjectNode question = mapper.createObjectNode();
+        question.put("type", "score");
+        question.put("instructions", instructions);
+        ArrayNode levels = question.putArray("criteria");
+        MOOD_LEVELS.forEach(levels::add);
+        ObjectNode questions = mapper.createObjectNode();
+        questions.set("mood", question);
+
+        Optional<JsonNode> all = answers(stateField, stateValue, questions);
+        if (all.isEmpty()) return Optional.empty();
+        return parseMood(all.get().path("mood"));
+    }
+
+    /**
+     * Noul 判定：返回"是"的概率（0~1）。
+     *
+     * <p>官方口径：{@code noul} 适合"干净的 yes/no，且概率本身就是有用信号"的场景，
+     * 它没有单独的 confidence。</p>
+     */
+    public Optional<Double> noul(String questionId, String instructions,
+                                 String trueMeaning, String falseMeaning,
+                                 String stateField, String stateValue) {
+        ObjectNode question = mapper.createObjectNode();
+        question.put("type", "noul");
+        question.put("instructions", instructions);
+        ObjectNode criteria = question.putObject("criteria");
+        criteria.put("true", trueMeaning);
+        criteria.put("false", falseMeaning);
+        ObjectNode questions = mapper.createObjectNode();
+        questions.set(questionId, question);
+
+        Optional<JsonNode> all = answers(stateField, stateValue, questions);
+        if (all.isEmpty()) return Optional.empty();
+        JsonNode value = all.get().path(questionId).get("noul");
+        if (value == null || !value.isNumber()) {
+            log.warn("jev noul failed: answer has no numeric noul");
+            return Optional.empty();
+        }
+        return Optional.of(value.asDouble());
+    }
+
+    private Optional<Mood> parseMood(JsonNode answer) {
+        JsonNode score = answer.get("score");
+        if (score == null || !score.isNumber()) {
+            log.warn("jev score failed: answer has no numeric score");
+            return Optional.empty();
+        }
+        int level = (int) Math.round(score.asDouble());
+        if (level < 0 || level >= MOOD_LEVELS.size()) {
+            log.warn("jev score failed: level out of range {}", score.asDouble());
+            return Optional.empty();
+        }
+        // 官方把每个档位编号原样回在 legend 里；优先用它的描述，取不到再用本地常量
+        String label = answer.path("legend").path(String.valueOf(level)).asText(MOOD_LEVELS.get(level));
+        return Optional.of(new Mood(level, label));
+    }
+
+    /** 发一次请求并返回 {@code answers} 节点；任何失败返回空。 */
+    private Optional<JsonNode> answers(String stateField, String stateValue, ObjectNode questions) {
         if (!available()) return Optional.empty();
         try {
             ObjectNode state = mapper.createObjectNode();
             state.put(stateField, abbreviate(stateValue));
-
-            ObjectNode question = mapper.createObjectNode();
-            question.put("type", "score");
-            question.put("instructions", instructions);
-            ArrayNode levels = question.putArray("criteria");
-            MOOD_LEVELS.forEach(levels::add);
-
-            ObjectNode questions = mapper.createObjectNode();
-            questions.set("mood", question);
 
             ObjectNode body = mapper.createObjectNode();
             body.set("state", state);
@@ -103,32 +152,15 @@ public class JevClient {
 
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
-                log.warn("jev score failed: http={}", response.statusCode());
+                log.warn("jev call failed: http={}", response.statusCode());
                 return Optional.empty();
             }
-            return parse(response.body());
+            return Optional.of(mapper.readTree(response.body()).path("answers"));
         } catch (Exception e) {
-            // 超时/连接失败/解析失败一律回退；单行 WARN，不打堆栈（ADR-33）
-            log.warn("jev score failed: {}", e.getClass().getSimpleName() + ": " + e.getMessage());
+            // 超时/连接失败/解析失败一律返回空；单行 WARN，不打堆栈（ADR-33）
+            log.warn("jev call failed: {}", e.getClass().getSimpleName() + ": " + e.getMessage());
             return Optional.empty();
         }
-    }
-
-    private Optional<Mood> parse(String body) throws Exception {
-        JsonNode answer = mapper.readTree(body).path("answers").path("mood");
-        JsonNode score = answer.get("score");
-        if (score == null || !score.isNumber()) {
-            log.warn("jev score failed: answer has no numeric score");
-            return Optional.empty();
-        }
-        int level = (int) Math.round(score.asDouble());
-        if (level < 0 || level >= MOOD_LEVELS.size()) {
-            log.warn("jev score failed: level out of range {}", score.asDouble());
-            return Optional.empty();
-        }
-        // 官方把每个档位编号原样回在 legend 里；优先用它的描述，取不到再用本地常量
-        String label = answer.path("legend").path(String.valueOf(level)).asText(MOOD_LEVELS.get(level));
-        return Optional.of(new Mood(level, label));
     }
 
     private static String abbreviate(String text) {

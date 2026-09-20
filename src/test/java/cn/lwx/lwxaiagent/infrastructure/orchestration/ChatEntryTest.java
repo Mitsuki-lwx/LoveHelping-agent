@@ -33,10 +33,18 @@ class ChatEntryTest {
         graph = mock(GraphRunner.class); rate = mock(RateLimiter.class); memory = mock(MemoryService.class);
         streams = new StreamRegistry("discard"); meters = new SimpleMeterRegistry(); online = new OnlineLoadTracker(2, meters);
         GuardrailRuleService guards = mock(GuardrailRuleService.class, RETURNS_DEEP_STUBS);
-        entry = new ChatEntry(guards, rate, new CapabilityRouter(), graph, streams, online, meters, Tracer.NOOP, memory, false, 23, 6, 80);
+        entry = new ChatEntry(guards, jevSignal(), rate, new CapabilityRouter(), graph, streams, online, meters, Tracer.NOOP, memory, false, 23, 6, 80);
         TenantContext.set("default", "user-a", "USER");
     }
     @AfterEach void cleanup() { TenantContext.clear(); meters.close(); }
+
+    /** 第二信号默认关闭 = 接入前行为，故本类既有断言不受影响。 */
+    private static cn.lwx.lwxaiagent.harness.governance.JevSelfHarmSignal jevSignal() {
+        var props = new cn.lwx.lwxaiagent.infrastructure.ai.JevProperties();
+        props.setEnabled(false);
+        var client = new cn.lwx.lwxaiagent.infrastructure.ai.JevClient(props, new com.fasterxml.jackson.databind.ObjectMapper());
+        return new cn.lwx.lwxaiagent.harness.governance.JevSelfHarmSignal(client, props);
+    }
     Flux<String> flux(String id, BiConsumer<Boolean,String> cb) {
         return ((AgentResult.ShallowResult) entry.chat("你好", id, List.of(), false, cb)).flux();
     }

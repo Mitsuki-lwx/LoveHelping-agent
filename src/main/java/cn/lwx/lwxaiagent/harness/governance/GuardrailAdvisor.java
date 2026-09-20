@@ -1,6 +1,8 @@
 package cn.lwx.lwxaiagent.harness.governance;
 
 import cn.lwx.lwxaiagent.entity.GuardrailEvent;
+
+
 import cn.lwx.lwxaiagent.mapper.GuardrailEventMapper;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +53,6 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
     private final OutputGuardrail outputGuardrail;
     private final GuardrailRuleService ruleService;
     private final GuardrailEventMapper eventMapper;
-
     public GuardrailAdvisor(OutputGuardrail outputGuardrail,
                             GuardrailRuleService ruleService,
                             GuardrailEventMapper eventMapper) {
@@ -86,7 +87,6 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
             log.info("Guardrail L{} logged ({}): {}", verdict.level(), verdict.ruleId(), truncate(userText));
             recordEvent(userText, verdict.level(), verdict.ruleId(), "LOGGED");
         }
-
         ChatClientResponse response = chain.nextCall(request);
         String outputText = getOutputText(response);
         GuardrailResult outputCheck = outputGuardrail.check(outputText, userText);
@@ -113,7 +113,6 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
             log.info("Guardrail L{} logged (stream) ({}): {}", verdict.level(), verdict.ruleId(), truncate(userText));
             recordEvent(userText, verdict.level(), verdict.ruleId(), "LOGGED");
         }
-
         Flux<ChatClientResponse> responses = chain.nextStream(request);
         return new ChatClientMessageAggregator()
                 .aggregateChatClientResponse(responses, aggregated -> {
