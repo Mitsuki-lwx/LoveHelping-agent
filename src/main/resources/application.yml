@@ -260,6 +260,16 @@ app:
     schedule-delay-ms: 1000
     timeout-ms: 3000
 
+  # ======================== Jev（TypeSafe AI / System One）========================
+  # 只用于"窄的结构化判定"（官方定位：代码拥有流程，AI 只做窄判定）。
+  # 默认关闭；关闭时行为与接入前完全一致。打开需同时给 JEV_ENABLED + JEV_API_KEY。
+  jev:
+    enabled: ${JEV_ENABLED:false}
+    api-key: ${JEV_API_KEY:}          # 只走环境变量，禁止写入配置文件（AGENTS.md §3）
+    base-url: ${JEV_BASE_URL:https://api.typesafe.ai}
+    model: ${JEV_MODEL:jev-latest}
+    timeout-ms: 3000                  # 故意设短：失败就回退，不许拖慢请求
+
   # 编排图能力治理（ADR-19）：agent 节点工具白名单（能力域，逗号分隔）
   orchestration:
     tools:
