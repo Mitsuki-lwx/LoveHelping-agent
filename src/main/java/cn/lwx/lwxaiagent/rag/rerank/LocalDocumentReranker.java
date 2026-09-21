@@ -33,14 +33,17 @@ public class LocalDocumentReranker implements DocumentReranker {
         endpoint = URI.create(props.getUrl());
         if (!Set.of("http", "https").contains(endpoint.getScheme()) || endpoint.getHost() == null
                 || endpoint.getUserInfo() != null) throw new IllegalArgumentException("Invalid local reranker URL");
-        // remote 模式校验顺序：先查密钥、再查协议。
-        // 反过来的话，"没配 SF_API_KEY"会先撞上"URL 必须 https"的报错，
-        // 把排查方向带偏到 URL 上——这是实际踩过的误导（单测 remoteMode_withoutApiKey 抓出）。
-        if (props.isRemote() && (this.apiKey == null || this.apiKey.isBlank()))
-            throw new IllegalStateException("RERANK_MODE=remote 但 SF_API_KEY 未配置");
-        // remote 模式指向公网厂商端点，必须 https——否则密钥会以明文过网。
-        // 例外：环回地址（127.0.0.1/localhost/::1）允许 http，用于本地联调与单测装置；
-        // 环回流量不出网卡，无明文泄露风险。
+        // remote 模式缺 key 的语义（2026-09-21 改，ADR-39）：
+        // **不再在构造期抛出**，改到 rerank() 的调用期抛。
+        //
+        // 为什么改：`mode=remote` 已成为**默认值**（application.yml）。若本类在构造期硬失败，
+        // 任何没配 SF_API_KEY 的环境（CI、别人的机器、正处于回滚中的生产）**整个应用起不来**
+        // —— 而重排只是**增强项**，不该有这种能力。这也与 SiliconFlowEmbeddingModel 一致：
+        // 它在 doEmbed() 里才检查 key，所以 embedding 缺 key 同样不影响启动。
+        // 调用期抛出后由 RerankDocumentPostProcessor 捕获 → 降级为原顺序 → 对话不受影响。
+        //
+        // 协议校验仍留在构造期：它不依赖密钥，且是安全属性（公网必须 https，否则密钥明文过网）；
+        // 环回地址允许 http，供本地联调与单测装置使用。
         if (props.isRemote() && !"https".equals(endpoint.getScheme()) && !isLoopback(endpoint.getHost()))
             throw new IllegalArgumentException("Remote reranker URL must use https: " + props.getUrl());
         client = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()))
@@ -62,6 +65,15 @@ public class LocalDocumentReranker implements DocumentReranker {
         int count = Math.min(candidates.size(), props.getTopN());
         int k = Math.min(topK, count);
         if (count <= k) return List.copyOf(candidates.subList(0, k));
+        // remote 模式缺 key：**调用期**失败（不再构造期抛，见类构造器注释 / ADR-39）。
+        // 放在真正发请求之前、且**在 circuit 之前**——这是**配置问题**不是上游故障，
+        // 不该计入熔断器的失败窗口（否则缺 key 会把熔断器一并打开，掩盖真实上游状态）。
+        // 报错直接点名 SF_API_KEY，避免排查方向被引到 URL / 网络上去。
+        if (props.isRemote() && (apiKey == null || apiKey.isBlank())) {
+            throw new IllegalStateException(
+                    "RERANK_MODE=remote 需要 SF_API_KEY（当前未配置）。"
+                            + "可设 RERANK_ENABLED=false 关闭重排，或 RERANK_MODE=local 走本地服务");
+        }
         var ticket = circuit.acquire();
         if (ticket == null) throw new IllegalStateException("Local reranker circuit open");
         if (!permits.tryAcquire()) { ticket.cancel(); throw new IllegalStateException("Local reranker saturated"); }

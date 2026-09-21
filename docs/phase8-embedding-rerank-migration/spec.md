@@ -346,5 +346,8 @@ MRR 0.776（伪 remote）vs **0.856**（真 8B，三轮中位）。**假引擎�
 - ❌ **重排的成本与限流**未实测（spec 里 ¥3.55/月是**推算**，不是账单）。
 - ❌ **未测多实例**：熔断器 `ProviderCircuit` 与 `maxConcurrent=2` 都是**进程内**状态。
 - ❌ 记忆行重嵌入后**未跑一遍"跨会话记忆召回"的真实多轮对话 E2E**（只做了向量层面验证）。
-- ⚠️ **默认值本轮未改**：`app.rag.rerank.enabled` 仍 `false`、`mode` 仍 `local`。
-  是否改成 `enabled=true / mode=remote` 需你拍板 —— 依据见 §9.4（MRR +0.105，代价是每查询多一次外部调用）。
+- ✅ **默认值已改（2026-09-21 追加，用户拍板）**：`app.rag.rerank.enabled=true` / `mode=remote`
+  / `url=https://api.siliconflow.cn/v1/rerank`，依据即 §9.4 的 **+0.105 MRR**。
+  改默认值附带一处前置修复：`LocalDocumentReranker` 的密钥校验由**构造期**挪到**调用期**
+  （否则缺 `SF_API_KEY` 的环境整个 context 起不来）。三轮真实验证（缺 key 能启动 / 默认值生效 /
+  端点故障不拖累对话，均带独有指标）见 `docs/09-测试策略.md` §8.21 与 ADR-39「决策 4」。

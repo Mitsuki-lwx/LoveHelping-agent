@@ -237,12 +237,29 @@ class LocalDocumentRerankerTest {
         assertEquals("Bearer sk-test-key", lastAuth.get(), "remote 模式必须带 Bearer 鉴权头");
     }
 
+    /**
+     * 缺 key 的语义（2026-09-21 改，ADR-39）：**构造期不再抛**，改为**调用期**抛。
+     *
+     * <p>为什么改：`mode=remote` 已成为**默认值**。若构造期硬失败，任何没配 `SF_API_KEY`
+     * 的环境（CI、别人的机器、正处于回滚中的生产）**整个应用起不来** ——
+     * 而重排只是**增强项**，不该有这种能力。这也与 `SiliconFlowEmbeddingModel` 一致
+     * （它在 `doEmbed()` 里才检查 key，所以 embedding 缺 key 同样不影响启动）。</p>
+     *
+     * <p>调用期抛出后由 `RerankDocumentPostProcessor` 捕获 → 降级为原顺序 → 对话不受影响
+     * （该降级路径由 `RerankDocumentPostProcessorTest.engineFailure_*` 守着）。</p>
+     */
     @Test
-    void remoteMode_withoutApiKey_throwsAtConstruction() {
-        // 构造期即失败：避免运行到线上才发现没配 key
+    void remoteMode_withoutApiKey_constructsOk_butFailsAtCallTime() {
         props.setMode("remote");
-        assertThrows(IllegalStateException.class, () -> remoteReranker(""));
-        assertThrows(IllegalStateException.class, () -> remoteReranker(null));
+        for (String key : new String[]{null, ""}) {
+            LocalDocumentReranker reranker = remoteReranker(key);
+            // 构造成功（这才是"应用仍能启动"的前提）
+            assertNotNull(reranker);
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> reranker.rerank("查询", docs(5), 3));
+            assertTrue(ex.getMessage() != null && ex.getMessage().contains("SF_API_KEY"),
+                    "报错必须直接点名 SF_API_KEY，不能把排查方向带偏到 URL 上：" + ex.getMessage());
+        }
     }
 
     @Test

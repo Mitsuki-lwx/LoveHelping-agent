@@ -244,10 +244,19 @@ app:
     # No extra embedding calls are made for logging.
     # Phase 8（ADR-36）：rerank 增加 mode=remote（硅基流动 Qwen3-Reranker-8B）。
     # 注意 timeout-ms 由 2000 提到 5000：实测 8B 偶发 3.97s，2000 会误杀正常请求。
+    #
+    # 2026-09-21（ADR-39）：**默认改为 enabled=true / mode=remote**。
+    #   依据：45 例三轮 MRR 0.751 → 0.856（**+0.105**），远超实测噪声带 0.012 且三轮同向；
+    #         Recall 不变（重排只改排序、不改召回集合）。
+    #   代价：每次检索多一次外部调用（热态 ~0.4s；⚠️ 冷启动首调用观测到 5.21s，> timeout-ms）。
+    #   ⚠️ remote 需要 SF_API_KEY，但**缺 key 不会导致启动失败**——
+    #      密钥校验在**调用期**（与 SiliconFlowEmbeddingModel 的姿势一致），
+    #      抛出后被 RerankDocumentPostProcessor 捕获 → 降级为原顺序 → 对话不受影响。
+    #   回滚：RERANK_ENABLED=false；或 RERANK_MODE=local 并启动 ops/reranker。
     rerank:
-      enabled: ${RERANK_ENABLED:false}
-      mode: ${RERANK_MODE:local}
-      url: ${RERANK_URL:http://127.0.0.1:8091/rerank}
+      enabled: ${RERANK_ENABLED:true}
+      mode: ${RERANK_MODE:remote}
+      url: ${RERANK_URL:https://api.siliconflow.cn/v1/rerank}
       model: ${RERANK_MODEL:Qwen/Qwen3-Reranker-8B}
       top-n: 20
       top-k: 5
