@@ -7,12 +7,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 父子索引切分器（ADR-15，P2-B）。
+ * 文档切块器。
  * <p>
- * 解决"整篇文档一个 chunk"的问题：先按段落聚合出父块（~1500 字符，上下文完整），
- * 父块内再按句子切出子块（~400 字符，语义聚焦、检索精确）。
- * 子块 embedding 入库，metadata 携带 {@code parent_id} 与 {@code parent_text}——
- * 检索命中子块后可直接返回父块全文注入 prompt（small-to-large 模式）。
+ * <b>实现是 overlap 扁平切块</b>（句子级滑动窗口）：累积到 {@code TARGET=400} 字符收块，
+ * 下一块起点回溯约 {@code OVERLAP=80} 字，metadata 只打 {@code chunk=overlap} + {@code chunk_index}，
+ * <b>没有 {@code parent_id}/{@code parent_text}</b>，也没有父块聚合或 small-to-large 回填。
+ * </p>
+ * <p>
+ * ⚠️ <b>名字是遗留的</b>：2026-09-05 由"父子索引"改为 overlap 扁平（当时两轮对照评测：
+ * 69 文档库 overlap MRR 0.906 vs 父子 0.817；扩 3 篇长文后 0.848 vs 0.842），
+ * 类名、本注释与入库日志里的 {@code "Parent-child split"} 文案都**没有跟着改**，
+ * 曾导致"记录与实现矛盾"的误判（2026-09-21 逐行核实：以代码为准，就是 overlap 扁平）。
  * </p>
  */
 public class ParentChildDocumentTransformer implements DocumentTransformer {
