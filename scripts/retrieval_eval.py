@@ -14,6 +14,8 @@ def main():
     ap.add_argument("--base", default="http://localhost:12753/api")
     ap.add_argument("--cases", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "retrieval-ground-truth.json"))
     ap.add_argument("--admin-key", default=os.environ.get("ADMIN_API_KEY", ""))
+    ap.add_argument("--rewrite", action="store_true",
+                    help="检索前走产线 QueryRewriter（配合 QUERY_REWRITE_PROMPT_VERSION 做提示词对照）")
     ap.add_argument("--rerank", action="store_true",
                     help="走生产 postretrieval 重排（ADR-25）；需服务端 RERANK_ENABLED=true")
     args = ap.parse_args()
@@ -26,6 +28,8 @@ def main():
         params = {"query": q}
         if args.rerank:
             params["rerank"] = "true"
+        if args.rewrite:
+            params["rewrite"] = "true"
         url = args.base + "/admin/" + ep + "?" + urllib.parse.urlencode(params)
         r = urllib.request.Request(url, headers={"X-Admin-Key": args.admin_key})
         return json.loads(urllib.request.urlopen(r, timeout=60).read())["hits"]

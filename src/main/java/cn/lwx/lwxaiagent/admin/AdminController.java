@@ -24,11 +24,14 @@ public class AdminController {
     private final cn.lwx.lwxaiagent.service.AuditService auditService;
     /** 生产链路的 postretrieval 重排（ADR-25）：评测端点复用它，使检索评测能覆盖 rerank */
     private final cn.lwx.lwxaiagent.rag.rerank.RerankDocumentPostProcessor rerankPostProcessor;
+    /** 生产链路的查询改写（ADR-15）：评测端点复用它，使检索评测能覆盖 rewrite（2026-09-21） */
+    private final cn.lwx.lwxaiagent.rag.QueryRewriter queryRewriter;
     public AdminController(GoldenSetRunner goldenSetRunner, AdminGuard adminGuard,
                            CanaryConfig canaryConfig, SkillIngestor skillIngestor,
                            cn.lwx.lwxaiagent.rag.ParentChildDocumentRetriever documentRetriever,
                            cn.lwx.lwxaiagent.service.AuditService auditService,
-                           cn.lwx.lwxaiagent.rag.rerank.RerankDocumentPostProcessor rerankPostProcessor) {
+                           cn.lwx.lwxaiagent.rag.rerank.RerankDocumentPostProcessor rerankPostProcessor,
+                           cn.lwx.lwxaiagent.rag.QueryRewriter queryRewriter) {
         this.goldenSetRunner = goldenSetRunner;
         this.adminGuard = adminGuard;
         this.canaryConfig = canaryConfig;
@@ -36,6 +39,7 @@ public class AdminController {
         this.documentRetriever = documentRetriever;
         this.auditService = auditService;
         this.rerankPostProcessor = rerankPostProcessor;
+        this.queryRewriter = queryRewriter;
     }
 
     /** 审计日志查询（X-Admin-Key 保护）：?limit=50 最近 N 条敏感操作记录 */
@@ -93,10 +97,19 @@ public class AdminController {
     @GetMapping("/rag/retrieve")
     public Map<String, Object> ragRetrieve(@RequestParam String query,
             @RequestParam(defaultValue = "false") boolean rerank,
+            @RequestParam(defaultValue = "false") boolean rewrite,
             @RequestParam(defaultValue = "false") boolean includeCandidates, HttpServletRequest request) {
         adminGuard.check(request);
         if (query == null || query.isBlank() || query.length() > 8000) throw new cn.lwx.lwxaiagent.common.BizException(400, "查询长度无效");
-        var ragQuery = new org.springframework.ai.rag.Query(query);
+        // 可选查询改写（2026-09-21 新增，与已有的 rerank 参数同一动机）：
+        // 改写此前挂在 RetrievalAugmentationAdvisor 的 pre-retrieval 里，评测端点绕不过去 →
+        // "改写好还是坏"只能靠聊天链路的日志嗅探，量不准也复现不了。这里复用产线 QueryRewriter，
+        // 让同一套 ground truth 能把 不改写/v1/v2 并排跑出来。
+        String effectiveQuery = query;
+        if (rewrite) {
+            effectiveQuery = queryRewriter.transform(new org.springframework.ai.rag.Query(query)).text();
+        }
+        var ragQuery = new org.springframework.ai.rag.Query(effectiveQuery);
         var docs = documentRetriever.retrieve(ragQuery);
         // 可选重排：复用生产 postretrieval 组件，使检索评测可量化 rerank（ADR-25）
         if (rerank) {
@@ -109,10 +122,13 @@ public class AdminController {
                 files.add(f.toString());
             }
         }
-        log.info("Admin rag/retrieve queryChars={} rerank={} hits={} files={}", query.length(),
-                rerank, docs.size(), files.size());
+        log.info("Admin rag/retrieve queryChars={} rerank={} rewrite={} hits={} files={}", query.length(),
+                rerank, rewrite, docs.size(), files.size());
         Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("query", query); result.put("rerank", rerank); result.put("hits", new java.util.ArrayList<>(files));
+        result.put("query", query); result.put("rerank", rerank); result.put("rewrite", rewrite);
+        result.put("effectiveQuery", effectiveQuery);
+        result.put("promptVersion", queryRewriter.promptVersionName());
+        result.put("hits", new java.util.ArrayList<>(files));
         if (includeCandidates) {
             // Admin-only bounded snapshot of the ACTUAL input to rerank. Never return memory/skill data.
             result.put("candidates", docs.stream().filter(d -> !java.util.Set.of("memory", "evolution")
