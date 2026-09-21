@@ -27,7 +27,6 @@ public class SkillIngestor {
     private VectorStore vectorStore;
 
     @Autowired
-    @Qualifier("dashscopeEmbeddingModel")
     private EmbeddingModel embeddingModel;
 
     /**

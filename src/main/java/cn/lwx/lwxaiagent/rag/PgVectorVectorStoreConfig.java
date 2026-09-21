@@ -8,7 +8,6 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -142,12 +141,13 @@ public class PgVectorVectorStoreConfig {
      * <p>使用 HashSet 按文档的文本内容（doc.getText()）去重。
      * 相同文本内容的文档只保留一份，避免向量库中存在冗余数据。</p>
      *
-     * @param embeddingModel 向量嵌入模型（由 @Qualifier 指定为 dashscopeEmbeddingModel），
-     *                       负责将文本转换为向量，来自阿里百炼
+     * @param embeddingModel 向量嵌入模型（注入 {@code @Primary}，由
+     *                       {@code app.rag.embedding.provider} 决定具体实现：默认硅基流动，
+     *                       回滚时切 DashScope），负责将文本转换为向量
      * @return 初始化好的 PgVectorStore 实例，已连接到 PostgreSQL 并可能已导入文档数据
      */
     @Bean
-    public VectorStore PgVectorVectorStore(@Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel) {
+    public VectorStore PgVectorVectorStore(EmbeddingModel embeddingModel) {
         // ---- 步骤一：创建 PostgreSQL 数据源 ----
         DataSource pgDataSource = DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())

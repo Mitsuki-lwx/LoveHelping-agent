@@ -60,7 +60,7 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
     public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
                                         RerankProperties rerankProperties,
                                         PgvectorProperties pgvectorProperties,
-                                        @Qualifier("dashscopeEmbeddingModel") org.springframework.ai.embedding.EmbeddingModel embeddingModel,
+                                        org.springframework.ai.embedding.EmbeddingModel embeddingModel,
                                         @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled,
                                         @Value("${app.rag.log-score:false}") boolean logScore,
                                         @Value("${app.rag.top-k:8}") int topK,

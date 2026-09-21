@@ -35,7 +35,16 @@ public class RerankDocumentPostProcessor implements DocumentPostProcessor {
         String outcome = "success";
         try (var ignored = telemetry.scope(span)) {
             meters.counter("rag.rerank.executions", "mode", properties.getMode()).increment();
-            List<Document> ranked = ("local".equals(properties.getMode()) ? local : llm)
+            // 引擎选择（2026-09-21 修正）：`local` 与 `remote` 是**同一个 HTTP 实现**——
+            // LocalDocumentReranker 已扩展出 remote 分支（model 字段 + Bearer 鉴权 + https 校验），
+            // 两者只差 endpoint/鉴权；`llm` 才走主线模型打分。
+            //
+            // 原写法 `"local".equals(mode) ? local : llm` 会把 remote **静默路由到 LLM 重排**，
+            // 后果：RERANK_MODE=remote 时硅基流动 /v1/rerank **一次都没被调用**，
+            // 而配置回显、鉴权校验、单测全绿（单测只覆盖 LocalDocumentReranker 自身，
+            // 接线层无人守）→ 属于"能力建好、就是没接上"，实测才发现。
+            DocumentReranker engine = "llm".equals(properties.getMode()) ? llm : local;
+            List<Document> ranked = engine
                     .rerank(query.text(), documents.subList(0, Math.min(documents.size(), properties.getTopN())), k);
             if (ranked == null || ranked.size() != k) throw new IllegalStateException("Invalid rerank result");
             return ranked;

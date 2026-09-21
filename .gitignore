@@ -4,6 +4,10 @@ tmp
 
 ### Agent local workspace (memory / skills links) ###
 .workbuddy/
+# 2026-09-21：国内版档案目录同样忽略。此前只忽略了 .workbuddy/，
+# 而本轮 Phase 8 的备份文件（含 vector_store 全量数据，其中有 345 行用户对话记忆明文）
+# 落在 .workbuddy-ai/backup/ 下 —— 不加这条会被 git add -A 连隐私一起提交。
+.workbuddy-ai/
 agent/
 
 ### MCP servers config (contains API keys) ###
@@ -84,6 +88,11 @@ skills-lock.json
 # 用户备份/临时目录（勿入库）
 target_lockbak*/
 .graphify/
+
+# Phase 8 迁移前的 vector_store 备份（含 345 行用户对话记忆明文，绝不可入库）
+# 双份存放：.workbuddy-ai/backup/ 与 .backup-phase8/，互为冗余。
+# 恢复命令见 docs/phase8-embedding-rerank-migration/checklist.md「备份记录」段。
+.backup-phase8/
 
 
 # 损坏的旧 .git 备份（2026-09-08 环境事故留档）

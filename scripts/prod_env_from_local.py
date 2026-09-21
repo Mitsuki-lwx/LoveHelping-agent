@@ -38,6 +38,8 @@ WANTED = {
     ("spring", "ai", "openai", "chat", "options", "model"): "OPENAI_MODEL",
     ("search-api", "api-key"): "SEARCH_API_KEY",
     ("app", "pgvector", "datasource", "password"): "PGVECTOR_PASSWORD",
+    # Phase 8（2026-09-21）：硅基流动凭据，同时供 embedding 与远端 rerank 使用。
+    ("app", "siliconflow", "api-key"): "SF_API_KEY",
     ("jwt", "secret"): "JWT_SECRET",
     ("admin", "api-key"): "ADMIN_API_KEY",
 }

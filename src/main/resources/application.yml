@@ -227,6 +227,10 @@ app:
   # 2026-09-20：补环境变量覆盖（QUERY_REWRITE_ENABLED），使"开/关"是运行时决策而非改源码，
   # 便于对照实验；默认值不变（仍 false）。
   rag:
+    # Phase 8（ADR-36）：embedding 提供方。siliconflow（默认）= 硅基流动 Qwen3-Embedding-0.6B；
+    # dashscope = 回滚到旧通道。切换只改此值 + 重启，需同步重建向量（两模型向量空间不通用）。
+    embedding:
+      provider: ${RAG_EMBEDDING_PROVIDER:siliconflow}
     query-rewrite:
       enabled: ${QUERY_REWRITE_ENABLED:false}
     # 混合召回（向量 + jieba 分词关键词 LIKE → RRF 融合，2026-09-04 开启）：
@@ -238,18 +242,34 @@ app:
     top-k: 8
     # ADR-25: free local CPU cross-encoder. Start ops/reranker before enabling.
     # No extra embedding calls are made for logging.
+    # Phase 8（ADR-36）：rerank 增加 mode=remote（硅基流动 Qwen3-Reranker-8B）。
+    # 注意 timeout-ms 由 2000 提到 5000：实测 8B 偶发 3.97s，2000 会误杀正常请求。
     rerank:
       enabled: ${RERANK_ENABLED:false}
       mode: ${RERANK_MODE:local}
       url: ${RERANK_URL:http://127.0.0.1:8091/rerank}
+      model: ${RERANK_MODEL:Qwen/Qwen3-Reranker-8B}
       top-n: 20
       top-k: 5
       max-candidate-chars: 1000
-      timeout-ms: 2000
+      timeout-ms: 5000
       connect-timeout-ms: 500
       max-concurrent: 2
       failure-threshold: 3
       circuit-open-ms: 15000
+
+  # 硅基流动（SiliconFlow）：Phase 8 新增的 embedding / rerank 通道（ADR-36）。
+  # 密钥只走环境变量 SF_API_KEY，禁止落盘。
+  # 维度约束：Qwen3-Embedding-0.6B = 1024 维，与现有 vector_store.embedding vector(1024) 兼容；
+  # 4B/8B 为 2560/4096 维，切换必须连表一起重建，不要手改此值。
+  siliconflow:
+    api-key: ${SF_API_KEY:}
+    base-url: ${SF_BASE_URL:https://api.siliconflow.cn}
+    embedding-model: ${SF_EMBEDDING_MODEL:Qwen/Qwen3-Embedding-0.6B}
+    rerank-model: ${SF_RERANK_MODEL:Qwen/Qwen3-Reranker-8B}
+    connect-timeout-ms: 5000
+    read-timeout-ms: 30000
+    max-batch-size: 32
 
   # Langfuse 可观测（手写 2.x 签名接入，参考 CodeForge）：密钥一律环境变量注入
   langfuse:
