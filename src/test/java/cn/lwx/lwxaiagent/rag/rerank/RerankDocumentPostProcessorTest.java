@@ -123,6 +123,61 @@ class RerankDocumentPostProcessorTest {
         assertSame(candidates.get(0), out.get(0), "降级应保持原顺序");
     }
 
+    private double fallbacks(String reason) {
+        var c = meters.find("rag.rerank.fallback").tag("mode", props.getMode()).tag("reason", reason).counter();
+        return c == null ? 0 : c.count();
+    }
+
+    /**
+     * 降级必须**按原因可分**（2026-09-23 实测驱动）：压测出现 58 次重排 / 45 次降级时，
+     * 因为只有一个总计数、且不打日志，"到底为什么降级"答不上来。
+     * 这里钉死：并发许可不足（本地容量问题）与上游故障**在指标上必须能区分**——
+     * 两者的处置动作完全不同（调 maxConcurrent vs 查上游/熔断）。
+     */
+    @Test
+    void fallbackReason_distinguishesLocalCapacityFromUpstream() {
+        props.setMode("remote");
+        List<Document> candidates = docs(8);
+
+        when(local.rerank(anyString(), anyList(), eq(3)))
+                .thenThrow(new IllegalStateException("Local reranker saturated"));
+        processor.process(new Query("q"), candidates);
+
+        when(local.rerank(anyString(), anyList(), eq(3)))
+                .thenThrow(new IllegalStateException("Local reranker unavailable", new java.io.IOException("connect timed out")));
+        processor.process(new Query("q"), candidates);
+
+        assertEquals(1, fallbacks("saturated"), "并发许可不足应记为 saturated");
+        assertEquals(1, fallbacks("upstream"), "真正打到上游失败应记为 upstream");
+        assertEquals(0, fallbacks("other"), "两种已知原因都不该落进 other");
+    }
+
+    /** 配置缺失（缺 SF_API_KEY）是**调用期**才发现的，必须单独归类：它的处置是配 key，不是查上游。 */
+    @Test
+    void fallbackReason_missingKeyIsItsOwnBucket() {
+        props.setMode("remote");
+        List<Document> candidates = docs(8);
+        when(local.rerank(anyString(), anyList(), eq(3)))
+                .thenThrow(new IllegalStateException("RERANK_MODE=remote 需要 SF_API_KEY（当前未配置）。"));
+
+        processor.process(new Query("q"), candidates);
+
+        assertEquals(1, fallbacks("missing_key"));
+        assertEquals(0, fallbacks("upstream"), "缺 key 不能被误归成上游故障");
+    }
+
+    /** 未归类的抛出点落进 other —— 它一旦非零就说明代码里新增了降级路径，需要人来补归类。 */
+    @Test
+    void fallbackReason_unknownGoesToOther() {
+        props.setMode("remote");
+        List<Document> candidates = docs(8);
+        when(local.rerank(anyString(), anyList(), eq(3))).thenThrow(new IllegalStateException("something new"));
+
+        processor.process(new Query("q"), candidates);
+
+        assertEquals(1, fallbacks("other"));
+    }
+
     /** 候选数不超过 topK 时不必发请求（成本守卫）。 */
     @Test
     void candidatesNotMoreThanTopK_skipsEngineCall() {
