@@ -262,8 +262,21 @@ app:
       top-k: 5
       max-candidate-chars: 1000
       timeout-ms: 5000
-      connect-timeout-ms: 500
-      max-concurrent: 2
+      # 2026-09-23（ADR-41，实测）：500 → 2000。
+      #   实测本机到上游的「连接 + TLS 握手」耗时：siliconflow 1112/437/261/815/148 ms、
+      #   dashscope 2797/600/1009/343/355 ms —— **常超过 500ms**。500 时压测出现
+      #   `HttpConnectTimeoutException`（2/58）并连带触发熔断（`circuit_open`）；
+      #   同压测下改为 2000 → **0 失败**（其余全不变）。2000 仍在总 `timeout-ms=5000` 之内。
+      connect-timeout-ms: ${RERANK_CONNECT_TIMEOUT_MS:2000}
+      # 2026-09-23（ADR-41）：2 → 16。原值 2 与上面的 enabled=true **自相矛盾**——
+      #   一次重排占 0.4~1.3s，2 个许可 ≈ 5 次/秒上限；实测并发 ≥3 时 **79%（46/58）**
+      #   因拿不到许可而 `saturated` 降级为原顺序（用户无感、无 5xx，只有指标能看出来）。
+      #   许可数对照（同脚本/同档位/同 prompt）：2 → 79.3% 降级、8 → 27.6%、**16 → 0%**。
+      #   取 16 而非更高：与整机闸门 max-concurrent-calls(24) 及厂商并发上限同量级，不越级；
+      #   且 RerankProperties 的 @Max(16) 是上界（要再高须先改注解并重测厂商限流）。
+      #   代价：TTFT p50 约 +0.6s（方向性，样本小）。
+      #   回滚：RERANK_MAX_CONCURRENT=2（或 RERANK_ENABLED=false）。
+      max-concurrent: ${RERANK_MAX_CONCURRENT:16}
       failure-threshold: 3
       circuit-open-ms: 15000
 

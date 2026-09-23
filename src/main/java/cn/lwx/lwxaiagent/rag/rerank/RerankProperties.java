@@ -45,7 +45,15 @@ public class RerankProperties {
      */
     @Min(1) @Max(10000) private long timeoutMs = 5000;
     @Min(1) @Max(10000) private long connectTimeoutMs = 500;
-    @Min(1) @Max(16) private int maxConcurrent = 2;
+    /**
+     * 重排并发上限。<b>2026-09-23（ADR-41）由 2 提到 16</b>，与 application.yml 的默认值保持一致——
+     * 两处默认值不一致会让"改了 yml 却没改这里"在将来某次误删 yml 覆盖时**悄悄退回 79% 降级**。
+     *
+     * <p>取 16 的依据：实测许可数对照（同脚本/同档位/同 prompt）2 → 79.3% 降级、8 → 27.6%、16 → 0%；
+     * 且 16 与整机闸门 {@code max-concurrent-calls=24} 及厂商并发上限同量级。
+     * 要再高须先放宽这里的 {@code @Max} 并重测厂商限流。</p>
+     */
+    @Min(1) @Max(16) private int maxConcurrent = 16;
     @Min(1) private int failureThreshold = 3;
     @Min(1) private long circuitOpenMs = 15000;
     @AssertTrue(message = "rerank top-k must not exceed top-n")

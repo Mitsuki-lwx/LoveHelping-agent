@@ -86,6 +86,11 @@ resp = sse(base, "/Love_app/chat/sse",
            {"prompt": os.environ["PROMPT"], "chatId": "loadpre_" + uuid.uuid4().hex}, token)
 print("  预热聊天: success=%s ttft=%sms chars=%d" % (resp["success"], resp["ttft_ms"], len(resp["text"])))
 PYEOF
+if [ "${SKIP_PREREQ:-0}" = "1" ]; then
+  # 关掉重排的对照轮：这条断言必然不成立（那正是该轮的目的）→ 给显式开关，而不是删掉断言
+  # （这条断言在多轮实测里救过一次：它拦下过"重排根本没参与"的压测，见 ADR-41）。
+  echo "  （对照轮 SKIP_PREREQ=1）RAG_RETRIEVAL=$(grep -ac 'RAG_RETRIEVAL' "$LOG") 次；Rerank call=$(grep -ac 'Rerank call' "$LOG") 次（本对照轮应为 0）"
+else
 echo "  日志证据：RAG_RETRIEVAL 出现 $(grep -ac 'RAG_RETRIEVAL' "$LOG") 次；Rerank call 出现 $(grep -ac 'Rerank call' "$LOG") 次"
 if [ "$(grep -ac 'Rerank call' "$LOG")" -eq 0 ]; then
   echo "  ❌ 这条 prompt 没触发重排 —— 压测结果无意义，先换 prompt"
@@ -93,6 +98,7 @@ if [ "$(grep -ac 'Rerank call' "$LOG")" -eq 0 ]; then
 fi
 echo "  冷启动首调用耗时（Rerank ok 第一条）："
 grep -a "Rerank ok" "$LOG" | head -1 | grep -oE "in [0-9]+ ms" || echo "    （未取到）"
+fi
 
 metrics "$PORT" "压测前"
 

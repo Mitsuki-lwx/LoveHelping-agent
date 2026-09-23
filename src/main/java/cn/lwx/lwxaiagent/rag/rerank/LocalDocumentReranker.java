@@ -58,10 +58,13 @@ public class LocalDocumentReranker implements DocumentReranker {
         // 实测因为没回显，一波压测里 58 次重排中 45 次降级"究竟是不是并发许可不足"，
         // 只能靠翻源码 + 交叉 3 个计数推断（Rerank call 在 tryAcquire 之后，
         // 拿不到许可时连那一行都不会打）。
-        log.info("Rerank configured: enabled={} mode={} endpoint={} model={} topN={} topK={} timeoutMs={} maxConcurrent={} failureThreshold={}",
+        // connectTimeoutMs 也在回显之列（2026-09-23 补）：它与 maxConcurrent 同属"决定降级率"的参数——
+        // 实测网络稍差（连接+TLS 常 >500ms）时，500ms 的连接超时会让重排成片失败并连带打开熔断，
+        // 而那时从日志上只能看到 "upstream"，看不出是**连接**超时还是请求超时（cause 已补打印）。
+        log.info("Rerank configured: enabled={} mode={} endpoint={} model={} topN={} topK={} timeoutMs={} connectTimeoutMs={} maxConcurrent={} failureThreshold={}",
                 props.isEnabled(), props.getMode(), props.getUrl(),
                 props.isRemote() ? props.getModel() : "(local 模式不带 model)",
-                props.getTopN(), props.getTopK(), props.getTimeoutMs(),
+                props.getTopN(), props.getTopK(), props.getTimeoutMs(), props.getConnectTimeoutMs(),
                 props.getMaxConcurrent(), props.getFailureThreshold());
     }
 

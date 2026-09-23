@@ -110,3 +110,102 @@ ADR-39 决策 4 依据"45 例三轮 MRR **+0.105**"把 `rerank` 默认打开。�
 5. **criterion**：本轮**只测 rerank**，未在同一装置上跑"`RERANK_ENABLED=false` 的对照轮"
    → TTFT 的绝对差异里重排占多少，**没有干净分解**（S3 的方向性结论靠"降级率与延迟同向变化"支撑）。
 6. 冷启动 **5.21s 未复现，也未证伪**。
+
+---
+
+## S9 实施：默认值落地与复验（2026-09-23，用户拍板后）
+
+### S9.1 改了什么
+
+| 项 | 原值 | 新值 | 依据 |
+| --- | --- | --- | --- |
+| `app.rag.rerank.max-concurrent` | 2 | **16** | §S2 的许可数对照：2 → 79.3% 降级、8 → 27.6%、**16 → 0%** |
+| `app.rag.rerank.connect-timeout-ms` | 500 | **2000** | §S9.3（本轮新发现） |
+| `RerankProperties.maxConcurrent` 字段默认值 | 2 | **16** | 与 yml 一致——两处不一致的话，将来某次误删 yml 覆盖会**悄悄退回 79% 降级** |
+| 两处超时/并发项 | 硬编码 | 加了环境变量占位符 | `RERANK_MAX_CONCURRENT` / `RERANK_CONNECT_TIMEOUT_MS`，可**运行态回滚** |
+| 启动回显 | 无 `connectTimeoutMs` | 补上 | 量具缺口：它与 `maxConcurrent` 同属"决定降级率"的参数 |
+
+### S9.2 复验：默认值全生效、降级归零
+
+真启动，**不设任何 `RERANK_*` 环境变量**（走 yml 默认）：
+
+```
+Rerank configured: enabled=true mode=remote endpoint=https://api.siliconflow.cn/v1/rerank
+  model=Qwen/Qwen3-Reranker-8B topN=20 topK=5 timeoutMs=5000 connectTimeoutMs=2000
+  maxConcurrent=16 failureThreshold=3
+executions_total{mode="remote"} = 61
+（无任何 rag_rerank_fallback_* 时间序列 → 降级 0 次）
+```
+
+| 并发 | 8 | 16 | 24 | 32 |
+| --- | --- | --- | --- | --- |
+| TTFT p50 | 3.80s | 4.58s | 7.61s | 3.01s（72% 被拒，样本 8 条） |
+| 拒绝 | 0 | 0 | 0 | 过载 23 |
+
+单测 **285/285**、真实 E2E **22/22**。
+
+### S9.3 新发现：`connect-timeout-ms=500` 与本机网络不匹配
+
+**怎么发现的**：把 `max-concurrent` 提到 16 后跑第一轮，出现 `fallback` 且原因是
+`circuit_open`(2) + `upstream`(6)。因为上一轮**刚补了"打印完整异常与 cause"**，日志直接给出根因：
+
+```
+java.lang.IllegalStateException: Local reranker unavailable
+Caused by: java.net.http.HttpConnectTimeoutException: HTTP connect timed out   (×6)
+Caused by: java.net.ConnectException: HTTP connect timed out                   (×3)
+Caused by: java.net.http.HttpTimeoutException: request timed out               (×3)
+```
+
+→ **全是连接/请求超时，不是 429 限流**（日志里那 88 处 "429" 是时间戳 `12:57:00.429` 的巧合，不是限流码）。
+
+实测本机到上游的「连接 + TLS 握手」耗时：
+
+| 目标 | 5 次实测（ms） |
+| --- | --- |
+| `api.siliconflow.cn` | 1112 / 437 / 261 / 815 / 148 |
+| `dashscope.aliyuncs.com` | 2797 / 600 / 1009 / 343 / 355 |
+
+**常超过 500ms** → 500 的连接超时在该网络下必然成片失败，并连带把熔断器打开（`circuit_open`）。
+
+**旁证**：同一份 `application.yml` 里 LLM 通道的 `connect-timeout-ms` 是 **3000**，只有 rerank 是 500
+—— 500 在本项目里本就是个异常值，不是"刻意的快速失败"。
+
+对照（同脚本/同档位/同 prompt，只改 connect 超时）：
+
+| 轮 | `connect-timeout-ms` | executions | `fallback(upstream)` | `fallback(circuit_open)` |
+| --- | --- | --- | --- | --- |
+| A2 | **500** | 58 | **2** | 0 |
+| A3 | 2000 | 61 | **0** | 0 |
+| 复验 | 2000 | 61 | **0** | 0 |
+
+### S9.4 一段被环境干扰的测量（**如实记录，不当作本次改动的证据**）
+
+12:56~13:06 之间跑的三轮，TTFT 比正常高**一个数量级**（8 并发 8.4~23.5s、24 并发 15.7~25.6s）。
+**但关掉重排的对照轮（`enabled=false`）同样高**（9.5 / 16.3 / 36.0s）——
+→ 说明是**上游/网络此刻整体偏慢**，与重排、与本次改动无关。
+13:11 复验时已恢复（8/16/24 = 3.80 / 4.58 / 7.61s）。
+
+> 这一段的价值在于**它没有被误读成"开重排导致 TTFT 25 秒"**——判据是：
+> **把被测组件关掉再跑一遍**。若关掉后同样慢，就不是它的问题。
+
+### S9.5 重排对 TTFT 的净代价（补上上一轮"未验证"的一条）
+
+同期配对（13:11 开启 vs 13:15 关闭，网络状态正常）：
+
+| 并发 | 重排关 | 重排开 | Δ |
+| --- | --- | --- | --- |
+| 8 | 2.65s | 3.80s | **+1.15s** |
+| 16 | 3.15s | 4.58s | **+1.43s** |
+| 24 | 5.53s | 7.61s | **+2.08s** |
+| 均值（8/16/24） | **3.78s** | **5.33s** | **+1.55s** |
+
+**读作"约 +1~1.5s（p50）"**，不读精确值：单档样本仅 8/16/24 次，
+且 24 档的 p95 出现反向（关 12.81s vs 开 8.87s）→ 噪声不小。
+比"重排单次 0.4~1.3s"高是合理的：还有等待许可与排队的时间。
+
+### S9.6 仍未验证
+
+- 厂商 rerank API 的**并发上限**（16 档两轮未观测到限流，推不出"不会限流"）；
+- **多实例**：许可/熔断/超时全是进程内状态；
+- 12:56~13:06 那段网络为何变慢（只观测到现象与"关掉重排也一样"，未追到上游或链路层）；
+- 24 档 p95 ≈10.5s（既有，三轮重现）仍未归因。
