@@ -93,17 +93,20 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         String outcome = "success";
         List<Document> parents = List.of();
         try (var ignored = telemetry.scope(span)) {
-            int k = rerankProperties.isEnabled() && "llm".equals(rerankProperties.getMode())
-                    ? rerankProperties.getTopN() : topK;
+            // 扩窗条件（2026-09-23 修正）：**任一生效的 rerank 模式**都扩窗到粗召回窗口 topN。
+            // 原写法 `isEnabled() && "llm".equals(mode)` 只认 llm —— 那是 llm 是唯一模式时写的；
+            // 新增 remote 后该分支拿不到扩窗，候选池退化成 topK(=8)，
+            // 直接削弱了"宽召回 + 精排"的设计意图（ADR-25）。
+            int k = rerankProperties.isActive() ? rerankProperties.getTopN() : topK;
             List<Document> children = hybridEnabled
+                    // 非 hybrid 兜底路径同样"过取 → 过滤 → 截断"：见下方注释，形状必须与 hybrid 一致
                     ? hybridRetrieve(query.text(), k)
-                    : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k).build());
-            // 双轨收敛（2026-09-06）：过滤记忆/技能块（source=memory|evolution）——知识库检索只回文档
-            // （此前向量通道无过滤，用户记忆/已学技能可能被当知识库上下文注入，与显式注入重复/串扰）
-            children = children.stream()
-                    .filter(d -> !"memory".equals(d.getMetadata().get("source"))
-                            && !"evolution".equals(d.getMetadata().get("source")))
-                    .toList();
+                    : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k * 3).build())
+                          .stream().filter(ParentChildDocumentRetriever::isKnowledgeDoc).limit(k).toList();
+            // 兜底过滤（防御未来新增通道）：知识库检索只回文档块。
+            // ⚠️ **这道过滤不能是唯一防线** —— 它跑在候选已截断之后，被它剔掉的位子不会补人，
+            // 表现为"候选无声变少"。真正的过滤必须在**截断之前**（见 hybridRetrieve 内）。
+            children = children.stream().filter(ParentChildDocumentRetriever::isKnowledgeDoc).toList();
             span.tag("rag.candidates", String.valueOf(children.size()));
             parents = children.stream().map(this::toParent).collect(Collectors.toList());
             logRetrieved(query.text(), children);
@@ -182,6 +185,18 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         return scores;
     }
 
+    /**
+     * 知识库检索只接受**文档块**：排除用户记忆（{@code source=memory}）与已学技能（{@code source=evolution}）。
+     *
+     * <p><b>为什么抽成一个谓词</b>：这个判断原先在两处各写了一遍内联 lambda，很容易漂移成
+     * "过滤标准不一致"。更重要的是 —— 它的**调用位置**决定语义：必须在**截断到 top-k 之前**
+     * 调用（见 ADR-40），否则被剔除的候选不会补人，表现为"结果无声变少"。</p>
+     */
+    private static boolean isKnowledgeDoc(Document d) {
+        Object src = d.getMetadata().get("source");
+        return !"memory".equals(src) && !"evolution".equals(src);
+    }
+
     /** 混合召回：向量 + pg_trgm 关键词 → RRF 融合（仅知识库子块） */
     private List<Document> hybridRetrieve(String query, int topK) {
         List<Document> vectorDocs = vectorStore.similaritySearch(
@@ -202,10 +217,16 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
                 fused.put(d.getId(), new RankedDoc(d, 0.0, s));
             }
         }
+        // ⚠️ 顺序不能反（2026-09-23 修正，ADR-40）：**必须先过滤、后截断**。
+        // 反过来的话记忆块会白占候选位，而记忆块数量远多于知识块
+        // （实测某查询的向量 top-24 里 memory=20 / knowledge=4，top-8 里 memory=6）——
+        // 过滤后知识块可能只剩个位数，甚至 ≤ postprocessor 的 topK，
+        // 从而**导致重排在聊天链路上被静默跳过**（实测：hits=5 <= topK=5，Rerank call 0 次）。
         List<Document> merged = fused.values().stream()
                 .sorted((a, b) -> Double.compare(b.totalScore(), a.totalScore()))
-                .limit(topK)
                 .map(r -> r.doc)
+                .filter(ParentChildDocumentRetriever::isKnowledgeDoc)
+                .limit(topK)
                 .toList();
         log.info("ParentChild hybrid recall: query='{}' vector={} keyword={} fused={}",
                 query.length() > 30 ? query.substring(0, 30) + "..." : query,
