@@ -303,6 +303,14 @@ app:
     max-batch-size: 256
     schedule-delay-ms: 1000
     timeout-ms: 3000
+    # 不导出 Spring Security 过滤链的 span（secured request / authorize request / security filterchain *）。
+    # 原因：Prometheus 每 15s 抓一次 /actuator/prometheus，其**根 span 最后结束** → 子 span 先落盘、
+    # 那时 traceId 还没被记住 → 子 span 逃过"按 traceId 丢 actuator"的过滤器；随后根被丢 →
+    # 这棵树永远没根，在 Langfuse 里表现为**一条无名 trace**（碎片）。
+    # 实测：30 分钟窗口里这种碎片占全部 trace 的 **83%**；A/B 里 6 次 actuator 抓取产生碎片、
+    # 6 次业务请求产生 0 条。代价：业务 trace 少这几条 span —— 它们本来无可导出属性（白名单清空后为
+    # {}），属纯噪声。回滚：LANGFUSE_DROP_SECURITY_SPANS=false。
+    drop-security-filter-spans: ${LANGFUSE_DROP_SECURITY_SPANS:true}
 
   # ======================== Jev（TypeSafe AI / System One）========================
   # 只用于"窄的结构化判定"（官方定位：代码拥有流程，AI 只做窄判定）。

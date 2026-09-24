@@ -42,7 +42,8 @@ public class LangfuseTracingConfig {
             SpanExporter exporter = new SafeExporter(OtlpHttpSpanExporter.builder()
                     .setEndpoint(endpoint).addHeader("Authorization", "Basic " + credentials)
                     .addHeader("x-langfuse-ingestion-version", "4")
-                    .setTimeout(Duration.ofMillis(p.getTimeoutMs())).build());
+                    .setTimeout(Duration.ofMillis(p.getTimeoutMs())).build(),
+                    p.isDropSecurityFilterSpans());
             builder.addSpanProcessor(new SessionProcessor());
             // 采样器不在这里 setSampler：Boot 自带的 sampler customizer 会把它覆盖掉（实测无效）。
             // 改为注册 Sampler Bean（见本类 actuatorAwareSampler()），由 Boot 的 customizer 采用。
@@ -103,10 +104,34 @@ public class LangfuseTracingConfig {
     /** Deny-by-default export boundary also scrubs auto-instrumented URLs, headers and exception events. */
     static final class SafeExporter implements SpanExporter {
         private final SpanExporter delegate;
+        private final boolean dropSecurityFilterSpans;
         /** 已判定为 actuator 的 traceId 短期记忆：用于丢弃落在后续批次里的子 span。 */
         private final Set<String> actuatorTraces = ConcurrentHashMap.newKeySet();
         static final int TRACE_MEMORY_LIMIT = 512;
-        SafeExporter(SpanExporter delegate) { this.delegate = delegate; }
+        SafeExporter(SpanExporter delegate) { this(delegate, true); }
+        SafeExporter(SpanExporter delegate, boolean dropSecurityFilterSpans) {
+            this.delegate = delegate;
+            this.dropSecurityFilterSpans = dropSecurityFilterSpans;
+        }
+
+        /**
+         * Spring Security 过滤链的 span 名（本项目实测到的四个）。
+         *
+         * <p><b>为什么按名字丢，而不是靠"记住 actuator traceId"</b>：根 span **最后**结束，
+         * 子 span 先落盘 —— 子 span 到达导出边界时，根还没到，traceId 自然还没被记住，
+         * 于是"按 traceId 整条丢"对**先到的子 span**无效（它们已经出去了）。
+         * 子 span 的名字是固定的（Spring Security 给的），且它们**不可导出任何属性**
+         * （白名单清空后 metadata.attributes = {}），所以按名字丢是这里唯一可靠的判据。</p>
+         *
+         * <p>2026-09-24 A/B 实测：6 次 /actuator/prometheus → 结构性无名碎片；
+         * 6 次业务端点 → 0 条。加入本拒绝表后重跑，A 组应为 0。</p>
+         */
+        static boolean isSecurityFilterSpan(String name) {
+            if (name == null) return false;
+            return "secured request".equals(name)
+                    || "authorize request".equals(name)
+                    || name.startsWith("security filterchain");
+        }
         void remember(String traceId) {
             if (actuatorTraces.size() >= TRACE_MEMORY_LIMIT) actuatorTraces.clear();
             actuatorTraces.add(traceId);
@@ -128,7 +153,12 @@ public class LangfuseTracingConfig {
             for (SpanData span : spans) {
                 if (isActuatorTraffic(span)) remember(span.getTraceId());
             }
-            List<SpanData> safe = spans.stream().filter(s -> !actuatorTraces.contains(s.getTraceId())).map(s -> (SpanData) new DelegatingSpanData(s) {
+            List<SpanData> safe = spans.stream()
+                    .filter(s -> !actuatorTraces.contains(s.getTraceId()))
+                    // 见 isSecurityFilterSpan 的注释：这些孤儿必须丢，否则 Langfuse 里
+                    // 每次 Prometheus 抓取都可能留下一条无名 trace（实测 30 分钟窗口里碎片占 83%）。
+                    .filter(s -> !(dropSecurityFilterSpans && isSecurityFilterSpan(s.getName())))
+                    .map(s -> (SpanData) new DelegatingSpanData(s) {
                 @Override public Attributes getAttributes() {
                     var out = Attributes.builder();
                     // Only a span the gateway actually owns (marked by SessionProcessor under an

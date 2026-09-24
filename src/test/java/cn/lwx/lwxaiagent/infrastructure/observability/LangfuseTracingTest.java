@@ -178,6 +178,13 @@ class LangfuseTracingTest {
     /**
      * 跨批次兜底：子 span 自身不含路径字样，若它与根 span 落在不同批次，
      * 先到的那批无法预知；根 span 到达后必须封住该 traceId，后续同 trace 的 span 一律丢弃。
+     *
+     * <p>🔄 <b>2026-09-24 修订（trace 碎片归因轮）</b>：本用例原先用 {@code secured request}
+     * 当"先到的子 span"，并断言**它会漏**（原文："先到的那一批是会漏的已知局限"）。
+     * 现在它**不再漏** —— 导出边界新增了 Spring Security 过滤链 span 的**名字拒绝表**
+     * （{@code SafeExporter.isSecurityFilterSpan}；根因是"根 span 最后结束"，靠 traceId 记忆
+     * 无法覆盖先到的子 span）。为继续守住**记忆机制**本身，这里改用不受拒绝表影响的业务子 span
+     * （{@code http post}），并把"安全 span 第一批就被丢"单独断言。</p>
      */
     @Test void actuatorTraceIdMemoryDropsStragglersInLaterBatches() {
         RecordingExporter raw = new RecordingExporter();
@@ -190,20 +197,28 @@ class LangfuseTracingTest {
             try (var scope = root.makeCurrent()) {
                 var c = tracer.spanBuilder("secured request").startSpan();
                 c.end();
+                var business = tracer.spanBuilder("http post").startSpan();
+                business.end();
             }
             root.end();
             captured = List.copyOf(raw.received);
         }
-        SpanData child = captured.get(0);
-        assertEquals("secured request", child.getName(), "前置条件：子 span 先结束、先导出");
+        SpanData securityChild = captured.get(0);
+        assertEquals("secured request", securityChild.getName(), "前置条件：安全子 span 先结束、先导出");
+        SpanData businessChild = captured.get(1);
+        assertEquals("http post", businessChild.getName(), "前置条件：业务子 span 也先于根结束");
+        SpanData rootSpan = captured.get(2);
 
         RecordingExporter out = new RecordingExporter();
         var exporter = new LangfuseTracingConfig.SafeExporter(out);
-        exporter.export(List.of(child));              // 先到的一批：还不知道这是 actuator（子 span 无路径）→ 漏
-        exporter.export(List.of(captured.get(1)));    // 根 span 到达 → 记住 traceId
-        exporter.export(List.of(child));              // 同 traceId 的后续 span → 靠记忆拦住
-
-        assertEquals(List.of("secured request"), out.received.stream().map(SpanData::getName).toList(),
-                "根 span 到达后必须封住该 traceId；先到的那一批是会漏的已知局限");
+        exporter.export(List.of(securityChild));   // 第一批：安全 span → 由**名字拒绝表**丢（修订后不再漏）
+        assertEquals(List.of(), out.received.stream().map(SpanData::getName).toList(),
+                "安全过滤链 span 应在第一批就被丢掉（修订：不再依赖根先到）");
+        exporter.export(List.of(rootSpan));        // 根到达 → 按 actuator 路径规则丢，并记住 traceId
+        assertEquals(List.of(), out.received.stream().map(SpanData::getName).toList(),
+                "actuator 根 span 仍必须被丢");
+        exporter.export(List.of(businessChild));   // 同 traceId 的业务 span 迟到 → 由记忆拦住（本用例守的机制）
+        assertEquals(List.of(), out.received.stream().map(SpanData::getName).toList(),
+                "根 span 到达后必须封住该 traceId，后续同 trace 的 span 一律丢弃");
     }
 }
