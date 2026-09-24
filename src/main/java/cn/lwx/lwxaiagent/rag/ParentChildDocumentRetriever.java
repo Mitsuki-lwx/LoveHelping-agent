@@ -1,21 +1,13 @@
 package cn.lwx.lwxaiagent.rag;
 
-import cn.lwx.lwxaiagent.config.PgvectorProperties;
 import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import cn.lwx.lwxaiagent.rag.rerank.RerankProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.tracing.TraceContext;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.jdbc.DataSourceBuilder;
-import javax.sql.DataSource;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.retrieval.search.DocumentRetriever;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -44,41 +36,29 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
     // topK 由配置 app.rag.top-k 接管（2026-09-04，原硬编码 5 提高至默认 8）
     private static final int RRF_K = 60;
 
-    private final VectorStore vectorStore;
+
     private final RerankProperties rerankProperties;
-    private final JdbcTemplate pgJdbcTemplate;
-    private final org.springframework.ai.embedding.EmbeddingModel embeddingModel;
+    /** 知识库两条通道的 SQL 查询（源过滤已下推，见 ADR-43 / {@link KnowledgeSqlSearch}） */
+    private final KnowledgeSqlSearch sqlSearch;
     private final boolean hybridEnabled;
     /** 相似度分数日志开关（排查检索质量时开；默认关，避免在线链路多一次 embedding 调用） */
     private final boolean logScore;
     /** 向量粗召回数（app.rag.top-k；默认 8：top5 去重后父文档数常不足，扩到 8 稳 Recall） */
     private final int topK;
-    private final ObjectMapper objectMapper = new ObjectMapper();
     /** ADR-26：检索链路埋点（只观察，不改变检索行为） */
     private final AiTelemetry telemetry;
 
-    public ParentChildDocumentRetriever(@Qualifier("PgVectorVectorStore") VectorStore vectorStore,
-                                        RerankProperties rerankProperties,
-                                        PgvectorProperties pgvectorProperties,
-                                        org.springframework.ai.embedding.EmbeddingModel embeddingModel,
+    public ParentChildDocumentRetriever(RerankProperties rerankProperties,
+                                        KnowledgeSqlSearch sqlSearch,
                                         @Value("${app.rag.hybrid-search.enabled:false}") boolean hybridEnabled,
                                         @Value("${app.rag.log-score:false}") boolean logScore,
                                         @Value("${app.rag.top-k:8}") int topK,
                                         AiTelemetry telemetry) {
-        this.vectorStore = vectorStore;
         this.rerankProperties = rerankProperties;
-        this.embeddingModel = embeddingModel;
+        this.sqlSearch = sqlSearch;
         this.logScore = logScore;
         this.topK = Math.max(3, topK);
         this.telemetry = telemetry;
-        // 自建 pg JdbcTemplate（不注册为容器 bean，避免与 MySQL 默认 JdbcTemplate 按类型注入歧义）
-        DataSource pgDataSource = DataSourceBuilder.create()
-                .url(pgvectorProperties.getUrl())
-                .username(pgvectorProperties.getUsername())
-                .password(pgvectorProperties.getPassword())
-                .driverClassName(pgvectorProperties.getDriverClassName())
-                .build();
-        this.pgJdbcTemplate = new JdbcTemplate(pgDataSource);
         this.hybridEnabled = hybridEnabled;
     }
 
@@ -101,11 +81,12 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
             List<Document> children = hybridEnabled
                     // 非 hybrid 兜底路径同样"过取 → 过滤 → 截断"：见下方注释，形状必须与 hybrid 一致
                     ? hybridRetrieve(query.text(), k)
-                    : vectorStore.similaritySearch(SearchRequest.builder().query(query.text()).topK(k * 3).build())
-                          .stream().filter(ParentChildDocumentRetriever::isKnowledgeDoc).limit(k).toList();
+                    // 非 hybrid 兜底路径同样走**过滤下推**的查询：SQL 里已保证只回知识块、且已 LIMIT k
+                    : sqlSearch.byVector(query.text(), k);
             // 兜底过滤（防御未来新增通道）：知识库检索只回文档块。
-            // ⚠️ **这道过滤不能是唯一防线** —— 它跑在候选已截断之后，被它剔掉的位子不会补人，
-            // 表现为"候选无声变少"。真正的过滤必须在**截断之前**（见 hybridRetrieve 内）。
+            // 2026-09-24（ADR-43）后**两条通道都已在 SQL 里过滤**，所以这道现在是**纯兜底**：
+            // 它跑在候选已截断之后，被它剔掉的位子不会补人（表现为"候选无声变少"）——
+            // 因此它只能防"将来有人新增一条忘了过滤的通道"，不能当成过滤的落点。
             children = children.stream().filter(ParentChildDocumentRetriever::isKnowledgeDoc).toList();
             span.tag("rag.candidates", String.valueOf(children.size()));
             parents = children.stream().map(this::toParent).collect(Collectors.toList());
@@ -157,32 +138,16 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
      * 用 pgvector {@code <=>} 算子对命中 id 计算；仅在 {@code app.rag.log-score=true} 时调用。</p>
      */
     private java.util.Map<String, Double> scoresFor(String query, List<Document> hits) {
-        java.util.Map<String, Double> scores = new java.util.LinkedHashMap<>();
-        if (hits.isEmpty() || embeddingModel == null) {
-            return scores;
+        if (hits.isEmpty()) {
+            return java.util.Map.of();
         }
         try {
-            float[] vec = embeddingModel.embed(query);
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < vec.length; i++) {
-                if (i > 0) sb.append(",");
-                sb.append(vec[i]);
-            }
-            sb.append("]");
             List<String> ids = hits.stream().map(Document::getId).filter(java.util.Objects::nonNull).toList();
-            if (ids.isEmpty()) {
-                return scores;
-            }
-            String in = String.join(",", ids.stream().map(id -> "'" + id + "'").toList());
-            pgJdbcTemplate.query(
-                    "SELECT id::text, 1 - (embedding <=> ?::vector) AS score FROM vector_store WHERE id::text IN (" + in + ")",
-                    rs -> {
-                        scores.put(rs.getString(1), rs.getDouble(2));
-                    }, sb.toString());
+            return sqlSearch.scores(query, ids);
         } catch (Exception e) {
             log.warn("RAG score logging failed: {}", e.getMessage());
+            return java.util.Map.of();
         }
-        return scores;
     }
 
     /**
@@ -197,11 +162,13 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
         return !"memory".equals(src) && !"evolution".equals(src);
     }
 
+
     /** 混合召回：向量 + pg_trgm 关键词 → RRF 融合（仅知识库子块） */
     private List<Document> hybridRetrieve(String query, int topK) {
-        List<Document> vectorDocs = vectorStore.similaritySearch(
-                SearchRequest.builder().query(query).topK(topK * 3).build());
-        List<Document> keywordDocs = keywordSearch(query, topK * 3);
+        // 向量通道：过滤下推到 SQL（ADR-43）——原先"先取 top-k 再在 Java 层过滤"会让
+        // 占多数的用户记忆（同表同索引、且都是本领域对话摘要）把知识块挤出候选位。
+        List<Document> vectorDocs = sqlSearch.byVector(query, topK * 3);
+        List<Document> keywordDocs = sqlSearch.byKeyword(extractKeywords(query), topK * 3);
 
         Map<String, RankedDoc> fused = new LinkedHashMap<>();
         for (int i = 0; i < vectorDocs.size(); i++) {
@@ -235,46 +202,6 @@ public class ParentChildDocumentRetriever implements DocumentRetriever {
     }
 
 /** 中文关键词召回（ADR-15 P0 落地）：改写后查询的关键词 LIKE 命中，限定知识库子块（metadata 含 parent_id） */
-    private List<Document> keywordSearch(String query, int topK) {
-        List<String> words = extractKeywords(query);
-        log.info("LIKE kw: query='{}' words={}", query, words);
-        if (words.isEmpty()) {
-            return List.of();
-        }
-        try {
-            StringBuilder sql = new StringBuilder("SELECT id, content, metadata::text FROM vector_store ")
-                    // 2026-09-05：父子切块改为 overlap 扁平（无 parent_id）——去掉过滤，全块可被关键词命中
-                    .append("WHERE (");
-            java.util.List<Object> params = new java.util.ArrayList<>();
-            for (int i = 0; i < words.size(); i++) {
-                if (i > 0) sql.append(" OR ");
-                sql.append("content LIKE ?");
-                params.add("%" + words.get(i) + "%");
-            }
-            sql.append(") ORDER BY (");
-            for (int i = 0; i < words.size(); i++) {
-                if (i > 0) sql.append(" + ");
-                sql.append("(content LIKE ?)::int");
-                params.add("%" + words.get(i) + "%");
-            }
-            sql.append(") DESC, LENGTH(content) ASC LIMIT ?");
-            params.add(topK);
-            return pgJdbcTemplate.query(sql.toString(), (rs, row) -> {
-                Document d = new Document(rs.getString("id"), new java.util.HashMap<>());
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> meta = objectMapper.readValue(rs.getString("metadata"), Map.class);
-                    d.getMetadata().putAll(meta);
-                } catch (Exception e) {
-                    log.warn("Keyword metadata parse failed: {}", e.getMessage());
-                }
-                return d;
-            }, params.toArray());
-        } catch (Exception e) {
-            log.warn("ParentChild keyword search failed, fallback to vector only: {}", e.getMessage());
-            return List.of();
-        }
-    }
 
     /**
      * 中文分词提取关键词（2026-09-04 修复）：原实现按空白/标点切整段——中文无空格，
