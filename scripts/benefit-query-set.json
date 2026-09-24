@@ -1,0 +1,229 @@
+{
+ "description": "ADR-43 受益场景验证集（2026-09-24）。A 组按文档标题人工指派目标；B 组泛化日常问法不指派目标（只比对返回条数与集合差异）。附机械预筛 pool60 / new_rank60。",
+ "cases": [
+  {
+   "id": "q01",
+   "question": "同事朋友提要求我从来不好意思推掉，事后又憋屈得不行",
+   "expect_docs": [
+    "讨好型人格"
+   ],
+   "group": "A_具体话题",
+   "pool60": 20,
+   "note": "pool60=20 new_rank60=8"
+  },
+  {
+   "id": "q02",
+   "question": "一吵架我们就互相翻旧账、骂人、摔门，这样下去会怎么样",
+   "expect_docs": [
+    "末日四骑士"
+   ],
+   "group": "A_具体话题",
+   "pool60": 14,
+   "note": "pool60=14 new_rank60=1"
+  },
+  {
+   "id": "q03",
+   "question": "老伴走了三年了，我最近想找个人陪，是不是对不起他",
+   "expect_docs": [
+    "丧偶"
+   ],
+   "group": "A_具体话题",
+   "pool60": 34,
+   "note": "pool60=34 new_rank60=1"
+  },
+  {
+   "id": "q04",
+   "question": "孩子没保住，我们俩谁都不敢提，怎么才能走过去",
+   "expect_docs": [
+    "流产"
+   ],
+   "group": "A_具体话题",
+   "pool60": 43,
+   "note": "pool60=43 new_rank60=1"
+  },
+  {
+   "id": "q05",
+   "question": "备孕两年一直怀不上，我快撑不住了，他也很沉默",
+   "expect_docs": [
+    "不孕不育"
+   ],
+   "group": "A_具体话题",
+   "pool60": 7,
+   "note": "pool60=7 new_rank60=1"
+  },
+  {
+   "id": "q06",
+   "question": "我带着孩子再婚，他跟孩子处不来，我夹在中间很难受",
+   "expect_docs": [
+    "继子女"
+   ],
+   "group": "A_具体话题",
+   "pool60": 53,
+   "note": "pool60=53 new_rank60=1"
+  },
+  {
+   "id": "q07",
+   "question": "家里大事小事都是他说了算，我说话一点用都没有",
+   "expect_docs": [
+    "权力平衡"
+   ],
+   "group": "A_具体话题",
+   "pool60": 43,
+   "note": "pool60=43 new_rank60=3"
+  },
+  {
+   "id": "q08",
+   "question": "我们俩的钱是放一起还是各管各的，怎么安排比较好",
+   "expect_docs": [
+    "财务模式"
+   ],
+   "group": "A_具体话题",
+   "pool60": 48,
+   "note": "pool60=48 new_rank60=1"
+  },
+  {
+   "id": "q09",
+   "question": "他婚前欠了一屁股债，现在要我还，这算怎么回事",
+   "expect_docs": [
+    "债务与关系"
+   ],
+   "group": "A_具体话题",
+   "pool60": 41,
+   "note": "pool60=41 new_rank60=1"
+  },
+  {
+   "id": "q10",
+   "question": "他跟一个女同事天天聊到半夜，说只是朋友，这算出轨吗",
+   "expect_docs": [
+    "精神出轨"
+   ],
+   "group": "A_具体话题",
+   "pool60": 32,
+   "note": "pool60=32 new_rank60=1"
+  },
+  {
+   "id": "q11",
+   "question": "他确诊了双相，我该怎么陪他，又怎么保护自己",
+   "expect_docs": [
+    "重性心理"
+   ],
+   "group": "A_具体话题",
+   "pool60": 33,
+   "note": "pool60=33 new_rank60=1"
+  },
+  {
+   "id": "q12",
+   "question": "他总说我记错了，明明是他干的，我现在都怀疑自己",
+   "expect_docs": [
+    "被贬低与被否定"
+   ],
+   "group": "A_具体话题",
+   "pool60": 28,
+   "note": "pool60=28 new_rank60=5"
+  },
+  {
+   "id": "q13",
+   "question": "他在另一个城市上班，一年见不了几次，我们还能撑多久",
+   "expect_docs": [
+    "系统"
+   ],
+   "group": "A_具体话题",
+   "pool60": 20,
+   "note": "pool60=20 new_rank60=2"
+  },
+  {
+   "id": "q14",
+   "question": "他从来记不住我们的纪念日，我很在意但不想显得计较",
+   "expect_docs": [
+    "纪念日"
+   ],
+   "group": "A_具体话题",
+   "pool60": 32,
+   "note": "pool60=32 new_rank60=1"
+  },
+  {
+   "id": "q15",
+   "question": "有了孩子以后我们俩几乎没话说了，是不是就完了",
+   "expect_docs": [
+    "育儿期"
+   ],
+   "group": "A_具体话题",
+   "pool60": 52,
+   "note": "pool60=52 new_rank60=9"
+  },
+  {
+   "id": "q16",
+   "question": "被分手后我到底该不该主动联系他",
+   "expect_docs": [
+    "断联与复联"
+   ],
+   "group": "A_具体话题",
+   "pool60": 30,
+   "note": "pool60=30 new_rank60=1"
+  },
+  {
+   "id": "g01",
+   "question": "我们最近总吵架，我该怎么办",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 11,
+   "note": "pool60=11 new_rank60=None"
+  },
+  {
+   "id": "g02",
+   "question": "他不太理我了，是不是不喜欢我了",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 22,
+   "note": "pool60=22 new_rank60=None"
+  },
+  {
+   "id": "g03",
+   "question": "怎么跟他表达我的感受",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 3,
+   "note": "pool60=3 new_rank60=None"
+  },
+  {
+   "id": "g04",
+   "question": "我们在一起两年了，感觉越来越没话说",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 17,
+   "note": "pool60=17 new_rank60=None"
+  },
+  {
+   "id": "g05",
+   "question": "他家里人不喜欢我，我该怎么处理",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 39,
+   "note": "pool60=39 new_rank60=None"
+  },
+  {
+   "id": "g06",
+   "question": "我总是患得患失，怎么办",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 22,
+   "note": "pool60=22 new_rank60=None"
+  },
+  {
+   "id": "g07",
+   "question": "他好像对别人比对我热情",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 17,
+   "note": "pool60=17 new_rank60=None"
+  },
+  {
+   "id": "g08",
+   "question": "我们异地了，怎么维持",
+   "expect_docs": [],
+   "group": "B_泛化日常",
+   "pool60": 19,
+   "note": "pool60=19 new_rank60=None"
+  }
+ ]
+}
