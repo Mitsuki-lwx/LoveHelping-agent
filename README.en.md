@@ -1,204 +1,292 @@
 <p align="center">
-  English · <a href="./README.md">简体中文</a>
+  <b>English</b> · <a href="./README.md">简体中文</a>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk" alt="Java 21"/>
   <img src="https://img.shields.io/badge/Spring%20Boot-3.4-brightgreen?style=flat-square&logo=springboot" alt="Spring Boot 3.4"/>
-  <img src="https://img.shields.io/badge/Spring%20AI-1.1-green?style=flat-square" alt="Spring AI"/>
+  <img src="https://img.shields.io/badge/Spring%20AI-1.1-green?style=flat-square" alt="Spring AI 1.1"/>
   <img src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs" alt="Vue 3"/>
   <img src="https://img.shields.io/badge/MySQL-8-4479a1?style=flat-square&logo=mysql" alt="MySQL 8"/>
-  <img src="https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-336791?style=flat-square&logo=postgresql" alt="PG + pgvector"/>
-  <img src="https://img.shields.io/badge/Docker-compose-blue?style=flat-square&logo=docker" alt="Docker Compose"/>
-  <img src="https://img.shields.io/badge/status-stable-%E2%9C%93-1f8f4c?style=flat-square" alt="stable"/>
-  <img src="https://img.shields.io/github/actions/workflow/status/Mitsuki-lwx/LoveHelping-agent/ci.yml?branch=main&label=CI&style=flat-square&logo=githubactions" alt="CI"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-pgvector-336791?style=flat-square&logo=postgresql" alt="PostgreSQL + pgvector"/>
+  <img src="https://img.shields.io/badge/Redis-7-dc382d?style=flat-square&logo=redis" alt="Redis 7"/>
+  <img src="https://img.shields.io/badge/Docker-compose-2496ed?style=flat-square&logo=docker" alt="Docker Compose"/>
   <img src="https://img.shields.io/github/actions/workflow/status/Mitsuki-lwx/LoveHelping-agent/security.yml?branch=main&label=gitleaks&style=flat-square" alt="gitleaks"/>
+  <img src="https://img.shields.io/badge/PRs-welcome-ff69b4?style=flat-square" alt="PRs welcome"/>
 </p>
 
 <h1 align="center">💌 LoveHelping</h1>
 
 <p align="center">
-  <b>An AI companionship service built on Spring AI — relationship knowledge QA, communication rehearsal, cross-session memory personalization.</b><br/>
-  For the thoughts that keep you up at night · the words you can't say · the relationships you can't let go of — every one deserves a letter of its own.
+  <b>An emotional-companionship service on Spring AI — bounded listening, memory that accumulates, and no mode-switching asked of the user.</b>
 </p>
 
 <p align="center">
-  <a href="#-features">Features</a> · <a href="#-quick-start">Quick Start</a> ·
-  <a href="#-environment-variables">Environment Variables</a> · <a href="#-documentation">Documentation</a> ·
-  <a href="#-architecture">Architecture</a> · <a href="#-safety--guardrails">Safety</a> ·
-  <a href="#-quality--evaluation">Quality</a>
+  <a href="#-why-this-exists">Why</a> · <a href="#-core-capabilities">Capabilities</a> ·
+  <a href="#-ui-overview">UI</a> · <a href="#-quick-start">Quick Start</a> ·
+  <a href="#-architecture">Architecture</a> · <a href="#-engineering-quality">Quality</a> ·
+  <a href="#-documentation">Docs</a> · <a href="#-roadmap">Roadmap</a>
 </p>
-
-> LoveHelping is built on **Spring AI + stateful graph orchestration**: intent is routed server-side (RAG knowledge QA / Agent tool tasks / plain chat), content safety is enforced by three-tier guardrails, and LLM failures fail over through a fallback chain. Evaluation and ops assets ship with the repo — `docker compose up -d` brings up the full stack.
 
 ---
 
-## ✨ Features
+> **LoveHelping is not a chat wrapper.** It turns three things that are usually hand-waved into product capabilities:
+> **① users never have to decide "should this hit the knowledge base or a tool"** (intent is routed server-side);
+> **② content safety is a layered boundary, not a system prompt** (crisis intervention / manipulation detection / off-topic rejection, active 24/7);
+> **③ evaluation has ground truth, control experiments and calibrated instruments** (45 retrieval cases, 16 answer-judging cases, 295 unit tests, 22 real E2E checks).
+> `docker compose up -d` brings up the whole stack.
 
-| | | |
-|---|---|---|
-| 💌 **Relationship counseling** | 🧭 **Auto-routing — no "easy/hard" split** | 🎭 **Role-play studio** |
-| RAG over a curated 71-doc relationship library with **hybrid retrieval** (jieba tokenizer + RRF plus pgvector semantic recall); answers include source references and scores | One graph dispatches everything: small talk / knowledge QA / tool tasks (`OrchestrationGraph`). The user just **"writes a letter"** | 8 preset personas plus custom personality / relationship-stage sessions for conversation rehearsal; each persona keeps an isolated memory context |
-| 🧠 **Long-term memory archive** | 🛡️ **Three-tier safety guardrails** | 🔧 **Agent tool surface** |
-| Facts distilled from conversations into memory entries (category / confidence), human-editable (**review / correct / delete**); personalization accumulates across sessions | Manipulation (PUA) detection · 24/7 crisis-keyword referral · late-night emotional brake — companionship with clear boundaries | Search / weather / web fetch / PDF / date ideas on an isolated MCP process — **tool failures don't cascade** |
-| 🎮 **SSE streaming & queue UX** | 🔁 **Self-evolution** | 🐳 **One-command deploy** |
-| Token-level streaming over SSE; when the concurrency gate trips, a 4003 queue notice returns an estimated `retryAfterSec`; error paths use the same response contract | A reflection scheduler reviews conversations and versioned-prompts / skills (evolution_skill) | `Dockerfile × 2 + docker-compose`: MySQL / pgvector / Redis / MCP / App in one command |
-| 🏠 **Profile** | 📚 **History archive** | 🖼 **Letter-paper design** |
-| emoji avatar · nickname · bio · password change · account deletion | Review & continue past conversations | Handwritten-feel typography (KaiTi stack) & paper textures across all pages |
+## 🎯 Why this exists
 
-## 🖼 UI Overview
+Late at night, most people reach for two things: **a search box**, or **a message to someone who won't reply**.
 
-> Run the app and visit `http://localhost:8088/api/`. Entry points below (screenshots welcome via PR to `docs/screenshots/`):
+Neither fits. Psychological explainers are accurate and cold — you finish reading and feel lonelier.
+General-purpose LLMs are unstable at both ends: they either agree with everything (sometimes coaching you into
+manipulating the other person), or they fail to catch a genuinely dangerous signal. **Companionship and boundaries
+are usually framed as opposites.**
+
+LoveHelping aims at something narrower: **a companion entry point that has boundaries, remembers you, and never
+makes you pick a mode.**
+
+- 🚧 **Bounded** — crisis intervention, manipulation (PUA) detection and off-topic rejection are three independent
+  mechanisms, not a prompt patched on afterwards.
+- 🧠 **Remembers** — conversations distil into a memory archive (category + confidence) the user can
+  **review, correct and delete**.
+- 🎯 **No mode-picking** — RAG QA / tool tasks / plain chat are dispatched server-side; the user just *writes a letter*.
+
+## ✨ Core capabilities
+
+**1. The Letterbox — one graph, routed server-side**
+`classify` dispatches by intent: knowledge questions go to RAG, long tool tasks to the Agent, small talk straight through.
+The frontend has no "easy/hard" switch — routing is invisible to the user, and error paths share the same response contract.
+
+**2. A hybrid-retrieval knowledge base with remote reranking**
+131 curated relationship articles (**439 semantic chunks**). Recall runs as a **two-channel RRF fusion**
+(jieba keyword + pgvector semantic neighbours), then a **Qwen3-Reranker-8B** cross-encoder reorders the candidates.
+Answers carry source references and relevance scores.
+> Reranking is quantifiable here: same setup, **MRR@5 0.714 → 0.885 (+0.17)** with Recall unchanged — a reranker
+> reorders, it does not change the recall set.
+
+**3. Long-term memory archive**
+Facts are distilled from conversations (with category and confidence) and accumulate into cross-session personalization.
+Memory is **manageable**: view, correct, delete — not an invisible "the AI remembers things" black box.
+
+**4. Role-play studio (rehearsal)**
+8 preset personas plus custom personality / relationship-stage sessions. Each persona keeps an **isolated memory
+context** — useful for low-risk rehearsal of *"what happens if I say this?"*
+
+**5. Three-tier safety guardrails**
+| Tier | Mechanism |
+|---|---|
+| 🚨 Crisis intervention | Self-harm / suicidal signals **hard-blocked 24/7** + professional referral copy (colloquial-variant lexicon) |
+| 🚷 Manipulation detection | PUA / gaslighting patterns blocked; intimate-partner-violence content policy |
+| 🔌 Off-topic rejection | Non-relationship requests rejected by **rules, at zero LLM cost** — prompt-escalation defence |
+
+> Guardrails are themselves **observable and greyscale-able**: a three-state switch (`off` / `shadow` / `enforce`),
+> where `shadow` judges and records but **never alters the response** — measure the real false-positive rate first,
+> then decide whether to enforce.
+
+**6. Agent tool surface (isolated process)**
+Search / weather / web fetch / PDF generation / date planning live in a **separate MCP service** reached over HTTP —
+**tool failures do not cascade into chat failures**.
+
+**7. Multi-provider with config-level rollback**
+The main chat model speaks the OpenAI-compatible protocol (swap the endpoint freely); embedding and reranking each have
+**two switchable channels**. Changing providers is an environment variable plus a restart — **migration and rollback are
+first-class, not one-off scripts**.
+
+**8. Observability and self-healing**
+Prometheus metrics plus self-hosted Langfuse tracing; the LLM gateway carries a **fallback chain** (primary failure
+switches to a backup model) and circuit breakers. The export boundary drops security-filter spans by name, so
+**auth details never reach the observability platform**.
+
+## 🖼 UI overview
+
+> Single-jar delivery: the frontend build is compiled into the backend's static directory. Run the app and
+> `http://localhost:8088/api/` is the full UI (Vue 3, "letter-paper" theme — handwritten-feel typography and paper textures).
 
 | Entry | What it is | Route |
 |---|---|---|
-| 📮 The Letterbox | Unified conversation entry (auto-routing; SSE streaming + queue notice) | `/love-chat` |
-| 🎭 Role-play Studio | Sandbox sessions: persona-driven conversation rehearsal + per-session memory | `/sandbox` |
+| 📮 The Letterbox | Unified conversation entry (auto-routing · SSE streaming · queue notice) | `/love-chat` |
+| 🎭 Role-play Studio | Sandbox sessions: persona rehearsal + per-session memory | `/sandbox` |
 | 🧠 Memory Archive | What the AI remembers about you: category / confidence / corrections | `/memory` |
-| 🏠 My Corner | emoji avatar · nickname · bio · password · account deletion | `/profile` |
 | 📚 Old Letters | Past conversations — revisit or continue | `/history` |
+| 🏠 My Corner | emoji avatar · nickname · bio · password · account deletion | `/profile` |
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-### A. Docker one-command deploy (recommended)
+### A. Docker (recommended)
 
 ```bash
 # 1. Prepare secrets
-cp .env.example .env        # fill the 6 required keys (see env table below)
+cp .env.example .env          # fill in the required entries below
 
-# 2. Build & start (first run pulls images + compiles)
+# 2. Build & start (first run pulls images and compiles)
 docker compose up -d --build
 
-# 3. Wait until ready (first PG vectorization takes ~3-10 min)
+# 3. Wait until ready (first full PG vectorization takes ~3-10 min)
 docker compose logs -f app
 
 # 4. Open
 open http://localhost:8088/api/
 ```
 
-> ✅ First boot does everything automatically: MySQL Flyway migrations (V1-V20), PostgreSQL schema + **auto-vectorization of 71 docs** (incremental via doc_hash; restarts only sync changes).
+> ✅ First start handles it all: MySQL **Flyway V1–V24** migrations, PostgreSQL schema and indexes,
+> and **automatic chunking + vectorization of 131 documents** (afterwards incremental by `doc_hash`,
+> so restarts only process changed documents).
 
 ### B. Local development
 
 ```bash
-# Backend (default profile=local; needs local MySQL / PG(pgvector) / Redis + mcp-server:8125)
+# Backend (default profile=local; needs local MySQL / PostgreSQL(pgvector) / Redis + mcp-server:8125)
 ./mvnw spring-boot:run
 
 # Frontend hot reload
-cd front && npm install && npm run dev   # → http://localhost:5173 (proxy → backend /api)
+cd front && npm install && npm run dev    # → http://localhost:5173 (proxies /api to the backend)
 
-# E2E smoke (needs backend running)
+# Smoke regression (backend must be running)
 BASE_URL=http://localhost:8088/api ADMIN_API_KEY=xxx bash scripts/e2e-smoke.sh
 ```
 
-## ⚙️ Environment Variables
+## ⚙️ Environment variables
 
-| Variable | Required | Description | Example |
-|---|---|---|---|
-| `OPENAI_API_KEY` | ✅ | Primary chat model key (OpenAI-compatible endpoint; model via env) | — |
-| `DASHSCOPE_API_KEY` | ✅ | Shared key for vector embedding and the fallback model | — |
-| `JWT_SECRET` | ✅ | JWT signing secret, **≥32 random chars** (startup refuses to boot without it) | `openssl rand -hex 32` |
-| `MYSQL_PASSWORD` | ✅ | MySQL root password (created on first boot) | `change-me` |
-| `PGVECTOR_PASSWORD` | ✅ | PostgreSQL password (created on first boot) | `change-me` |
-| `ADMIN_API_KEY` | ✅ | Admin endpoints, request header `X-Admin-Key` | `change-me` |
-| `OPENAI_MODEL` / `OPENAI_BASE_URL` | ⭕ | Primary model id / service endpoint | `<model-id>` |
-| `APP_PORT` | ⭕ | Public port | `8088` |
-
-## 📚 Documentation
-
-The full decision trail — from product to deployment — lives in `docs/` (including ADRs and technical rulings):
-
-| Doc | Contents |
-|---|---|
-| [00 · Reading Guide](docs/00-文档导读.md) | Where to start |
-| [01 · Product](docs/01-产品定位与需求.md) · [02 · Architecture](docs/02-架构设计.md) | Why & how |
-| [03 · ADR Log](docs/03-技术决策记录.md) | 20+ technical rulings (why parent-child indexing was dropped, how the fallback chain landed…) |
-| [07 · Security](docs/07-安全与合规.md) | Content safety / data compliance / off-domain policy |
-| [08 · Observability](docs/08-可观测性与发布.md) · [09 · Testing](docs/09-测试策略.md) | Metrics / trace / load-test NFRs |
-| [10 · Deploy](docs/10-部署发布.md) | Docker orchestration / **CD pipeline** / **Ops runbook** (backup-restore · Sentry · secret rotation) / FAQ |
+| Variable | Required | Notes |
+|---|---|---|
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | ✅ | Main chat model (OpenAI-compatible endpoint; may be self-hosted/gateway) |
+| `DASHSCOPE_API_KEY` | ✅ | Backup model used by the fallback chain |
+| `SF_API_KEY` | ⭕ | Shared key for embedding + remote rerank (default channel) |
+| `JWT_SECRET` | ✅ | Signing key, **≥32 random chars** — missing or short **refuses to start** |
+| `MYSQL_PASSWORD` / `PGVECTOR_PASSWORD` | ✅ | Primary DB / vector DB passwords |
+| `ADMIN_API_KEY` | ✅ | Admin endpoint header `X-Admin-Key` |
+| `MCP_SERVER_URL` | ⭕ | Tool surface address (default `http://localhost:8125/mcp`) |
+| `RAG_EMBEDDING_PROVIDER` / `RERANK_ENABLED` | ⭕ | Retrieval channel / rerank toggles (for rollback, see `docs/11`) |
+| `APP_PORT` | ⭕ | Public port (default 8088) |
 
 ## 🏗 Architecture
 
 ```mermaid
 flowchart LR
-  U[Browser /api SPA+SSE] --> A[Spring Boot 3.4 app]
-  A --> C{OrchestrationGraph<br/>auto-routing}
-  C -->|chat / emotions| N[Normal node<br/>RAG hybrid retrieval]
-  C -->|tools / long tasks| T[Agent node]
-  C -->|crisis signal| G[Three-tier guardrails<br/>block / refer / soothe]
-  N --> KB[(MySQL agentdb<br/>Flyway V1-V20)]
-  N --> V[(PG 16 + pgvector<br/>71-doc relationship KB)]
-  A --> R[(Redis)]
-  A -->|MCP / Streamable HTTP| M[mcp-server<br/>search / weather / web / PDF]
-  A -->|fallback chain| F[primary model down<br/>auto-switch to backup]
+  U["Browser /api<br/>SPA + SSE"] --> A["Spring Boot 3.4 app"]
+  A --> C{"OrchestrationGraph<br/>intent routing"}
+  C -->|chat / advice| N["Normal node"]
+  C -->|tools / long tasks| T["Agent node"]
+  C -->|crisis signal| G["3-tier guardrails"]
+  N --> RAG["Hybrid retrieval<br/>keyword + pgvector → RRF"]
+  RAG --> RR["Remote 8B rerank"]
+  N --> MEM["Memory archive"]
+  T --> M["mcp-server (isolated)<br/>search/weather/web/PDF"]
+  A --> DB[("MySQL 8<br/>Flyway V1-V24")]
+  A --> V[("PostgreSQL + pgvector<br/>131 docs / 439 chunks")]
+  A --> RD[("Redis 7")]
+  A -.->|primary failure| FB["Fallback chain → backup model"]
 ```
 
-- **Routing**: the frontend never asks "simple vs complex" — `classify` dispatches server-side by intent; RAG / tools / plain chat are invisible to the user.
-- **Memory**: conversations distill into facts → the memory archive; each sandbox persona keeps its own memory context.
-- **Tool surface**: `mcp-server` runs as an isolated process (port 8125) called over HTTP — tool failures never take down chat.
-- **Frontend**: Vue 3 + Vite, compiled into the backend static dir → single-jar delivery.
+- **Routing** — `classify` dispatches by intent; RAG / tools / plain chat stay transparent to the user.
+- **Retrieval** — keyword and semantic channels fuse via RRF, then the reranker reorders. Source filtering is
+  **pushed down into SQL** (knowledge chunks and user memories share one table and one ANN index, so "fetch k then filter"
+  is wrong).
+- **Tools** — MCP runs as its own process; failures stay isolated.
+- **Delivery** — Vue 3 + Vite output is compiled into the backend's static directory: one jar.
 
-## 🛡 Safety & Guardrails
+## 📊 Engineering quality
 
-Unlike a generic "AI chat shell", this project turns *boundaries* into product:
+Evaluation assets **ship with the repository**, and they are the reproducible, falsifiable kind:
 
-| Layer | Mechanism |
+| Asset | Scale / result |
 |---|---|
-| 🚨 Crisis (L3) | Self-harm / suicidal keywords **hard-blocked 24/7** + professional referral copy (with a continuously growing list of colloquial variants) |
-| 🧊 Emotional brake | Late-night fragility signals auto-trigger soothing mode instead of canned scripts |
-| 🚷 Manipulation | PUA / gaslighting pattern detection + intimate-partner-violence content compliance (V17 intent guardrails) |
-| 🔌 Off-domain | Non-relationship requests rejected by rules (zero LLM cost, prompt-exfiltration resistant) |
-| 🔐 Engineering | JWT fail-fast (no fallback secret) · SSRF / path-traversal guards · fault-injection-tested fallback chain · concurrency gate (fast reject with wait estimate) |
+| 📐 Architecture Decision Records | **47 ADRs** (`docs/03`) — including revision notes on conclusions that were later overturned (history is annotated, not rewritten) |
+| 🗄 Database migrations | **24 Flyway migrations (V1–V24)** — DDL only via migrations, never hand-edited schema |
+| ✅ Unit tests | **295, all green** |
+| 🧪 Real E2E | **22 checks** over real HTTP / SSE / database — no mocks |
+| 🎯 Retrieval evaluation | 45 ground-truth cases: **Recall@5 0.96 · MRR@5 0.885** (production config) |
+| 💬 Answer quality | 16 cases × 3 rounds, LLM-judged: **0.89** — with a defect-vs-fixed control: **0.35 → 0.89** |
+| ⚡ Measured capacity | Vendor ceiling on the LLM channel **≈24 concurrent** (excess is rejected immediately with 429); embedding ≥64 and rerank ≥32 saw no 429 |
+| 🧰 Evaluation scripts | **62** (retrieval / answers / agent / guardrails / load / upstream probing), all maintained in-repo |
 
-## 📊 Quality & Evaluation
+**Methodology we deliberately hold to** (each of these was learned the hard way):
 
-All automation assets ship with the repo (`scripts/`):
+- 🧪 **Every behavioural assertion needs a control experiment** — break it → it must fail precisely → restore → full green.
+  "It passed" is not proof.
+- 📏 **Calibrate the instrument before measuring** — establish same-arm reproducibility first, then state the
+  **instrument resolution** (±0.015 MRR here) and refuse to judge effects smaller than it.
+- 🧾 **Decision thresholds are written down before the run**, never after; cross-period comparisons
+  check that the definitions match first.
+- 🔎 **"Wired up" ≠ "carried correctly"** — when replacing a component with a return contract, verify field by field
+  (id / text / metadata / score). This is the most expensive of the 47 ADRs.
 
-- 🎯 **Retrieval eval**: 45 ground-truth cases — production baseline **Recall 1.00 / MRR 0.911**
-- 🧪 **Answer eval**: 16 golden × 3 rounds (multi-hop expectations included)
-- 🤖 **Agent eval**: 6 classes × 3-layer boundaries (tool calls / off-domain / content safety) all pass
-- 🚀 **E2E smoke**: 18 items (register → SSE chat → RAG → Agent → guardrails → fallback) one-command regression
-- ⚡ **Capacity, measured**: 40 concurrent, zero 429s (no vendor hard limit); gate default 24 in-flight (P95 ≈3.5 s sweet spot); 50 SSE long-lived connections, zero drops
+### 🔧 Operations & compliance
 
-### Engineering & Ops (enterprise hardening, 2026-09-07)
+- 📜 **Audit log** — sensitive operations (login / password change / account deletion / deletes) are written
+  **append-only** (`AuditAspect` + Flyway `V20`) and queryable at `/admin/audit`: who did what, when.
+- 🧯 **Disaster recovery** — 3-2-1 backup script (`ops/backup.sh`, daily rotation) plus a restore runbook;
+  error tracking via Sentry, enabled by setting `SENTRY_DSN`.
+- 🔐 **Method-level RBAC** — `@RequireRole` is **actually enforced** by an interceptor (not hidden menu items);
+  403 for unauthorized and 401 for anonymous are pinned by contract tests.
+- 📈 **Observability stack** — Prometheus metrics + Grafana dashboards (`ops/grafana`) + self-hosted Langfuse tracing.
 
-- ✅ **105 unit tests**: a second-level regression net for the API layer — Auth(10) / Sandbox(7) / MemoryFacts(7) contracts + RBAC interceptor (4 states). Unauthorized 403/404, not-logged-in 401 — all pinned
-- 🔄 **CI, three pipelines** (GitHub Actions): `gitleaks` secret scan (full history) → `mvn test` → E2E 18 items (mysql/pgvector/redis service containers; full regression runs once Secrets are configured)
-- 📦 **CD**: `git tag v*` → build & push both images to GHCR → (optional) ssh auto-deploy; `TAG=<old-version>` one-command rollback
-- 📜 **Audit log**: sensitive actions (login / password change / account deletion) appended to an immutable table, queryable via `/admin/audit` — who did what, when, with receipts
-- 🧯 **Disaster recovery**: 3-2-1 backup script (`ops/backup.sh`, 7-day rotation) + restore-drill runbook + Sentry error tracking (enable by setting `SENTRY_DSN`)
-- 🔐 **RBAC**: method-level `@RequireRole`, enforced in the interceptor (not just hidden menu items) — the permission base for future ADMIN capabilities
+## 📚 Documentation
 
-## 🗂 Repository Layout
+The whole decision chain — product → architecture → ADR → deployment — lives in `docs/`:
+
+| Document | Contents |
+|---|---|
+| [00 · Reading guide](docs/00-文档导读.md) | Entry points by role |
+| [01 · Product](docs/01-产品定位与需求.md) · [02 · Architecture](docs/02-架构设计.md) | Why, and how it is put together |
+| [03 · ADRs](docs/03-技术决策记录.md) | **47 ADRs** — why parent-child indexing was dropped, how the fallback chain landed, why filtering had to be pushed down… |
+| [04 · Data model](docs/04-数据模型设计.md) · [05 · API contracts](docs/05-API契约设计.md) · [06 · Core flows](docs/06-核心流程设计.md) | Schema / endpoints / sequences |
+| [07 · Security & compliance](docs/07-安全与合规.md) | Content safety · data compliance · ownership checks |
+| [08 · Observability](docs/08-可观测性与发布.md) · [09 · Test strategy](docs/09-测试策略.md) | Metrics & tracing / test layers and NFRs |
+| [10 · Deployment](docs/10-部署发布.md) · [11 · Environment](docs/11-环境与装置.md) | Docker / CD / DR runbook · local harness and script index |
+
+## 🗂 Repository layout
 
 ```
 ├── src/main/java/cn/lwx/lwxaiagent
-│   ├── agent/               # Agent tools (search / weather / web / PDF…)
-│   ├── infrastructure/      # LLM gateway (fallback chain), graph orchestration, schedulers
-│   ├── rag/                 # Hybrid retrieval (jieba RRF + pgvector), KB sync
-│   ├── sandbox/  memory/    # Role-play studio / memory distillation
-│   ├── harness/             # Guardrails (governance), observability, eval
+│   ├── agent/               # Agent tools (search/weather/web/PDF…)
+│   ├── infrastructure/      # LLM gateway (fallback chain, circuit breaker), graph orchestration, schedulers
+│   ├── rag/                 # Hybrid retrieval (RRF), rerank, KB sync, SQL search entry points
+│   ├── sandbox/  memory/    # Role-play studio / memory extraction and archive
+│   ├── harness/             # Guardrails (governance), observability
 │   └── controller/          # REST + SSE API (/api prefix)
-├── front/src               # Vue 3 frontend (paper-texture theme UI)
-├── mcp-server/             # Isolated tool process (own Docker build)
-├── scripts/                # Eval / smoke / load-test assets
-├── docs/                   # Product → architecture → ADR → deploy decision trail
-└── docker-compose.yml      # One-command deploy
+├── front/src               # Vue 3 frontend (letter-paper theme)
+├── mcp-server/             # Isolated tool-process (own Docker build)
+├── scripts/                # Evaluation / smoke / load assets (62)
+├── docs/                   # Product → architecture → ADR → deployment
+└── docker-compose.yml      # One-command deployment
 ```
+
+## 🗺 Roadmap
+
+- [x] **V1** core chain: auto-routing · hybrid RAG · memory archive · three-tier guardrails · real E2E regression net
+- [x] Remote reranking in production, plus a **multi-provider rollback channel**
+- [ ] Screenshots and visual polish (the "letter-paper" theme deserves a proper gallery — PRs welcome)
+- [ ] Multi-instance deployment (capacity governance is currently in-process; an ADR comes first)
+- [ ] Knowledge-base growth and content co-building (relationship articles, colloquial crisis variants)
+- [ ] Plugin-able tool surface (third-party tools over the MCP protocol)
 
 ## 🤝 Contributing
 
-The project is in its V1 release phase. We welcome:
+Three kinds of contributions, all easy to start with:
 
-- 🐛 Bug reports — especially colloquial crisis-phrase variants and ground-truth samples for RAG misses
-- 💡 New persona templates / knowledge-base content
-- 📸 Screenshots & visual polish
+- 🐛 **Bug reports** — especially "this crisis phrasing slipped through" and "RAG should have recalled this but didn't".
+  Such samples go straight into the evaluation set.
+- 💡 **Content and personas** — knowledge-base articles and persona templates.
+- 📸 **UI and visuals** — screenshots, theme polish, accessibility.
 
-Before submitting, run `scripts/e2e-smoke.sh` — all 18 items must pass.
+Before submitting:
+
+```bash
+./mvnw test                                                # 295 unit tests
+BASE_URL=... ADMIN_API_KEY=... bash scripts/e2e-smoke.sh   # 22 real E2E checks
+```
+
+> 🔐 **Security disclosure** — please **do not** post vulnerability details in public issues; contact the author directly.
+> 🔑 All secrets are injected via environment variables. The repository runs a full-history `gitleaks` scan
+> (the CI `security` workflow) that is **not allowed to be bypassed**.
 
 ---
 
 <p align="center">
-  <sub>Every heartache at midnight deserves a letter of its own.</sub><br/>
+  <sub>Every 3 a.m. dilemma deserves a letter of its own.</sub><br/>
   <a href="#">↑ Back to top</a>
 </p>
