@@ -148,16 +148,32 @@ public class KnowledgeSqlSearch {
         return sb.append("]").toString();
     }
 
-    /** SQL 行 → Document（含 metadata 解析）。各通道共用，避免解析逻辑漂移。 */
+    /**
+     * SQL 行 → Document（含 metadata 解析）。各通道共用，避免解析逻辑漂移。
+     *
+     * <p>⛔ <b>必须用三参构造 {@code (id, text, metadata)}</b>（2026-09-25 修复，ADR-46）。
+     * Spring AI 的 {@code Document(String, Map)} 是 <b>{@code (text, metadata)}</b> ——
+     * 写成两参会把 <b>库里的 id 当成正文</b>，同时由 {@code RandomIdGenerator} 给 Document
+     * <b>随机生成一个新 id</b>（反编译确认）。两个后果都静默：</p>
+     * <ol>
+     *   <li><b>正文丢失</b>：下游拿到的 {@code getText()} 是一个 UUID 字符串 ——
+     *       重排被喂 UUID（实测 MRR 0.82/0.76 → 0.28/0.27）、RAG 注入给模型的"知识"也是 UUID；</li>
+     *   <li><b>id 每次调用都变</b>：向量通道与关键词通道的同一条记录在 RRF 融合里
+     *       （{@code fused.put(d.getId(), ...)}）<b>永远配不上对</b>，同一块会占两个候选位。</li>
+     * </ol>
+     * <p>列 {@code content} 必须出现在 SELECT 里（两个通道的 SQL 都已包含）。</p>
+     */
     private Document toDocument(java.sql.ResultSet rs) throws java.sql.SQLException {
-        Document d = new Document(rs.getString("id"), new java.util.HashMap<>());
+        java.util.Map<String, Object> meta = new java.util.HashMap<>();
         try {
             @SuppressWarnings("unchecked")
-            Map<String, Object> meta = json.readValue(rs.getString("metadata"), Map.class);
-            d.getMetadata().putAll(meta);
+            Map<String, Object> parsed = json.readValue(rs.getString("metadata"), Map.class);
+            if (parsed != null) {
+                meta.putAll(parsed);
+            }
         } catch (Exception e) {
             log.warn("RAG metadata parse failed: {}", e.getMessage());
         }
-        return d;
+        return new Document(rs.getString("id"), rs.getString("content"), meta);
     }
 }

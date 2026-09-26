@@ -2,6 +2,7 @@ package cn.lwx.lwxaiagent.rag;
 
 import org.junit.jupiter.api.*;
 import org.mockito.ArgumentCaptor;
+import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -79,5 +80,38 @@ class KnowledgeSqlSearchTest {
         assertEquals(List.of(), search.byKeyword(List.of(), 25));
         assertEquals(List.of(), search.byKeyword(null, 25));
         verifyNoInteractions(pg);
+    }
+
+    /**
+     * 载荷契约（**ADR-46 的回归点**）：正文必须来自 {@code content} 列，id 必须沿用库里的 id。
+     *
+     * <p>原实现写的是 {@code new Document(rs.getString("id"), new HashMap<>())}，
+     * 而 Spring AI 的两参构造是 {@code (text, metadata)} —— 于是
+     * <b>正文变成了 UUID 字符串</b>、<b>id 每次调用随机生成</b>，且两件事都不报错：
+     * 检索条数正常、日志正常，只有重排（被喂 UUID → MRR 0.82 → 0.28）
+     * 和"注入给模型的知识"（变成 UUID）会坏掉。</p>
+     *
+     * <p>这道断言守的是**返回对象的字段**，不是条数、也不是 SQL 文本 ——
+     * 前面三条测的是"SQL 对不对"，测不出"解析出来的对象对不对"。</p>
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void rowMapper_carriesContentAsText_andKeepsDatabaseId() throws Exception {
+        String dbId = "f6e42cf9-2b5d-47d5-bea1-08b7c1ade20c";
+        String content = "煤气灯效应的三个典型特征：否认、转移、孤立。";
+        java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+        when(rs.getString("id")).thenReturn(dbId);
+        when(rs.getString("content")).thenReturn(content);
+        when(rs.getString("metadata")).thenReturn("{\"chunk\":\"overlap\",\"chunk_index\":3}");
+
+        search.byVector("煤气灯效应", 8);
+        ArgumentCaptor<RowMapper<Document>> mapper = ArgumentCaptor.forClass(RowMapper.class);
+        verify(pg).query(anyString(), mapper.capture(), any(Object[].class));
+        Document d = mapper.getValue().mapRow(rs, 0);
+
+        assertEquals(content, d.getText(), "正文必须来自 content 列（两参构造会把 id 当正文）");
+        assertEquals(dbId, d.getId(), "id 必须沿用库里的 id（两参构造会随机生成新 id）");
+        assertEquals("overlap", d.getMetadata().get("chunk"));
+        assertEquals(3, ((Number) d.getMetadata().get("chunk_index")).intValue());
     }
 }
