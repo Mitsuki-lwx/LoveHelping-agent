@@ -5,22 +5,36 @@
 
 用法：
   python scripts/answer_eval.py --base http://localhost:13263/api
-  （智谱 key 自动从 src/main/resources/application-local.yml 读取，无需手动传）
+  （智谱 key 优先级：环境变量 ZHIPU_API_KEY → 本地 gitignored 的 application-local.yml，无需手动传）
 """
 import argparse, io, json, os, re, time, urllib.request, urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-YML = os.path.join(ROOT, "src", "main", "resources", "application-local.yml")
+# ⛔ 2026-09-26 修复：原实现只看 `src/main/resources/application-local.yml`，而本仓凭据只存在于
+# **构建产物** `target/classes/application-local.yml`（该文件在 .gitignore 里，src 下没有）
+# → 脚本一进来就抛 FileNotFoundError，"答案质量从来没人跑过"的一半原因在这里。
+# 现在按"环境变量 → target/classes → src/main/resources"顺序找，任一可用即可。
+YML_CANDIDATES = [
+    os.path.join(ROOT, "target", "classes", "application-local.yml"),
+    os.path.join(ROOT, "src", "main", "resources", "application-local.yml"),
+]
+
 
 def load_zhipu_key():
-    """从 application-local.yml 的 app.ai.openai 段取智谱 key（本地开发明文）"""
-    with io.open(YML, encoding="utf-8") as f:
-        text = f.read()
-    # 定位 openai: 段内首个 api-key
-    m = re.search(r"openai:\s*\n(?:.*\n)*?\s+api-key:\s*([A-Za-z0-9._\-]+)", text)
-    if not m:
-        raise SystemExit("未在 application-local.yml 找到智谱 api-key")
-    return m.group(1)
+    """取智谱 key：优先环境变量，其次本地 gitignored 的 application-local.yml"""
+    env = os.environ.get("ZHIPU_API_KEY")
+    if env:
+        return env
+    for path in YML_CANDIDATES:
+        if not os.path.exists(path):
+            continue
+        with io.open(path, encoding="utf-8") as f:
+            text = f.read()
+        # 定位 openai: 段内首个 api-key
+        m = re.search(r"openai:\s*\n(?:.*\n)*?\s+api-key:\s*([A-Za-z0-9._\-]+)", text)
+        if m:
+            return m.group(1)
+    raise SystemExit("未找到智谱 api-key：可设 ZHIPU_API_KEY 环境变量，或准备 %s" % YML_CANDIDATES[0])
 
 def judge(api_key, question, golden, answer):
     """调智谱 glm-4-flash 评 Answer Correctness（0-1 分数 + reasoning）"""
