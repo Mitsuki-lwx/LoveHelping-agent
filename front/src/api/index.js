@@ -40,7 +40,18 @@ function sseUrl(path) {
   return `${fullPath}${token ? sep + 'token=' + encodeURIComponent(token) : ''}`
 }
 
-function createSSE(url, { onMessage, onError, onComplete, onBusy }) {
+/**
+ * 后端 SSE 的「占位/状态」事件名（与后端 SseBridge.STATUS_EVENT 对齐）。
+ *
+ * ⛔ 为什么必须在前端**按事件名分流**、而不是靠"浏览器会丢弃未监听的事件"：
+ * 那条规矩只对原生 `EventSource` 成立。本项目 2026-09-07 起改用 fetch-stream
+ * 手写解析（原 EventSource 读不到 HTTP 错误响应体），凡是 `data:` 行一律当正文。
+ * 结果 status 的载荷 `{"stage":"thinking","text":"让我想想…"}`
+ * 会被 `content += data` 追加进气泡 → 用户看到一坨 JSON。
+ */
+const STATUS_EVENT = 'status'
+
+export function createSSE(url, { onMessage, onError, onComplete, onBusy, onStatus }) {
   // 2026-09-07：EventSource → fetch-stream。原 EventSource 无法读取 HTTP 错误响应体——
   // 4003 排队告知（message/data）到不了前端，只能显示固定'连接失败'。
   // fetch 版可读非 200 的 Result body：code==4003 且提供 onBusy → 结构化透传（打字机渲染）。
@@ -66,6 +77,10 @@ function createSSE(url, { onMessage, onError, onComplete, onBusy }) {
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
       let buf = ''
+      // 当前帧的事件名。SSE 帧以空行分隔，`event:` 行只对**紧随其后**的 data 行生效。
+      // ⚠️ 只对 STATUS_EVENT 分流：error / advice 事件的载荷是**要显示的正文**
+      // （错误文案、三牌建议），必须继续走 onMessage，否则等于把错误提示吞了。
+      let curEvent = null
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
@@ -74,10 +89,21 @@ function createSSE(url, { onMessage, onError, onComplete, onBusy }) {
         while ((idx = buf.indexOf('\n')) >= 0) {
           const line = buf.slice(0, idx).trim()
           buf = buf.slice(idx + 1)
+          if (line === '') { curEvent = null; continue }        // 帧结束
+          if (line.startsWith('event:')) {
+            curEvent = line.slice(6).trim()
+            continue
+          }
           if (!line.startsWith('data:')) continue
           const data = line.slice(5).trim()
           if (data === '[DONE]') { onComplete?.(); return }
-          if (data) onMessage?.(data)
+          if (!data) continue
+          if (curEvent === STATUS_EVENT) {
+            // 解析失败也不能影响正文流：占位只是提示，坏JSON 就退化成无提示
+            try { onStatus?.(JSON.parse(data)) } catch (_) { onStatus?.({ text: data }) }
+            continue
+          }
+          onMessage?.(data)
         }
       }
       onComplete?.()

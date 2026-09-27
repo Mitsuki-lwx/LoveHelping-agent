@@ -61,6 +61,7 @@
       </div>
       <div v-if="loading" class="message message-ai">
         <div class="message-content">
+          <span v-if="statusText" class="thinking-text">{{ statusText }}</span>
           <span class="typing-dots">
             <span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
           </span>
@@ -208,6 +209,15 @@ function renderMarkdown(text) {
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
+/**
+ * 「思考中」占位文案（2026-09-27 phase17）。
+ *
+ * 打字点气泡本来就有，但三个点转 11 秒不给任何信息 = 用户无法判断
+ * 「在算」还是「卡了」。后端在首个 token 之前发一个 `event:status`，
+ * 这里把它显示出来；**首个正文帧到达即清空**。
+ * ⛔ 文案必须诚实：此刻并没有「在分析你的问题」，写进度条式的措辞是拿不存在的进展安抚人。
+ */
+const statusText = ref('')
 const messagesRef = ref(null)
 const voteStates = ref({})
 const showFeedback = ref(null)
@@ -360,6 +370,7 @@ function sendMessage() {
   if (loading.value) {
     cancelSSE?.()
     loading.value = false
+    statusText.value = ''
   }
 
   messages.value.push({ role: 'user', content: text })
@@ -372,12 +383,20 @@ function sendMessage() {
 
   messages.value.push({ role: 'ai', content: '' })
   const aiMsgIdx = messages.value.length - 1
+  statusText.value = ''
 
   // 统一入口 /Love_app/chat/sse（2026-09-07）：后端 classify 自动路由——简单/知识库/Agent 全自动
   cancelSSE = createLoveChatSSE(text, chatId.value, {
+    // 占位状态（2026-09-27 phase17）：后端在首个 token 前发 event:status，0.06s 就到。
+    // ⛔ 它绝不能进 onMessage —— 会被 content += data 追加进气泡变成一坨 JSON。
+    onStatus(payload) {
+      statusText.value = (payload && payload.text) || ''
+    },
     onMessage(data) {
       // 防御（2026-09-07 合并统一流后）：剥离话术三牌事件标记，避免 JSON 残文进正文
       if (data && data.startsWith('@@ADVICE@@')) return
+      // 首个正文帧到达 → 占位完成使命。⛔ 放在最前面：被剥离的标记帧不代表正文已开始。
+      statusText.value = ''
       messages.value[aiMsgIdx].content += data
       scrollToBottom()
     },
@@ -386,18 +405,21 @@ function sendMessage() {
       const text = (body && body.message) || '当前咨询较多，建议稍后再试。'
       const retry = body && body.data && body.data.retryAfterSec
       typewrite(aiMsgIdx, text + (retry ? `（约 ${retry} 秒后可重试）` : ''))
+      statusText.value = ''
       loading.value = false
     },
     onError(err) {
       const text = (err && err.message && err.message !== 'Failed to fetch')
         ? err.message : '连接失败，请稍后重试。'
       typewrite(aiMsgIdx, text)
+      statusText.value = ''
       loading.value = false
     },
     onComplete() {
       if (!messages.value[aiMsgIdx].content) {
         messages.value[aiMsgIdx].content = '...'
       }
+      statusText.value = ''
       loading.value = false
       scrollToBottom()
       // ② 行动卡：回信落定后，从三牌建议抽一条可跟踪的行动
@@ -638,6 +660,7 @@ onUnmounted(() => {
 .feedback-input:focus { border-bottom-color: var(--wine); }
 
 /* ---------- 打字中（墨点） ---------- */
+.thinking-text { margin-right: 6px; opacity: 0.72; }
 .typing-dots { display: inline-flex; gap: 3px; padding: 2px 4px; }
 .typing-dots .dot {
   width: 6px; height: 6px;

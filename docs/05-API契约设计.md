@@ -46,10 +46,31 @@ SSE 基础设施要求：Nginx `proxy_buffering off; proxy_cache off; proxy_read
 | `GET /Love_app/chat/sse/tools?prompt&chatId` | 聊天 + 工具调用 | 单轮 function calling |
 | `GET /Love_app/chat/sync?prompt&chatId` | 同步聊天（阻塞，测试/内部调用） | 非用户侧主路径 |
 
-SSE 事件序列（现状为文本 chunk 流；结构化事件（start/chunk/end/usage）为**待讨论**重构项）：
+SSE 事件序列（现状为文本 chunk 流）：
 ```
+event: status
+data: {"stage":"thinking","text":"让我想想…"}     （有且仅有 1 个，**订阅后、正文之前**）
 data: <文本片段>            （多个，打字机效果）
 ```
+
+**占位状态事件（2026-09-27 phase17 新增，向后兼容的增量协议）**：
+
+| 字段 | 值 | 说明 |
+| --- | --- | --- |
+| `event` | `status` | 独立事件名，**不是**默认 `data` |
+| `data.stage` | `thinking` | 阶段标识 |
+| `data.text` | `让我想想…` | ⛔ 必须诚实：此刻并未「在分析你的问题」，不得写成进度式措辞 |
+
+- **为什么需要**：主端点实测首个正文帧要等 1.7s（冷态）~14s（整轮图执行），
+  用户看到的是「打字点转半天、不知道系统在干什么」。「等 N 秒」和「知道在干什么」是两种体感。
+  实测该事件在浏览器中 **16ms** 出现在 DOM（2026-09-27，`probe_ui_status.sh`）。
+- **客户端契约（必须遵守）**：`status` 的 `data` **不得当正文渲染**。
+  ⛔ 本项目前端是 fetch-stream 手写解析（2026-09-07 起弃用 `EventSource`，
+  因为它读不到 HTTP 错误响应体），**原生 `EventSource`「丢弃未监听事件」的行为在这里不成立**。
+  照旧实现会把 `{"stage":...}` 直接拼进气泡。
+  参考实现见 `front/src/api/index.js` 的 `STATUS_EVENT` 分流 + `front/src/__tests__/sseEventRouting.test.js`（6 例）。
+- 收到**首个正文帧**后应清除该提示（`onMessage` 里置空）。
+- `error` / `advice` 事件的载荷是**要显示的正文**，不得被这次分流吞掉。
 
 **话术三级建议事件（FR-CORE-01，2026-08-25，增量协议）**：命中话术请求（`CapabilityRouter.isAdviceRequest` 关键词）时，流末尾追加一个命名事件，三牌结构化数据供前端渲染/单牌编辑（CAP-2）：
 ```

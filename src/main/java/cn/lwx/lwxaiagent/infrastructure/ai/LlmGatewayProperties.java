@@ -22,6 +22,15 @@ public class LlmGatewayProperties {
      */
     @Min(1) @Max(256) private int maxConcurrentCalls = 24;
     @Min(1) private long attemptTimeoutMs = 25000;
+    /**
+     * ADR-49：流式「模型有没有起步」的上限，<b>与 {@link #attemptTimeoutMs} 解耦</b>。
+     * <p>此前首值超时直接复用了 attempt-timeout（45s）—— 那是**同步整调用**的预算
+     * （实测生成 300~500 tok 要 10~17s），拿来当首字节上限就是 9 倍冗余：
+     * 真故障时用户先白等 45s 才进降级。</p>
+     * <p>实测（scripts/probe_first_token_latency.py，43 例：单线程 19 + 并发 24）：
+     * TTFT p50 2.1~2.3s / max 4.95s，并发 24 无排队抬升、0 失败 → 15000 留约 3 倍余量。</p>
+     */
+    @Min(1) private long firstByteTimeoutMs = 15000;
     @Min(1) private long totalTimeoutMs = 60000;
     @Min(1) private long streamIdleTimeoutMs = 15000;
     @Min(1) private long connectTimeoutMs = 3000;

@@ -40,13 +40,25 @@ final class LlmFailurePolicy {
         return false;
     }
 
+    /**
+     * 允许降级到下一级供应商吗？
+     *
+     * <p><b>ADR-48 补记</b>：原白名单是 {@code 401/403/404/408/429/5xx}，
+     * <b>漏了 402（Payment Required）</b>。实测踩中：OpenRouter 账号余额不足时返回 402，
+     * 而"余额不足"恰恰是<b>最该降级</b>的一种故障 —— 换一家供应商就能立刻继续服务用户，
+     * 留在原地重试只是把同一个 402 重复三遍，然后抛 5000 让用户看"服务暂时不可用"。</p>
+     *
+     * <p>402 与 401/403 同属"**这家供应商现在用不了**"（额度/凭证/账户状态），
+     * 与 4xx 里唯一不该降级的 {@code 400（请求本身 malformed）} 性质不同。</p>
+     */
     static boolean fallbackAllowed(Throwable e) {
         if (cancelled(e)) return false;
         if (e instanceof CircuitOpenException) return true;
         for (Throwable t : causes(e)) {
             Integer s = status(t);
-            // Supplier auth/unavailable endpoint can fail over; malformed client requests cannot.
-            if (s != null) return s == 401 || s == 403 || s == 404 || s == 408 || s == 429 || s >= 500;
+            // Supplier auth/quota/unavailable endpoint can fail over; malformed client requests cannot.
+            // 402 = 额度/计费 exhausted，是供应商侧不可用，**必须能降级**（ADR-48 实测缺口）。
+            if (s != null) return s == 401 || s == 402 || s == 403 || s == 404 || s == 408 || s == 429 || s >= 500;
         }
         return retryable(e);
     }

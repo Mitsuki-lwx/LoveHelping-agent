@@ -104,6 +104,46 @@ public class AiController {
             @RequestParam(required = false) String mediaIds,
             @RequestParam(required = false, defaultValue = "false") boolean continueBrake) {
         List<Long> ids = parseMediaIds(mediaIds);
+        // ⭐ 占位事件必须**先于任何耗时工作**发出去，所以业务调用整体推迟到订阅时。
+        //
+        // ⛔⛔ 第一版用 `Flux.concat(Flux.just(thinking), Flux.defer(...))`，**实测无效**：
+        //   concat 是**串行**的 —— 它会等上游 complete 才订阅下游，
+        //   而 defer 里的 `chatEntry.chat()` 是**同步阻塞**的（护栏/路由/建图/RAG 都在里面）。
+        //   结果：占位要等 chat() 整个跑完才发得出去 → 真实链路实测
+        //   「占位事件 @28.25s、正文 @28.25s」，**两者同刻，白屏一点没消除**。
+        //   而同期网关 TTFT 埋点显示 LLM 首只要 1.9~3.9s → 那 28s 全是前置工作。
+        //
+        // ✅ 正确写法：Flux.create 的回调里**先 next(占位)**，再跑同步业务，
+        //    然后把业务 flux 手工接进来。emitter.next 是即时写响应，不等下游。
+        return Flux.create(sink -> {
+            sink.next(org.springframework.http.codec.ServerSentEvent
+                    .<String>builder(SseBridge.THINKING_STATUS)
+                    .event(SseBridge.STATUS_EVENT).build());
+            // ⛔ 手写 subscribe() 之后，**下游取消不再自动传播**给内部流（Flux.create 的
+            //   取消只到 sink 为止）。不接上这条，客户端断开后 RAG/LLM 仍在跑 →
+            //   泄漏连接 + 白烧额度。
+            // ⛔ 用 Disposables.single() 直接持有真实 Disposable；
+            //   ⛔ 不用 swap()：swap() 需要在订阅**产生后**再 update，
+            //   而 subscribe() 是同步的、要等它返回才知道 Disposable —
+            //   曾经在 subscribe() 之后立刻 update(disposed())，结果取消永远失效。
+            var ref = new java.util.concurrent.atomic.AtomicReference<reactor.core.Disposable>();
+            sink.onCancel(() -> { var d = ref.get(); if (d != null) d.dispose(); });
+            sink.onDispose(() -> { var d = ref.get(); if (d != null) d.dispose(); });
+            try {
+                ref.set(chatSseBody(prompt, chatId, ids, continueBrake)
+                        .doOnNext(sink::next)
+                        .doOnError(e -> { sink.error(e); })
+                        .doOnComplete(sink::complete)
+                        .subscribe(null, e -> { }));
+            } catch (Throwable t) {
+                sink.error(t);
+            }
+        });
+    }
+
+    /** chatSseServer 的实际业务部分；单独拆出以便被 {@link #chatSseBody} 的 defer 延迟到订阅时执行。 */
+    private Flux<org.springframework.http.codec.ServerSentEvent<String>> chatSseBody(
+            String prompt, String chatId, List<Long> ids, boolean continueBrake) {
         AgentResult result;
         try {
             result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
@@ -139,11 +179,20 @@ public class AiController {
      */
     @GetMapping(value = "Love_app/chat/sse_emitter")
     public SseEmitter chatSseEmitter(@RequestParam String prompt, @RequestParam String chatId) {
-        AgentResult result = chatEntry.chat(prompt, chatId, List.of(), false, null);
-        if (result instanceof AgentResult.DeepResult dr) {
-            return dr.emitter();
-        }
-        return SseBridge.emitter(((AgentResult.ShallowResult) result).flux());
+        // ⭐ 走 emitterWithPlaceholder：占位帧在**业务开始前**就写出。
+        //    原来在这里先同步跑 chatEntry.chat()（实测阻塞 1~16s），
+        //    占位根本没机会先发 —— 顺序被参数求值锁死了。
+        //    ⚠️ mediaIds 不支持（这条路径原本就没有），语义保持不变。
+        // ⛔ 这里对 DeepResult 做了强转。实测 `ChatEntry.chat` 的唯一返回点是
+        //    `new AgentResult.ShallowResult(...)`（全仓无 DeepResult 构造点），
+        //    所以强转安全；但**将来若新增 Deep 路径，这里会 ClassCastException**。
+        //    显式判断并给出可读错误，好过让下一个人对着 CCE 猜。
+        return SseBridge.emitterWithPlaceholder(() -> {
+            AgentResult result = chatEntry.chat(prompt, chatId, List.of(), false, null);
+            if (result instanceof AgentResult.ShallowResult sr) return sr.flux();
+            throw new IllegalStateException("chatSseEmitter 不支持 " + result.getClass().getSimpleName()
+                    + "（该类型自带 emitter，无法桥进占位优先入口）");
+        });
     }
 
     /**

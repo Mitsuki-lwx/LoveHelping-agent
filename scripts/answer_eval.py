@@ -21,20 +21,41 @@ YML_CANDIDATES = [
 
 
 def load_zhipu_key():
-    """取智谱 key：优先环境变量，其次本地 gitignored 的 application-local.yml"""
+    """取智谱 key：优先环境变量，其次本地 gitignored 的 application-local.yml。
+
+    ⛔ 2026-09-27 修复第二个同形量具缺陷：ADR-48 把 local yml 的
+    `spring.ai.openai.api-key` 改成了**占位符** `${OPENAI_API_KEY:...}`（真实值走环境变量），
+    而本函数原来用正则取 `openai:` 段首个 api-key → 取到占位符展开后的
+    **OpenRouter key**，拿去调智谱 → **HTTP 401**。
+    后果：16 例 × 2 轮全部记 0.00，屏幕上是"模型全错"，实际是 judge 一个都没跑成。
+    教训同 ADR-46/9f608ea：打分型量具必须能被证伪，所以下面显式拒绝占位符形状的值。
+    """
     env = os.environ.get("ZHIPU_API_KEY")
     if env:
         return env
-    for path in YML_CANDIDATES:
+    for path in ZHIPU_FALLBACK_FILES():
         if not os.path.exists(path):
             continue
         with io.open(path, encoding="utf-8") as f:
             text = f.read()
-        # 定位 openai: 段内首个 api-key
-        m = re.search(r"openai:\s*\n(?:.*\n)*?\s+api-key:\s*([A-Za-z0-9._\-]+)", text)
-        if m:
-            return m.group(1)
-    raise SystemExit("未找到智谱 api-key：可设 ZHIPU_API_KEY 环境变量，或准备 %s" % YML_CANDIDATES[0])
+        m = re.search(r"openai:\s*\n(?:.*\n)*?\s+api-key:\s*([^\s#]+)", text)
+        if not m:
+            continue
+        value = m.group(1).strip("'\"")
+        # 占位符（${...}）不是真实 key：宁可继续找下一个文件，也不要拿着它去调 judge
+        if value.startswith("${") or not value:
+            continue
+        return value
+    raise SystemExit("未找到智谱 api-key：可设 ZHIPU_API_KEY 环境变量，"
+                     "或准备 %s" % YML_CANDIDATES[0])
+
+
+def ZHIPU_FALLBACK_FILES():
+    """除常规 yml 外，ADR-48 之前的 local yml 备份里存着真正的智谱 key。"""
+    import glob
+    backups = sorted(glob.glob(os.path.join(ROOT, "logs", "application-local.yml.bak-adr48-*")),
+                     key=os.path.getmtime, reverse=True)
+    return YML_CANDIDATES + backups
 
 def judge(api_key, question, golden, answer):
     """调智谱 glm-4-flash 评 Answer Correctness（0-1 分数 + reasoning）"""

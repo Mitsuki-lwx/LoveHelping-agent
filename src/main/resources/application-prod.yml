@@ -7,20 +7,30 @@
 
 spring:
   ai:
-    # 主链路 LLM（OpenAI 兼容端点；部分网关端点形态特殊、需自定义 completions-path——
-    # ⚠️ 缺该路径会 404，按所选服务商形态配置）。
+    # 主链路 LLM（ADR-48：主端点切到 OpenRouter）。
+    # 实测（2026-09-27，scripts/probe_real_prompt_speed.py 用真实 SYSTEM_PROMPT 4970 字符
+    # + 模拟 RAG top8，prompt_tokens=3053，n=3）：
+    #   stealth/space-bunny-alpha  42.8~51.1 tok/s、prompt cache 命中 7/8(88%) 成本降 74%、
+    #                     并发 96 直连零 429、tool_calls 正常返回
+    #   glm-4-flash     11~14 tok/s、无 prompt cache 能力、并发 32 即出 429
+    # OpenRouter 是标准 OpenAI 形态：base-url 写到 /api 为止，
+    # completions-path 用框架默认值 /v1/chat/completions。
     openai:
-      base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
-      api-key: ${OPENAI_API_KEY:}              # 必填：主模型 key
+      base-url: ${OPENAI_BASE_URL:https://openrouter.ai/api}
+      api-key: ${OPENAI_API_KEY:}              # 必填：主模型 key（OpenRouter sk-or-v1-...）
       chat:
-        completions-path: /chat/completions
         options:
-          model: ${OPENAI_MODEL:}   # 主模型 id（由环境变量提供，无默认）
+          model: ${OPENAI_MODEL:stealth/space-bunny-alpha}
+    # ⚠️ 不再覆盖 completions-path：那个值是为 bigmodel 的 /api/paas/v4 形态设的，
+    # 对 OpenRouter 会拼出错误路径。bigmodel 兜底级的路径在 BigModelLastResortConfig 里单独指定。
 
 app:
   llm:
     # 主模型故障自动切换原生备模型（降级链，key=DASHSCOPE_API_KEY 对应的向量/备服务）
     fallback-enabled: true
+    # ADR-48：三级链的第三级（bigmodel glm-4-flash，最低等级）。
+    # 凭据走 BIGMODEL_API_KEY；未注入时该级自动跳过并退回两级，不阻断启动。
+    last-resort-enabled: true
 
 logging:
   level:

@@ -188,9 +188,10 @@ class LlmGatewayTest {
     @Test void adaptiveChangeBroadcastsAdmissionCeiling() {
         props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
         List<Integer> broadcast = new java.util.ArrayList<>();
-        gateway = new LlmGateway(primary, fallback, props, meters,
+        // ADR-48：八参是唯一的生产构造器，lastResort/env 传 null（本测试只验闸门广播，与两者无关）
+        gateway = new LlmGateway(primary, fallback, null, props, meters,
                 new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP),
-                event -> broadcast.add(((CapacityLimitChanged) event).limit()));
+                event -> broadcast.add(((CapacityLimitChanged) event).limit()), null);
         when(primary.call(any(Prompt.class))).thenThrow(http(429));
         assertThrows(BizException.class, () -> gateway.call(new Prompt("test")));
         assertEquals(List.of(16), broadcast);

@@ -13,13 +13,15 @@ import org.springframework.context.annotation.Primary;
  *
  * <p>当容器中存在多个 ChatModel 实例时，通过 {@code @Primary} 指定默认注入目标。</p>
  *
- * <p><b>主模型 = {@link LlmGateway}</b>（ADR-7）：装饰器包装主备两个模型——</p>
- * <ul>
- *   <li><b>主</b>：GoPlan（OpenAI 兼容端点，deepseek-v4-flash）</li>
- *   <li><b>备</b>：DeepSeek 官方（同模型双供应商容灾）</li>
- * </ul>
+ * <p><b>主模型 = {@link LlmGateway}</b>（ADR-7 建立，ADR-48 改为三级降级链）：</p>
+ * <ol>
+ *   <li><b>主</b>：OpenRouter {@code qwen/qwen-plus}（OpenAI 兼容端点）</li>
+ *   <li><b>备一</b>：DashScope {@code qwen-plus}（本类注册）</li>
+ *   <li><b>备二（最低）</b>：bigmodel {@code glm-4-flash}（{@link BigModelLastResortConfig}）</li>
+ * </ol>
  * <p>主聊天管道（LoveApp / MemoryExtractor 等注入 {@code @Primary ChatModel} 的消费者）
- * 自动获得重试、降级与 token 计量能力，消费者零改动。</p>
+ * 自动获得重试、降级与 token 计量能力，消费者零改动，且**对链长完全无感知**——
+ * 这是 ADR-23「网关是唯一重试所有者」的直接后果。</p>
  *
  * @author lwx
  * @see LlmGateway 多供应商 LLM 网关（重试 + 降级 + 计量）
@@ -42,11 +44,15 @@ public class ChatModelConfig {
     }
 
     /**
-     * 备模型注册（2026-09-06 降级链落地）：此前 LlmGateway 的 @Qualifier("deepSeekChatModel")
-     * 引用的 bean 从未注册（"deepseek" 非 Spring AI 标准 provider 名，配置被静默忽略）——
+     * 降级链备一（2026-09-06 降级链落地；ADR-48 起为三级链的中间级）：
+     * 此前 LlmGateway 的 @Qualifier("deepSeekChatModel") 引用的 bean 从未注册
+     * （"deepseek" 非 Spring AI 标准 provider 名，配置被静默忽略）——
      * 降级链是纸面降级（fallback==null，故障时直接 5000）。现注册真实可用的备：
      * DashScope OpenAI 兼容端点 + qwen-plus（key 复用 spring.ai.dashscope.api-key）。
-     * 主（BigModel glm-4-flash）故障时 LlmGateway 自动切到本备。
+     *
+     * <p>bean 名字沿用 {@code deepSeekChatModel} 是历史包袱——它实际是 DashScope qwen-plus，
+     * 不是 DeepSeek。改名会牵动 LlmGateway 的 qualifier 与既有单测，收益不抵风险，
+     * 故保留名字但在此写明真相（切勿照名字理解）。</p>
      */
     @Bean("deepSeekChatModel")
     public ChatModel deepSeekFallbackModel(

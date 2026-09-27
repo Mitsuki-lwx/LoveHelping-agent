@@ -186,13 +186,35 @@ app:
     timeout-ms: 90000
     provider: deepseek           # 默认聊天模型提供商（历史配置，主备结构见 app.llm）
 
-  # LlmGateway 配置（ADR-7）：当前仅使用 sensenova OpenAI 兼容端点
+  # LlmGateway 配置（ADR-7 建立；ADR-48 改为三级降级链）
+  #
+  # 降级链：OpenRouter qwen/qwen-plus（primary）→ DashScope qwen-plus → bigmodel glm-4-flash（最低）
   llm:
     max-concurrent-calls: ${LLM_MAX_CONCURRENT_CALLS:24}
     connect-timeout-ms: 3000
-    attempt-timeout-ms: 25000
-    total-timeout-ms: 60000
+    # ADR-48：25000 → 45000。
+    # 依据实测（scripts/probe_real_prompt_speed.py，真实 SYSTEM_PROMPT 4970 字符 + RAG top8，
+    # prompt_tokens=3053，n=3）：qwen/qwen-plus 生成速率 42.8~51.1 tok/s。
+    # 按**最低** 42.8 tok/s 推：300 tok=7.0s / 500 tok=11.7s / 800 tok=18.7s / 1050 tok=24.5s。
+    # 取 45000ms ≈ 1051 tokens 余量，覆盖"长回答 + 行动卡完整展开"，并留网络抖动余量
+    # （并发探测 p50 9.9s / p95 12.9s，抖动可达 30%）。
+    # 旧值 25000 的成因：bigmodel glm-4-flash 只有 11~14 tok/s，
+    # 而 ChatExecutor 要求的正常回答 300~500 tokens 需 21~45s —— 装不下，
+    # 导致「超时 → 重试 3 次 → 降级 → 用户拿到降级文案」。换端点后此约束解除。
+    attempt-timeout-ms: ${APP_LLM_ATTEMPT_TIMEOUT_MS:45000}
+    # ADR-49：首字节（流式「模型有没有起步」）上限，**与 attempt-timeout 解耦**。
+    # 实测（scripts/probe_first_token_latency.py，43 例 = 单线程 19 + 并发 24）：
+    #   TTFT p50 2.1~2.3s、p99 4.2~4.9s、max 4.95s；并发 24 零失败、零排队抬升。
+    # → 15000 留约 3 倍余量，同时把「上游没起步」的最坏等待从 45s 砍到 15s。
+    first-byte-timeout-ms: ${APP_LLM_FIRST_BYTE_TIMEOUT_MS:15000}
+    # ADR-48：60000 → 90000。三级降级链意味着最坏要跑 3 次 attempt，
+    # 而 syncAttempt 取 min(attemptTimeout, remaining(deadline)) ——
+    # total 留在 60000 会让第三级只剩几百 ms，等于没有第三级。
+    total-timeout-ms: ${APP_LLM_TOTAL_TIMEOUT_MS:90000}
+    # 流式"chunk 间隔"上限，不是总时长。42.9 tok/s 下一个 chunk 间隔远小于此，不需要动。
     stream-idle-timeout-ms: 15000
+    # ADR-48：bigmodel 兜底级开关。置 false 退回两级链（回滚用，无需改代码）。
+    last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:true}
     retry:
       max-attempts: 3
       backoff-ms: 250
