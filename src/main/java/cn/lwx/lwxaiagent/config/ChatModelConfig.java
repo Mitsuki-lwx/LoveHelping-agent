@@ -13,12 +13,19 @@ import org.springframework.context.annotation.Primary;
  *
  * <p>当容器中存在多个 ChatModel 实例时，通过 {@code @Primary} 指定默认注入目标。</p>
  *
- * <p><b>主模型 = {@link LlmGateway}</b>（ADR-7 建立，ADR-48 改为三级降级链）：</p>
- * <ol>
- *   <li><b>主</b>：OpenRouter {@code qwen/qwen-plus}（OpenAI 兼容端点）</li>
- *   <li><b>备一</b>：DashScope {@code qwen-plus}（本类注册）</li>
- *   <li><b>备二（最低）</b>：bigmodel {@code glm-4-flash}（{@link BigModelLastResortConfig}）</li>
- * </ol>
+ * <p><b>主模型 = {@link LlmGateway}</b>（ADR-7 建立；ADR-48 建三级降级链；<b>ADR-51 收成单级</b>）：</p>
+ * <ul>
+ *   <li><b>主</b>：DeepSeek 官方 {@code https://api.deepseek.com} + {@code deepseek-flash}
+ *       （ADR-51 起；此前是 OpenRouter {@code stealth/space-bunny-alpha}）</li>
+ *   <li><b>备一</b>：DashScope {@code qwen-plus}（本类注册）——
+ *       ⛔ <b>ADR-51 起默认关闭</b>：域名 {@code dashscope.aliyuncs.com} 本机不可达，
+ *       属"假备用"，见 {@link #deepSeekFallbackModel} 的说明</li>
+ *   <li><b>备二（最低）</b>：bigmodel {@code glm-4-flash}
+ *       （{@link BigModelLastResortConfig}）——⛔ ADR-51 起默认关闭：实测返回 400</li>
+ * </ul>
+ * <p>三级链的<b>机制</b>仍在（可开关式回滚），只是当前<b>没有配置任何降级目标</b>。
+ * 网关的判据是 {@code degradeTiers()} 是否非空，故两级都关时行为退化为
+ * 「主链 + 重试」，与 ADR-48 之前的单级语义一致。</p>
  * <p>主聊天管道（LoveApp / MemoryExtractor 等注入 {@code @Primary ChatModel} 的消费者）
  * 自动获得重试、降级与 token 计量能力，消费者零改动，且**对链长完全无感知**——
  * 这是 ADR-23「网关是唯一重试所有者」的直接后果。</p>
@@ -53,8 +60,25 @@ public class ChatModelConfig {
      * <p>bean 名字沿用 {@code deepSeekChatModel} 是历史包袱——它实际是 DashScope qwen-plus，
      * 不是 DeepSeek。改名会牵动 LlmGateway 的 qualifier 与既有单测，收益不抵风险，
      * 故保留名字但在此写明真相（切勿照名字理解）。</p>
+     *
+     * <p>⛔ <b>ADR-51（2026-09-27）：本 bean 默认不再注册。</b>
+     * {@code dashscope.aliyuncs.com} 在本机<b>不可达</b>——DNS 解析到 Clash fake-ip
+     * （{@code 198.18.0.138} / {@code fdfe:dcba:9876::c5}），直连与走代理的 TLS 握手
+     * 均被中断；Java 侧同形失败最早见于 2026-09-16
+     * （{@code ResourceAccessException: ... Remote host terminated the handshake}）。
+     * 也就是说这一级是<b>假备用</b>：它让链路看起来有三层，实际只有一层，
+     * 却还要在每次主链故障时白等一次 TLS 超时。
+     * 故加 {@code @ConditionalOnProperty} 开关式关闭——<b>不删类、不删注册逻辑</b>，
+     * 域名恢复可达时把 {@code app.llm.fallback-enabled} 拨回 {@code true} 即可复活。</p>
+     *
+     * <p>关闭后 {@code LlmGateway} 的
+     * {@code @Autowired(required=false) @Qualifier("deepSeekChatModel")} 拿到 {@code null}，
+     * {@code degradeTiers()} 返回空列表，启动横幅也不再打印不存在的级别
+     * ——「假端点比没端点更有害」（见 {@code LlmGateway#endpointBaseUrl}）。</p>
      */
     @Bean("deepSeekChatModel")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "app.llm.fallback-enabled", havingValue = "true")
     public ChatModel deepSeekFallbackModel(
             @org.springframework.beans.factory.annotation.Value("${spring.ai.dashscope.api-key:}") String dashScopeKey,
             LlmGatewayProperties props) {

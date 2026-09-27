@@ -7,30 +7,41 @@
 
 spring:
   ai:
-    # 主链路 LLM（ADR-48：主端点切到 OpenRouter）。
-    # 实测（2026-09-27，scripts/probe_real_prompt_speed.py 用真实 SYSTEM_PROMPT 4970 字符
-    # + 模拟 RAG top8，prompt_tokens=3053，n=3）：
-    #   stealth/space-bunny-alpha  42.8~51.1 tok/s、prompt cache 命中 7/8(88%) 成本降 74%、
-    #                     并发 96 直连零 429、tool_calls 正常返回
-    #   glm-4-flash     11~14 tok/s、无 prompt cache 能力、并发 32 即出 429
-    # OpenRouter 是标准 OpenAI 形态：base-url 写到 /api 为止，
-    # completions-path 用框架默认值 /v1/chat/completions。
+    # 主链路 LLM（ADR-51：主端点切 DeepSeek 官方，模型只用 deepseek-flash）。
+    #
+    # 为什么从 OpenRouter 换走（ADR-48 → ADR-51）：
+    #   2026-09-27 19:52 的 A 臂把整条三级降级链打穿 —— primary 因当日免费额度耗尽返回 429，
+    #   fallback（dashscope）域名不可达，last-resort（bigmodel）返回 400，三级全废，
+    #   6/6 轮用户拿到 5000。详见 docs/phase19-deepseek-official/tasks.md §2。
+    #
+    # DeepSeek 官方实测（2026-09-27）：
+    #   GET /models → deepseek-flash（ctx 1048576 / max_output 393216）、deepseek-v4-pro
+    #   POST /chat/completions 6 变体（最小 / 流式 / stream_options / max_tokens 32768 /
+    #       4095 / temperature）全部 200
+    #   ⚠️ deepseek-chat / deepseek-reasoner 不是有效 ID —— 发了也 200，但响应 model
+    #      回落成 deepseek-flash（写错不报错，只静默跑成别的模型）
+    #   ⚠️ max_tokens 过小时 content 可能为空（推理 token 吃掉预算）→ 会触发
+    #      LlmGateway 的 EmptyResponseException 并制造虚假降级
+    #
+    # base-url 写到域名根即可，completions-path 用框架默认 /v1/chat/completions
+    # （DeepSeek 同时接受 /chat/completions 与 /v1/chat/completions，两条均实测 200）。
     openai:
-      base-url: ${OPENAI_BASE_URL:https://openrouter.ai/api}
-      api-key: ${OPENAI_API_KEY:}              # 必填：主模型 key（OpenRouter sk-or-v1-...）
+      base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+      api-key: ${OPENAI_API_KEY:}              # 必填：DeepSeek 官方 key（sk-...）
       chat:
         options:
-          model: ${OPENAI_MODEL:stealth/space-bunny-alpha}
-    # ⚠️ 不再覆盖 completions-path：那个值是为 bigmodel 的 /api/paas/v4 形态设的，
-    # 对 OpenRouter 会拼出错误路径。bigmodel 兜底级的路径在 BigModelLastResortConfig 里单独指定。
+          model: ${OPENAI_MODEL:deepseek-flash}
+    # ⚠️ 不覆盖 completions-path：那是为 bigmodel 的 /api/paas/v4 形态设的，
+    # 对 DeepSeek / OpenRouter 都会拼出错误路径。
+    # bigmodel 兜底级（现已默认关闭）的路径在 BigModelLastResortConfig 里单独指定。
 
 app:
   llm:
-    # 主模型故障自动切换原生备模型（降级链，key=DASHSCOPE_API_KEY 对应的向量/备服务）
-    fallback-enabled: true
-    # ADR-48：三级链的第三级（bigmodel glm-4-flash，最低等级）。
-    # 凭据走 BIGMODEL_API_KEY；未注入时该级自动跳过并退回两级，不阻断启动。
-    last-resort-enabled: true
+    # ADR-51：两级降级目标实测都不可用（dashscope 域名不可达 / bigmodel 400），
+    # 故默认全关，链路退化为「主链 + 重试」。置 true 即开关式恢复，无需改代码。
+    # ⚠️ 代价：单 provider 无兜底。
+    fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
+    last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:false}
 
 logging:
   level:

@@ -92,19 +92,28 @@ spring:
     dashscope:
       api-key: ${DASHSCOPE_API_KEY:}  # 从环境变量读取 API Key
 
-    # DeepSeek API（禁用：当前仅使用 sensenova OpenAI 兼容端点，非 DeepSeek）
+    # DeepSeek 专用 starter 保持禁用：主链走的是 **OpenAI 兼容通道**（见下方 openai 段），
+    # 不需要（本项目 classpath 上也没有）spring-ai-deepseek 自动配置。
+    # 若误开，可能多出一个 ChatModel bean 与 @Primary 冲突。
     deepseek:
       enabled: false
-      api-key: ${DEEPSEEK_API_KEY:}   # 从环境变量读取 API Key
+      api-key: ${DEEPSEEK_API_KEY:}   # 仅备用；主链读的是 OPENAI_API_KEY
 
     # OpenAI 兼容接口（LlmGateway 主供应商，ADR-7）
-    # 当前使用 sensenova 通用 OpenAI 兼容端点
+    # ADR-51（2026-09-27）：主链切 **DeepSeek 官方** https://api.deepseek.com + deepseek-flash。
+    #   ⚠️ 有效模型 ID 只有 deepseek-flash / deepseek-v4-pro（GET /models 实测）。
+    #      deepseek-chat 与 deepseek-reasoner **不是有效 ID**：发了也 200，
+    #      但响应体 model 字段回落成 deepseek-flash —— 写错不报错，只静默跑成别的模型。
+    #   ⚠️ completions-path 用框架默认 /v1/chat/completions（DeepSeek 同时接受 /chat/completions
+    #      与 /v1/chat/completions，两条均实测 200）。**不要**照搬 ADR-48 为智谱设的那套。
+    #   注：本文件是**基座默认值**；真正生效的是 gitignored 的
+    #      target/classes/application-local.yml，环境变量优先级最高。
     openai:
-      base-url: ${OPENAI_BASE_URL:https://token.sensenova.cn}
+      base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
       api-key: ${OPENAI_API_KEY:}
       chat:
         options:
-          model: ${OPENAI_MODEL:gpt-4o}
+          model: ${OPENAI_MODEL:deepseek-flash}
       # 禁用 OpenAI embedding/多模态自动配置：嵌入仍用 DashScope（待调研后替换），
       # 避免 openAiEmbeddingModel 与 dashscopeEmbeddingModel 的 @Primary 冲突
       embedding:
@@ -213,8 +222,20 @@ app:
     total-timeout-ms: ${APP_LLM_TOTAL_TIMEOUT_MS:90000}
     # 流式"chunk 间隔"上限，不是总时长。42.9 tok/s 下一个 chunk 间隔远小于此，不需要动。
     stream-idle-timeout-ms: 15000
-    # ADR-48：bigmodel 兜底级开关。置 false 退回两级链（回滚用，无需改代码）。
-    last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:true}
+    # ADR-51（2026-09-27）：降级链两级**默认全部关闭**，退化为「主链 + 重试」。
+    #   原因不是"不需要容灾"，而是这两个降级目标**实测都不可用**：
+    #     · fallback（DashScope qwen-plus）：域名 dashscope.aliyuncs.com 本机不可达
+    #       （TLS 握手被中断，2026-09-16 起即如此）
+    #     · last-resort（bigmodel glm-4-flash）：返回 400 Bad Request
+    #   保留"假备用"比没有备用更糟：它让链路看起来有三层、实际只有一层，
+    #   还让每次主链故障都白等一次上游超时，并污染指标与排障判据。
+    #   开关式回滚（无需改代码）：
+    #     fallback-enabled=false      → 不注册 dashscope 备 bean（见 ChatModelConfig）
+    #     last-resort-enabled=false   → 不注册 bigmodel 兜底 bean（见 BigModelLastResortConfig）
+    #   ⚠️ 代价：单 provider 无兜底，DeepSeek 侧故障/额度耗尽时用户直接拿 5000。
+    fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
+    # ADR-48 引入；ADR-51 起默认 false（bigmodel 实测 400）。置 true 即恢复第三级。
+    last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:false}
     retry:
       max-attempts: 3
       backoff-ms: 250
@@ -239,9 +260,13 @@ app:
       min-concurrent-calls: 4
       decrease-factor: 0.7
       increase-after-successes: 20
-    fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
-    # 视觉模型（ADR-11）：基于 GoPlan 端点换 model 即多模态；未配置则图片聊天不可用
-    vision-model: mimo-v2.5
+    # 视觉模型（ADR-11；ADR-51 改）：走 spring.ai.openai.* 的端点 + key（VisionChatClient 自建
+    # RestClient，**绕过 LlmGateway** —— 无重试/熔断/计量，见 docs/02 已知例外）。
+    # 原值 mimo-v2.5 是别的厂商的模型；ADR-51 把端点切到 DeepSeek 后，DeepSeek 会直接 400：
+    #   "The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed mimo-v2.5"
+    # 实测 deepseek-flash 支持图像输入（input_modalities=[text,image]），
+    # 用 32x32 纯红 PNG 以 image_url→data URL(base64) 发送，正确答出"红色"。
+    vision-model: ${APP_LLM_VISION_MODEL:deepseek-flash}
 
   # RAG 查询改写开关（ADR-15）：开启时检索前用 LLM 改写用户查询（每轮多一次 LLM 调用）。
   # 2026-09-04 评测实锤：改写劣化严重（"冷战筑墙怎么办"被压成"吵架"、关键实体丢失、

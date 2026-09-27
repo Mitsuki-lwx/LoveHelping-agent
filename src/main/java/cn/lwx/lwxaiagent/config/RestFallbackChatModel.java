@@ -21,7 +21,22 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
-/** Native DashScope backup: finite HTTP deadlines, full tool protocol, cancellable async fallback. */
+/**
+ * Native DashScope backup: finite HTTP deadlines, full tool protocol, cancellable async fallback.
+ *
+ * <p>⛔ <b>ADR-51（2026-09-27）：本类默认不再被注册为 bean。</b>
+ * {@link #ENDPOINT} 所在域名 {@code dashscope.aliyuncs.com} 在本机<b>不可达</b>：
+ * DNS 解析到 Clash fake-ip（{@code 198.18.0.138} / {@code fdfe:dcba:9876::c5}），
+ * 直连与走代理的 TLS 握手均被中断。Java 侧同形失败最早见于 2026-09-16
+ * （{@code ResourceAccessException: ... Remote host terminated the handshake}）。
+ * 复活方式：把 {@code app.llm.fallback-enabled} 置 {@code true}（见
+ * {@code ChatModelConfig#deepSeekFallbackModel}）。</p>
+ *
+ * <p>⚠️ <b>本类刻意零日志</b>——这曾导致一次真实的误判（ADR-51 记）：
+ * 它是降级链上唯一"失败不留痕"的一级，于是「日志里 grep 不到 dashscope」
+ * 被读成了「没调用 dashscope」。排障时请改用指标
+ * （{@code llm_call_total{provider="fallback"}}），不要 grep 日志。</p>
+ */
 public class RestFallbackChatModel implements ChatModel {
     private static final URI ENDPOINT = URI.create("https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation");
     private final HttpClient client;
