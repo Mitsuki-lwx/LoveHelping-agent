@@ -14,6 +14,16 @@ public class LlmGatewayProperties {
     @Valid private Retry retry = new Retry();
     @Valid private Circuit circuit = new Circuit();
     @Valid private Adaptive adaptive = new Adaptive();
+    /**
+     * ⚠️ <b>降级链的运行时总闸</b>（不是"只关 fallback 那一级"）——见
+     * {@code LlmGateway#canDegradeTo} / {@code #canFallback}：置 {@code false} 时
+     * <b>整条链一级都不走</b>，即使 fallback / lastResort 的 bean 都已注册。
+     *
+     * <p>与 {@code app.llm.last-resort-enabled} <b>语义不对称</b>：后者只决定 bigmodel
+     * 那个 bean 是否注册（构建期），本字段决定降级是否发生（运行时）。
+     * 因此当前<b>无法单独启用某一级</b>。ADR-51 起默认值仍为 {@code true}
+     * （单测直接 new 本类做降级用例，依赖此默认），实际值由 yml 覆盖为 {@code false}。</p>
+     */
     private boolean fallbackEnabled = true;
     /**
      * 并发闸门<b>上限</b>（ADR-29 的三层对齐值 + ADR-32 的自适应天花板）。

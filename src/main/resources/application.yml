@@ -230,8 +230,16 @@ app:
     #   保留"假备用"比没有备用更糟：它让链路看起来有三层、实际只有一层，
     #   还让每次主链故障都白等一次上游超时，并污染指标与排障判据。
     #   开关式回滚（无需改代码）：
-    #     fallback-enabled=false      → 不注册 dashscope 备 bean（见 ChatModelConfig）
-    #     last-resort-enabled=false   → 不注册 bigmodel 兜底 bean（见 BigModelLastResortConfig）
+    #     fallback-enabled            → 【网关降级总闸】。false 时 LlmGateway.canDegradeTo() 恒 false，
+    #                                   **整条降级链一级都不走**（见 LlmGateway#canDegradeTo）；
+    #                                   true 时才按链走，且链里有哪些级由"bean 是否注册"决定。
+    #     last-resort-enabled=false   → 只决定 bigmodel 兜底 bean 是否注册（见 BigModelLastResortConfig）
+    #   ⚠️ 两者**语义不对称**，别当同一类开关：
+    #     · fallback-enabled 是**运行时总闸**，管整条链；
+    #     · last-resort-enabled 是**构建期 bean 注册开关**（bigmodel 需额外凭据，故单独设）。
+    #     后果：想"只开 bigmodel 兜底、不开 DashScope"目前**做不到**——总闸一开，
+    #     degradeTiers() 会把已注册的 DashScope 一并放进链里（白等一次 TLS 超时）。
+    #     要单独启用某一级，需把总闸下沉为按级开关（见 docs/03-技术决策记录.md 待办）。
     #   ⚠️ 代价：单 provider 无兜底，DeepSeek 侧故障/额度耗尽时用户直接拿 5000。
     fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
     # ADR-48 引入；ADR-51 起默认 false（bigmodel 实测 400）。置 true 即恢复第三级。

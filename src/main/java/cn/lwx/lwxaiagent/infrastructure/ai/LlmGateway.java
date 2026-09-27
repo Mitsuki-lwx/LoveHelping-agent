@@ -53,8 +53,19 @@ public class LlmGateway implements ChatModel {
     private long refillNanos = System.nanoTime();
 
     /**
-     * ADR-48 三级降级链的唯一注入入口：
-     * primary（OpenRouter qwen-plus）→ fallback（DashScope qwen-plus）→ lastResort（bigmodel glm-4-flash）。
+     * ADR-48 三级降级链的唯一注入入口。**链长与目标全部由容器装配决定，网关本身不写死**：
+     * 两个降级目标都是 {@code @Autowired(required=false)}，谁没注册就自动跳过（{@link #degradeTiers()}）。
+     *
+     * <p><b>ADR-51（2026-09-27）起当前生效形态</b>：
+     * primary = DeepSeek 官方 {@code https://api.deepseek.com} + {@code deepseek-flash}，
+     * <b>两个降级级均未注册</b>（{@code app.llm.fallback-enabled=false} /
+     * {@code app.llm.last-resort-enabled=false}），故 {@code degradeTiers()} 返回空列表，
+     * 行为退化为「主链 + 重试」。</p>
+     *
+     * <p><b>历史上这一级曾是什么</b>（改代码时别照旧注释理解）：
+     * primary 曾为 OpenRouter {@code stealth/space-bunny-alpha}（更早是 qwen-plus）；
+     * fallback 是 DashScope {@code qwen-plus}（域名本机不可达，属"假备用"）；
+     * lastResort 是 bigmodel {@code glm-4-flash}（实测 400）。</p>
      *
      * <p>不变量（ADR-23 / ADR-31）在多级链下**不变**：
      * 网关仍是唯一重试所有者；每一级有独立熔断器；并发许可覆盖整条链；
