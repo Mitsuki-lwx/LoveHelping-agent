@@ -1,9 +1,9 @@
 package cn.lwx.lwxaiagent.config;
 
+import cn.lwx.lwxaiagent.infrastructure.ai.LlmFallbackTier;
 import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.api.OpenAiApi;
@@ -36,12 +36,16 @@ import org.springframework.retry.support.RetryTemplate;
  * <p><b>回滚</b>：把 {@code app.llm.last-resort-enabled} 设为 {@code true} 即恢复本兜底级，
  * 无需改代码。</p>
  *
- * <p>⚠️ <b>开关语义陷阱（已知，未修）</b>：本类的开关只决定"bean 是否注册"，
- * 而 {@code LlmGateway} 的降级总闸是 {@code app.llm.fallback-enabled}
- * （见 {@code LlmGateway#canDegradeTo}）。两者<b>不对称</b>：
- * 想"只开 bigmodel、不开 DashScope"是<b>做不到</b>的——总闸一开，{@code degradeTiers()}
- * 会把已注册的 DashScope 一并放进链里。详见
- * {@code docs/03-技术决策记录.md} → ADR-51 →「已知限制（架构能力保留，但留了三个口子）」。</p>
+ * <p><b>ADR-52 的变化</b>：bean 类型从 {@code ChatModel} 变为 {@link LlmFallbackTier}，
+ * 并加 {@code @Order(20)}（排在 DashScope 的 {@code @Order(10)} 之后）。
+ * 关掉本级的开关现在是 {@code @ConditionalOnProperty}（构建期不注册），
+ * <b>不再与"降级是否发生"混用同一个开关</b> —— 后者是
+ * {@code app.llm.degrade-enabled}（运行时总闸，见 {@code LlmGatewayProperties#degradeEnabled}）。
+ * 这两个开关由此彻底解耦：想"只开 bigmodel、不开 DashScope"是<b>可以做到</b>的
+ * （{@code degrade-enabled=true} + {@code fallback-enabled=false} + {@code last-resort-enabled=true}）。</p>
+ *
+ * <p><b>回滚</b>：把 {@code app.llm.last-resort-enabled} 设为 {@code true} 即恢复本兜底级，
+ * 无需改代码。</p>
  */
 @Configuration
 public class BigModelLastResortConfig {
@@ -50,27 +54,26 @@ public class BigModelLastResortConfig {
     /**
      * @param enabled 开关；置 false 则本兜底 bean 不注册（ADR-51 起默认 false）
      * @param baseUrl bigmodel OpenAI 兼容端点，形如 {@code https://open.bigmodel.cn/api/paas/v4}
-     * @param apiKey  凭据，<b>空则不注册 bean</b>（而不是注册一个必然失败的）
+     * @param apiKey  凭据，<b>空则返回 null（不注册）</b>，而不是注册一个必然失败的
      * @param model   模型名
+     * @return 降级链最后一级；{@code null} 表示本级不存在（网关会跳过）
      */
-    @Bean("bigModelChatModel")
-    public ChatModel bigModelLastResortModel(
-            @Value("${app.llm.last-resort-enabled:false}") boolean enabled,
+    @Bean("bigModelLastResortTier")
+    @org.springframework.core.annotation.Order(20)
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "app.llm.last-resort-enabled", havingValue = "true")
+    public LlmFallbackTier bigModelLastResortTier(
             @Value("${BIGMODEL_BASE_URL:https://open.bigmodel.cn/api/paas/v4}") String baseUrl,
             @Value("${BIGMODEL_API_KEY:}") String apiKey,
             @Value("${BIGMODEL_MODEL:glm-4-flash}") String model,
             ObservationRegistry observationRegistry,
             @org.springframework.beans.factory.annotation.Autowired(required = false)
             ToolCallingManager containerToolCallingManager) {
-        if (!enabled) {
-            log.info("[ADR-48/51] bigmodel 兜底已按 app.llm.last-resort-enabled=false 关闭，本 bean 不注册"
-                    + "（网关的 degradeTiers() 会自动跳过未注册的级别）");
-            return null;
-        }
         if (apiKey == null || apiKey.isBlank()) {
             // 不抛异常：最低等级的兜底端点缺凭据，不该让整个应用起不来。
-            // LlmGateway 对 null 的 lastResort 会自动跳过这一级。
-            log.warn("[ADR-48/51] BIGMODEL_API_KEY 未注入 —— bigmodel 兜底级不生效，本 bean 不注册。"
+            // 返回 null → Spring 记为 NullBean → 网关的 ObjectProvider 流里可能解出 null，
+            // 由 LlmGateway 的 filter(Objects::nonNull) 兜掉。
+            log.warn("[ADR-48/52] BIGMODEL_API_KEY 未注入 —— bigmodel 兜底级不生效，本 bean 不注册。"
                     + "这是配置缺失，不是故障。");
             return null;
         }
@@ -92,8 +95,11 @@ public class BigModelLastResortConfig {
                         .observationRegistry(observationRegistry).build();
         // retry maxAttempts=1：重试的唯一所有者是 LlmGateway（ADR-23），
         // 底层 client 再自带重试会绕过闸门与熔断，是"两个重试所有者"。
-        return new OpenAiChatModel(api,
+        var chatModel = new OpenAiChatModel(api,
                 org.springframework.ai.openai.OpenAiChatOptions.builder().model(model).build(),
                 toolCallingManager, RetryTemplate.builder().maxAttempts(1).build(), observationRegistry);
+        // baseUrl 一并带进 tier，供 LlmGateway 打"生效端点"指标（ADR-52 修口子 3：
+        // 网关不再按 "last-resort" 字面量分支去猜端点）。
+        return new LlmFallbackTier("last-resort", chatModel, baseUrl);
     }
 }

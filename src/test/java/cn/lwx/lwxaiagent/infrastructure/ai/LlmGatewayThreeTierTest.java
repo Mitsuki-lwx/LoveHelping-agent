@@ -56,15 +56,22 @@ class LlmGatewayThreeTierTest {
         meters = new SimpleMeterRegistry();
     }
 
-    /** 三级链专用工厂 —— 旧测试用的是两参构造器，覆盖不到 lastResort。 */
+    /**
+     * 多级链专用工厂 —— 旧测试用的是四参构造器（单级降级），覆盖不到链上后续级。
+     * <p>ADR-52：改用包私有构造器直接传 {@code List<LlmFallbackTier>}，
+     * 名字与 {@code ChatModelConfig} / {@code BigModelLastResortConfig} 保持一致。</p>
+     */
     private LlmGateway createThreeTier() {
-        gateway = new LlmGateway(primary, fallback, lastResort, props, meters,
+        gateway = new LlmGateway(primary,
+                List.of(new LlmFallbackTier("fallback", fallback),
+                        new LlmFallbackTier("last-resort", lastResort)),
+                props, meters,
                 new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(
                         io.micrometer.tracing.Tracer.NOOP), event -> { }, null);
         return gateway;
     }
 
-    /** 两级链（回归：lastResort 为 null 时行为必须与旧版逐字一致）。 */
+    /** 单级链（回归：只有一级降级时行为必须与旧版逐字一致）。 */
     private LlmGateway createTwoTier() {
         gateway = new LlmGateway(primary, fallback, props, meters);
         return gateway;
@@ -134,7 +141,10 @@ class LlmGatewayThreeTierTest {
     @Test
     @DisplayName("C7 fallback 缺失但 lastResort 存在 → 仍能降级（不能只看 fallback 非空）")
     void fallbackNullButLastResortPresentStillDegrades() {
-        gateway = new LlmGateway(primary, null, lastResort, props, meters,
+        // ADR-52：链里只注册 last-resort 一级（= "只开 bigmodel、不开 DashScope" 的组合，
+        // 这正是 ADR-51 §已知限制 口子 1 说"做不到"的那个场景；现在可以做到了）。
+        gateway = new LlmGateway(primary, List.of(new LlmFallbackTier("last-resort", lastResort)),
+                props, meters,
                 new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(
                         io.micrometer.tracing.Tracer.NOOP), event -> { }, null);
         when(primary.call(any(Prompt.class))).thenThrow(http(503));
@@ -195,9 +205,9 @@ class LlmGatewayThreeTierTest {
     }
 
     @Test
-    @DisplayName("fallback-enabled=false 时三级一个都不走（回滚开关）")
-    void fallbackDisabledSkipsWholeChain() {
-        props.setFallbackEnabled(false);
+    @DisplayName("degrade-enabled=false 时整条链一个都不走（运行时总闸，ADR-52 改名）")
+    void degradeDisabledSkipsWholeChain() {
+        props.setDegradeEnabled(false);
         when(primary.call(any(Prompt.class))).thenThrow(http(503));
 
         assertThrows(BizException.class, () -> createThreeTier().call(new Prompt("t")));

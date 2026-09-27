@@ -14,6 +14,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
@@ -23,7 +24,11 @@ import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,17 +40,21 @@ import static cn.lwx.lwxaiagent.infrastructure.ai.LlmFailurePolicy.*;
 public class LlmGateway implements ChatModel {
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
     private final ChatModel primary;
-    private final ChatModel fallback;
-    /** ADR-48：最低一级兜底（bigmodel glm-4-flash）。可为 null —— 缺它时退化成旧的两级语义。 */
-    private final ChatModel lastResort;
+    /**
+     * ADR-52：降级链。容器按 {@code @Order} 注入，**注册几个就有几级**；
+     * 空列表 = 不降级（ADR-51 起的当前形态）。
+     * <p>ADR-48 时这里是两个具名字段（{@code fallback} / {@code lastResort}），
+     * 加第 3 级要改构造器签名 —— 那是 ADR-51 §已知限制 的"口子 2"。</p>
+     */
+    private final List<LlmFallbackTier> tiers;
     private final LlmGatewayProperties props;
     private final MeterRegistry meters;
     private final AiTelemetry telemetry;
     private final AdaptiveConcurrencyLimiter limiter;
     private final ThreadPoolExecutor blocking;
     private final ProviderCircuit primaryCircuit;
-    private final ProviderCircuit fallbackCircuit;
-    private final ProviderCircuit lastResortCircuit;
+    /** ADR-52：每级一个独立熔断器，按级别名索引（ADR-48 的三个字段的泛化）。 */
+    private final Map<String, ProviderCircuit> tierCircuits;
     private final ApplicationEventPublisher events;
     /** ADR-48：只为把"生效端点"打进启动日志与指标；单测传 null（拿不到就如实显示未知）。 */
     private final org.springframework.core.env.Environment env;
@@ -53,19 +62,26 @@ public class LlmGateway implements ChatModel {
     private long refillNanos = System.nanoTime();
 
     /**
-     * ADR-48 三级降级链的唯一注入入口。**链长与目标全部由容器装配决定，网关本身不写死**：
-     * 两个降级目标都是 {@code @Autowired(required=false)}，谁没注册就自动跳过（{@link #degradeTiers()}）。
+     * ADR-52 降级链的唯一注入入口。**链长与目标全部由容器装配决定，网关本身不写死**：
+     * 降级级是 {@link LlmFallbackTier} 类型的 bean，注册几个就有几级，按 {@code @Order} 排序。
+     *
+     * <p><b>为什么是 {@code ObjectProvider} 而不是 {@code List<LlmFallbackTier>}</b>：
+     * 构造函数参数写成 {@code List<T>} 时，<b>零个候选 bean 会让 Spring 抛
+     * {@code NoSuchBeanDefinitionException}</b>，而"零个降级级"正是 ADR-51 起的当前配置
+     * —— 应用会起不来。{@code ObjectProvider#orderedStream()} 在零候选时返回空流。</p>
+     *
+     * <p><b>为什么必须 {@code filter(Objects::nonNull)}</b>：{@code BigModelLastResortConfig}
+     * 在缺 {@code BIGMODEL_API_KEY} 时<b>返回 null</b>（Spring 记为 {@code NullBean}，
+     * 这是刻意的：最低等级的兜底端点缺凭据不该阻断启动），流里可能解出 null。</p>
      *
      * <p><b>ADR-51（2026-09-27）起当前生效形态</b>：
      * primary = DeepSeek 官方 {@code https://api.deepseek.com} + {@code deepseek-flash}，
-     * <b>两个降级级均未注册</b>（{@code app.llm.fallback-enabled=false} /
-     * {@code app.llm.last-resort-enabled=false}），故 {@code degradeTiers()} 返回空列表，
-     * 行为退化为「主链 + 重试」。</p>
+     * <b>两个降级级均未注册</b>，故 {@code tiers} 为空列表，行为退化为「主链 + 重试」。</p>
      *
      * <p><b>历史上这一级曾是什么</b>（改代码时别照旧注释理解）：
      * primary 曾为 OpenRouter {@code stealth/space-bunny-alpha}（更早是 qwen-plus）；
-     * fallback 是 DashScope {@code qwen-plus}（域名本机不可达，属"假备用"）；
-     * lastResort 是 bigmodel {@code glm-4-flash}（实测 400）。</p>
+     * 降级级曾为 DashScope {@code qwen-plus}（域名本机不可达，属"假备用"）
+     * 与 bigmodel {@code glm-4-flash}（实测 400）。</p>
      *
      * <p>不变量（ADR-23 / ADR-31）在多级链下**不变**：
      * 网关仍是唯一重试所有者；每一级有独立熔断器；并发许可覆盖整条链；
@@ -77,13 +93,21 @@ public class LlmGateway implements ChatModel {
      */
     @Autowired
     public LlmGateway(@Qualifier("openAiChatModel") ChatModel primary,
-                      @Autowired(required = false) @Qualifier("deepSeekChatModel") ChatModel fallback,
-                      @Autowired(required = false) @Qualifier("bigModelChatModel") ChatModel lastResort,
+                      ObjectProvider<LlmFallbackTier> tiers,
                       LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry,
                       ApplicationEventPublisher events, org.springframework.core.env.Environment env) {
+        this(primary, tiers.orderedStream().filter(Objects::nonNull).toList(),
+                props, meters, telemetry, events, env);
+    }
+
+    /**
+     * 核心构造器（包私有，供单测构造**任意级数**的链 —— 这是 ADR-52 G2 的验收手段）。
+     */
+    LlmGateway(ChatModel primary, List<LlmFallbackTier> tiers,
+               LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry,
+               ApplicationEventPublisher events, org.springframework.core.env.Environment env) {
         this.primary = primary;
-        this.fallback = fallback;
-        this.lastResort = lastResort;
+        this.tiers = List.copyOf(tiers);
         this.props = props;
         this.meters = meters;
         this.telemetry = telemetry;
@@ -97,8 +121,16 @@ public class LlmGateway implements ChatModel {
         blocking.allowCoreThreadTimeOut(true);
         var c = props.getCircuit();
         primaryCircuit = new ProviderCircuit(c);
-        fallbackCircuit = new ProviderCircuit(c);
-        lastResortCircuit = new ProviderCircuit(c);
+        // ADR-52：每级一个独立熔断器（与 ADR-48 语义一致，只是从 3 个字段变成按名字建表）。
+        // 重名直接启动失败 —— 否则两级会**静默共用一个熔断器**，比不建更坏。
+        Map<String, ProviderCircuit> circuits = new LinkedHashMap<>();
+        for (LlmFallbackTier tier : this.tiers) {
+            if (circuits.putIfAbsent(tier.name(), new ProviderCircuit(c)) != null) {
+                throw new IllegalStateException("降级级名字重复：" + tier.name()
+                        + " —— 两级共用一个熔断器会让降级语义不可解释，请改 @Bean 名");
+            }
+        }
+        this.tierCircuits = Collections.unmodifiableMap(circuits);
         retryTokens = props.getRetry().getBudgetPerMinute();
         meters.gauge("llm.inflight", limiter, AdaptiveConcurrencyLimiter::inflight);
         // ADR-32: 闸门不再是固定值，暴露自适应收敛结果便于观测"厂商现在能容忍多少"。
@@ -126,9 +158,12 @@ public class LlmGateway implements ChatModel {
         //    但它不在 degradeTiers() 里（那个列表只含降级目标）—— 漏掉它正是本方法第一版的错。
         report("primary", primary);
         for (Tier tier : degradeTiers()) report(tier.name(), tier.model());
-        log.info("[ADR-48] 网关生效 timeout：attempt={}ms firstByte={}ms total={}ms streamIdle={}ms lastResortEnabled={}",
+        log.info("[ADR-52] 网关生效 timeout：attempt={}ms firstByte={}ms total={}ms streamIdle={}ms "
+                        + "degradeEnabled={} 降级链=[{}]",
                 props.getAttemptTimeoutMs(), props.getFirstByteTimeoutMs(), props.getTotalTimeoutMs(),
-                props.getStreamIdleTimeoutMs(), lastResort != null);
+                props.getStreamIdleTimeoutMs(), props.isDegradeEnabled(),
+                tiers.isEmpty() ? "空（单级：主链 + 重试）"
+                        : tiers.stream().map(LlmFallbackTier::name).reduce((a, b) -> a + " → " + b).orElse(""));
     }
 
     private void report(String level, ChatModel model) {
@@ -165,42 +200,48 @@ public class LlmGateway implements ChatModel {
     }
 
     /**
-     * 各级的 base-url 在不同的配置来源里，取法也不同：
+     * 各级的 base-url 取法不同，故分两路（ADR-52 起不再按 {@code "fallback"} /
+     * {@code "last-resort"} 这种<b>字面量</b>分支 —— 那是 ADR-51 §已知限制 的口子 3）：
      * <ul>
-     *   <li>primary / lastResort → {@code spring.ai.openai.*}（Spring AI 自动配置）</li>
-     *   <li>fallback → dashscope 原生端点（自建 RestClient，Spring 不管）</li>
+     *   <li>{@code primary} → {@code spring.ai.openai.base-url}（Spring AI 自动配置的端点）</li>
+     *   <li>降级级 → 取该 {@link LlmFallbackTier#baseUrl()}（由产出它的配置类填，
+     *       因为这些级多为自建 client，Spring 属性里查不到）</li>
      * </ul>
-     * ⛔ 兜底级的 {@code BIGMODEL_BASE_URL} 是用 {@code @Value} 读的**环境变量名**，
-     *    {@code Environment#getProperty} 不保证能按这个名字查到（relaxed binding 对
-     *    {@code @Value} 生效、对裸 getProperty 不生效）—— 查不到就<b>不写 base</b>，
-     *    绝不让它回退到主端点的 URL（第一版就犯了这个错，把兜底级显示成
-     *    "openrouter.ai | glm-4-flash"，比不显示更有害）。
+     * ⛔ 取不到就<b>不写 base</b>，绝不回退到主端点的 URL —— 第一版就犯过这个错，
+     * 把兜底级显示成 {@code "openrouter.ai | glm-4-flash"}，<b>比不显示更有害</b>
+     * （它会让人以为已经观测到了）。
      */
     private String endpointBaseUrl(String level) {
-        if (env == null) return "";
-        if ("last-resort".equals(level)) {
-            // 兜底级复用 spring.ai.openai.*（BigModelLastResortConfig 自己建 OpenAiApi，
-            // 端点由它自己传入，Spring 属性里查不到）→ 如实留空。
-            return "";
+        if ("primary".equals(level)) {
+            if (env == null) return "";
+            try {
+                String v = env.getProperty("spring.ai.openai.base-url", "");
+                return v == null ? "" : v;
+            } catch (RuntimeException ignored) {
+                return "";
+            }
         }
-        if ("fallback".equals(level)) return ""; // dashscope 原生端点，无 Spring 属性
-        try {
-            String v = env.getProperty("spring.ai.openai.base-url", "");
-            return v == null ? "" : v;
-        } catch (RuntimeException ignored) {
-            return "";
+        for (LlmFallbackTier tier : tiers) {
+            if (tier.name().equals(level)) return tier.baseUrl();
         }
+        return "";
     }
 
     /**
-     * 两级链 + NOOP tracing，专供隔离单测（{@code lastResort=null}）。
+     * 单级降级链 + NOOP tracing，专供隔离单测。
      *
      * <p>⛔ 刻意保留四参形态：{@code LlmGatewayTest} 的 27 个用例全部走它，
-     * 删掉会把它们全变红，而它们证明的是"**两级链没被改坏**"——
-     * 三级链的新行为由 {@code LlmGatewayThreeTierTest} 单独覆盖（ADR-48）。</p>
+     * 删掉会把它们全变红，而它们证明的是"**主链 + 单级降级**没被改坏"。
+     * 多级链的新行为由 {@code LlmGatewayThreeTierTest} / {@code LlmGatewayTierListTest}
+     * 走包私有构造器单独覆盖（ADR-48 / ADR-52）。</p>
+     *
+     * @param fallback 降级目标；传 {@code null} 表示无降级级（等价于空链）
      */
     public LlmGateway(ChatModel primary, ChatModel fallback, LlmGatewayProperties props, MeterRegistry meters) {
-        this(primary, fallback, null, props, meters, new AiTelemetry(Tracer.NOOP), event -> { }, null);
+        this(primary,
+                fallback == null ? List.<LlmFallbackTier>of()
+                        : List.of(new LlmFallbackTier("fallback", fallback)),
+                props, meters, new AiTelemetry(Tracer.NOOP), event -> { }, null);
     }
 
     @Override
@@ -238,7 +279,7 @@ public class LlmGateway implements ChatModel {
         }
         // ADR-48：降级链按声明顺序走完。每一级只尝试一次——降级不是重试，
         // 不该被 max-attempts 放大（沿用旧 fallback 语义）。
-        // lastResort 为 null 时，本循环退化成旧的两级行为，逐字一致。
+        // ADR-52：链由容器装配决定，空链时本循环不执行 → 行为退化为「主链 + 重试」。
         for (Tier tier : degradeTiers()) {
             if (!canDegradeTo(tier, failure) || remainingMs(deadline) <= 0) continue;
             metric("llm.fallback", tier.name, "started");
@@ -251,16 +292,21 @@ public class LlmGateway implements ChatModel {
         throw publicFailure(failure);
     }
 
-    /** ADR-48：降级链 = fallback（DashScope）→ lastResort（bigmodel），跳过未配置的级别。 */
+    /**
+     * ADR-52：降级链 = 容器里所有 {@link LlmFallbackTier} bean，按 {@code @Order} 升序。
+     * <b>注册几个就有几级</b>；空列表 = 无降级（ADR-51 起的当前形态）。
+     */
     private List<Tier> degradeTiers() {
-        List<Tier> tiers = new ArrayList<>(2);
-        if (fallback != null) tiers.add(new Tier(fallback, fallbackCircuit, "fallback"));
-        if (lastResort != null) tiers.add(new Tier(lastResort, lastResortCircuit, "last-resort"));
-        return tiers;
+        List<Tier> out = new ArrayList<>(tiers.size());
+        for (LlmFallbackTier tier : tiers) {
+            out.add(new Tier(tier.model(), tierCircuits.get(tier.name()), tier.name()));
+        }
+        return out;
     }
 
+    /** ADR-48：判"能不能降级"看**总闸**；ADR-52 起总闸是 {@code app.llm.degrade-enabled}。 */
     private boolean canDegradeTo(Tier tier, RuntimeException failure) {
-        return props.isFallbackEnabled() && failure != null && fallbackAllowed(failure);
+        return props.isDegradeEnabled() && failure != null && fallbackAllowed(failure);
     }
 
     /** 一级降级目标：模型 + 独立熔断器 + 指标标签名。 */
@@ -507,9 +553,12 @@ public class LlmGateway implements ChatModel {
         return true;
     }
 
-    /** ADR-48：判"能不能降级"只看降级链非空 —— 不能只看 fallback，链上任意一级可用即可。 */
+    /**
+     * ADR-48：判"能不能降级"只看**降级链非空** —— 不能只看某一级，链上任意一级可用即可。
+     * ADR-52：链 = 容器里注册的 tier 列表；总闸是 {@code app.llm.degrade-enabled}。
+     */
     private boolean canFallback(Throwable e) {
-        return props.isFallbackEnabled() && (fallback != null || lastResort != null)
+        return props.isDegradeEnabled() && !tiers.isEmpty()
                 && e != null && fallbackAllowed(e);
     }
 

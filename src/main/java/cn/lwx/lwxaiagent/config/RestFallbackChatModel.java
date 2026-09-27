@@ -25,12 +25,15 @@ import java.util.*;
  * Native DashScope backup: finite HTTP deadlines, full tool protocol, cancellable async fallback.
  *
  * <p>⛔ <b>ADR-51（2026-09-27）：本类默认不再被注册为 bean。</b>
- * {@link #ENDPOINT} 所在域名 {@code dashscope.aliyuncs.com} 在本机<b>不可达</b>：
+ * {@link #DEFAULT_ENDPOINT} 所在域名 {@code dashscope.aliyuncs.com} 在本机<b>不可达</b>：
  * DNS 解析到 Clash fake-ip（{@code 198.18.0.138} / {@code fdfe:dcba:9876::c5}），
  * 直连与走代理的 TLS 握手均被中断。Java 侧同形失败最早见于 2026-09-16
  * （{@code ResourceAccessException: ... Remote host terminated the handshake}）。
  * 复活方式：把 {@code app.llm.fallback-enabled} 置 {@code true}（见
- * {@code ChatModelConfig#deepSeekFallbackModel}）。</p>
+ * {@code ChatModelConfig#dashScopeFallbackTier}）。</p>
+ *
+ * <p><b>ADR-52</b>：端点从类常量改为<b>构造器参数</b>（{@code app.llm.fallback.base-url}），
+ * 换供应商不必改本类 —— 原 {@code ENDPOINT} 降级为默认值 {@link #DEFAULT_ENDPOINT}。</p>
  *
  * <p>⚠️ <b>本类刻意零日志</b>——这曾导致一次真实的误判（ADR-51 记）：
  * 它是降级链上唯一"失败不留痕"的一级，于是「日志里 grep 不到 dashscope」
@@ -38,17 +41,35 @@ import java.util.*;
  * （{@code llm_call_total{provider="fallback"}}），不要 grep 日志。</p>
  */
 public class RestFallbackChatModel implements ChatModel {
-    private static final URI ENDPOINT = URI.create("https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation");
+
+    /**
+     * DashScope 原生文本生成端点（默认值）。
+     * <p>ADR-52 起可被 {@code app.llm.fallback.base-url} 覆盖；
+     * 本常量同时供配置类取默认值（{@code @Value} 占位符的 default 段）。</p>
+     */
+    public static final String DEFAULT_ENDPOINT =
+            "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation";
+
     private final HttpClient client;
     private final String apiKey;
     private final String model;
+    private final URI endpoint;
     private final Duration timeout;
     private final ObjectMapper json = new ObjectMapper();
 
     public RestFallbackChatModel(String apiKey, String model) { this(apiKey, model, 3000, 25000); }
+
     public RestFallbackChatModel(String apiKey, String model, long connectMs, long readMs) {
+        this(apiKey, model, DEFAULT_ENDPOINT, connectMs, readMs);
+    }
+
+    /**
+     * @param endpoint 完整请求 URL；{@code null}/空 时回退到 {@link #DEFAULT_ENDPOINT}
+     */
+    public RestFallbackChatModel(String apiKey, String model, String endpoint, long connectMs, long readMs) {
         this.apiKey = apiKey;
         this.model = model;
+        this.endpoint = URI.create(endpoint == null || endpoint.isBlank() ? DEFAULT_ENDPOINT : endpoint);
         this.timeout = Duration.ofMillis(readMs);
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(connectMs)).build();
     }
@@ -68,7 +89,7 @@ public class RestFallbackChatModel implements ChatModel {
     private HttpRequest request(Prompt prompt) {
         if (apiKey == null || apiKey.isBlank()) throw new IllegalStateException("Fallback credentials are not configured");
         try {
-            return HttpRequest.newBuilder(ENDPOINT).timeout(timeout)
+            return HttpRequest.newBuilder(endpoint).timeout(timeout)
                     .header("Content-Type", "application/json").header("Authorization", "Bearer " + apiKey)
                     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(payload(prompt)))) .build();
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalArgumentException("Invalid model request", e); }

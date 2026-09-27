@@ -61,7 +61,7 @@ class LlmGatewayTest {
         verify(primary).call(any(Prompt.class)); verifyNoInteractions(fallback);
     }
     @Test void disabledFallbackDoesNotCountPhantomFallback() {
-        props.setFallbackEnabled(false); when(primary.call(any(Prompt.class))).thenThrow(http(503));
+        props.setDegradeEnabled(false); when(primary.call(any(Prompt.class))).thenThrow(http(503));
         assertThrows(BizException.class, () -> create().call(new Prompt("test")));
         assertNull(meters.find("llm.fallback").counter()); verifyNoInteractions(fallback);
     }
@@ -109,14 +109,14 @@ class LlmGatewayTest {
         assertNotNull(g.stream(new Prompt("next")).blockLast(Duration.ofSeconds(1)));
     }
     @Test void totalDeadlineTerminatesContinuouslyEmittingStream() {
-        props.setTotalTimeoutMs(100); props.setFallbackEnabled(false);
+        props.setTotalTimeoutMs(100); props.setDegradeEnabled(false);
         when(primary.stream(any(Prompt.class))).thenReturn(Flux.interval(Duration.ofMillis(5)).map(i -> response("x")));
         assertTimeoutPreemptively(Duration.ofSeconds(2), () -> assertThrows(BizException.class,
                 () -> create().stream(new Prompt("test")).blockLast()));
         verify(primary).stream(any(Prompt.class));
     }
     @Test void hangingSyncWorkIsInterruptedAndBounded() throws Exception {
-        props.setAttemptTimeoutMs(40); props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.setMaxConcurrentCalls(1);
+        props.setAttemptTimeoutMs(40); props.getRetry().setMaxAttempts(1); props.setDegradeEnabled(false); props.setMaxConcurrentCalls(1);
         CountDownLatch interrupted = new CountDownLatch(1);
         when(primary.call(any(Prompt.class))).thenAnswer(i -> {
             try { new CountDownLatch(1).await(); return response("never"); }
@@ -126,13 +126,13 @@ class LlmGatewayTest {
         assertTrue(interrupted.await(1, TimeUnit.SECONDS));
     }
     @Test void sharedRetryBudgetBoundsStorm() {
-        props.getRetry().setBudgetPerMinute(2); props.getCircuit().setEnabled(false); props.setFallbackEnabled(false);
+        props.getRetry().setBudgetPerMinute(2); props.getCircuit().setEnabled(false); props.setDegradeEnabled(false);
         when(primary.call(any(Prompt.class))).thenThrow(http(503)); var g = create();
         for (int i = 0; i < 10; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
         verify(primary, times(12)).call(any(Prompt.class));
     }
     @Test void circuitOpensAndRejectsWithoutCallingSupplier() {
-        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false);
+        props.getRetry().setMaxAttempts(1); props.setDegradeEnabled(false);
         // ADR-32：滑窗失败率判定。2 个样本全部失败 = 100% >= 50% → 打开。
         props.getCircuit().setSlidingWindowSize(2);
         props.getCircuit().setMinimumNumberOfCalls(2);
@@ -144,7 +144,7 @@ class LlmGatewayTest {
 
     /** S10 回归锁：厂商个位数~两成百分比的背景拒绝不得把熔断打开（旧连续计数实现在此会打开）。 */
     @Test void transientThrottleBurstDoesNotTripCircuit() {
-        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false);
+        props.getRetry().setMaxAttempts(1); props.setDegradeEnabled(false);
         AtomicInteger calls = new AtomicInteger();
         when(primary.call(any(Prompt.class))).thenAnswer(i -> {
             if (calls.incrementAndGet() % 5 == 0) throw http(429);
@@ -160,7 +160,7 @@ class LlmGatewayTest {
 
     /** ADR-32：闸门遇限流乘性收缩、连续成功加性回升（厂商上限不固定，让闸门自己收敛）。 */
     @Test void adaptiveGateShrinksOnThrottleAndGrowsAfterSuccesses() {
-        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
+        props.getRetry().setMaxAttempts(1); props.setDegradeEnabled(false); props.getCircuit().setEnabled(false);
         var g = create();
         assertEquals(24, limit());
         when(primary.call(any(Prompt.class))).thenThrow(http(429));
@@ -173,7 +173,7 @@ class LlmGatewayTest {
 
     /** 收缩有地板：厂商持续限流也不会把闸门压到自我饿死。 */
     @Test void adaptiveGateNeverShrinksBelowFloor() {
-        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
+        props.getRetry().setMaxAttempts(1); props.setDegradeEnabled(false); props.getCircuit().setEnabled(false);
         when(primary.call(any(Prompt.class))).thenThrow(http(429));
         var g = create();
         for (int i = 0; i < 20; i++) assertThrows(BizException.class, () -> g.call(new Prompt("test")));
@@ -186,10 +186,10 @@ class LlmGatewayTest {
 
     /** ADR-32：闸门收缩/回升必须广播给准入层，否则两层闸门会不一致。 */
     @Test void adaptiveChangeBroadcastsAdmissionCeiling() {
-        props.getRetry().setMaxAttempts(1); props.setFallbackEnabled(false); props.getCircuit().setEnabled(false);
+        props.getRetry().setMaxAttempts(1); props.setDegradeEnabled(false); props.getCircuit().setEnabled(false);
         List<Integer> broadcast = new java.util.ArrayList<>();
-        // ADR-48：八参是唯一的生产构造器，lastResort/env 传 null（本测试只验闸门广播，与两者无关）
-        gateway = new LlmGateway(primary, fallback, null, props, meters,
+        // ADR-52：包私有构造器接 List<LlmFallbackTier>。本例只验闸门广播，不需要降级级 → 空列表。
+        gateway = new LlmGateway(primary, List.<LlmFallbackTier>of(), props, meters,
                 new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP),
                 event -> broadcast.add(((CapacityLimitChanged) event).limit()), null);
         when(primary.call(any(Prompt.class))).thenThrow(http(429));
@@ -228,7 +228,7 @@ class LlmGatewayTest {
         props.getRetry().setMaxAttempts(2);
         props.getRetry().setBackoffMs(400);
         props.getRetry().setJitter(0);
-        props.setFallbackEnabled(false);
+        props.setDegradeEnabled(false);
         props.getCircuit().setEnabled(false);
         when(primary.call(any(Prompt.class))).thenThrow(http(503));
         var g = create();
@@ -254,7 +254,7 @@ class LlmGatewayTest {
         props.getRetry().setMaxAttempts(2);
         props.getRetry().setBackoffMs(600);
         props.getRetry().setJitter(0);
-        props.setFallbackEnabled(false);
+        props.setDegradeEnabled(false);
         props.getCircuit().setEnabled(false);
         when(primary.stream(any(Prompt.class))).thenReturn(Flux.error(http(503)));
         var g = create();
@@ -275,7 +275,7 @@ class LlmGatewayTest {
         props.getRetry().setMaxAttempts(2);
         props.getRetry().setBackoffMs(1);
         props.getRetry().setJitter(0);
-        props.setFallbackEnabled(false);
+        props.setDegradeEnabled(false);
         props.getCircuit().setEnabled(false);
         when(primary.call(any(Prompt.class))).thenThrow(http(503));
         var g = create();
@@ -295,7 +295,7 @@ class LlmGatewayTest {
     @Test void syncCapacityRejectionIsMappedToBizException4003() throws Exception {
         props.setMaxConcurrentCalls(1);
         props.getRetry().setMaxAttempts(1);
-        props.setFallbackEnabled(false);
+        props.setDegradeEnabled(false);
         props.getCircuit().setEnabled(false);
         var started = new CountDownLatch(1);
         var release = new CountDownLatch(1);

@@ -15,16 +15,23 @@ public class LlmGatewayProperties {
     @Valid private Circuit circuit = new Circuit();
     @Valid private Adaptive adaptive = new Adaptive();
     /**
-     * ⚠️ <b>降级链的运行时总闸</b>（不是"只关 fallback 那一级"）——见
-     * {@code LlmGateway#canDegradeTo} / {@code #canFallback}：置 {@code false} 时
-     * <b>整条链一级都不走</b>，即使 fallback / lastResort 的 bean 都已注册。
+     * ADR-52：**降级链的运行时总闸**（原名 {@code fallbackEnabled}，改名以消除歧义）。
      *
-     * <p>与 {@code app.llm.last-resort-enabled} <b>语义不对称</b>：后者只决定 bigmodel
-     * 那个 bean 是否注册（构建期），本字段决定降级是否发生（运行时）。
-     * 因此当前<b>无法单独启用某一级</b>。ADR-51 起默认值仍为 {@code true}
-     * （单测直接 new 本类做降级用例，依赖此默认），实际值由 yml 覆盖为 {@code false}。</p>
+     * <p>见 {@code LlmGateway#canDegradeTo} / {@code #canFallback}：置 {@code false} 时
+     * <b>整条链一级都不走</b>，即使各级 tier bean 都已注册。</p>
+     *
+     * <p><b>为什么必须改名</b>：本类前缀是 {@code app.llm}，字段名 {@code fallbackEnabled}
+     * 会把 yml 的 {@code app.llm.fallback-enabled} <b>顺带绑进来</b>，而同一个 key
+     * 又被 {@code ChatModelConfig} 的 {@code @ConditionalOnProperty} 用来决定
+     * "dashscope 级 bean 是否注册" —— <b>一个 key 两个不相干的用途</b>，
+     * 这正是 ADR-51 §已知限制"口子 1"的机制来源（想只开 bigmodel 却做不到）。
+     * 改名后总闸（{@code degrade-enabled}）与两个级开关彻底解耦。</p>
+     *
+     * <p>默认 {@code true} 是安全语义：降级是否发生由"链里有没有级"决定，
+     * 没有级时总闸开着也什么都不做。且既有单测直接 {@code new} 本类做降级用例，
+     * 依赖此默认。</p>
      */
-    private boolean fallbackEnabled = true;
+    private boolean degradeEnabled = true;
     /**
      * 并发闸门<b>上限</b>（ADR-29 的三层对齐值 + ADR-32 的自适应天花板）。
      * 自适应开启后，实际在途上限由 {@link Adaptive} 在

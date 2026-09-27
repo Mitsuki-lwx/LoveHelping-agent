@@ -44,7 +44,7 @@ class LlmGatewayFirstByteTimeoutTest {
         props.getRetry().setBackoffMs(1);
         props.getRetry().setJitter(0);
         props.getRetry().setMaxAttempts(1);
-        props.setFallbackEnabled(false);          // 不降级：本例只测超时是否按 first-byte 生效
+        props.setDegradeEnabled(false);           // 不降级：本例只测超时是否按 first-byte 生效
         props.setAttemptTimeoutMs(5000);          // 故意给一个大值：若代码仍复用它，用例会超时失败
         props.setFirstByteTimeoutMs(200);
         props.setTotalTimeoutMs(5000);

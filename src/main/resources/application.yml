@@ -222,28 +222,35 @@ app:
     total-timeout-ms: ${APP_LLM_TOTAL_TIMEOUT_MS:90000}
     # 流式"chunk 间隔"上限，不是总时长。42.9 tok/s 下一个 chunk 间隔远小于此，不需要动。
     stream-idle-timeout-ms: 15000
-    # ADR-51（2026-09-27）：降级链两级**默认全部关闭**，退化为「主链 + 重试」。
-    #   原因不是"不需要容灾"，而是这两个降级目标**实测都不可用**：
-    #     · fallback（DashScope qwen-plus）：域名 dashscope.aliyuncs.com 本机不可达
-    #       （TLS 握手被中断，2026-09-16 起即如此）
-    #     · last-resort（bigmodel glm-4-flash）：返回 400 Bad Request
-    #   保留"假备用"比没有备用更糟：它让链路看起来有三层、实际只有一层，
-    #   还让每次主链故障都白等一次上游超时，并污染指标与排障判据。
-    #   开关式回滚（无需改代码）：
-    #     fallback-enabled            → 【网关降级总闸】。false 时 LlmGateway.canDegradeTo() 恒 false，
-    #                                   **整条降级链一级都不走**（见 LlmGateway#canDegradeTo）；
-    #                                   true 时才按链走，且链里有哪些级由"bean 是否注册"决定。
-    #     last-resort-enabled=false   → 只决定 bigmodel 兜底 bean 是否注册（见 BigModelLastResortConfig）
-    #   ⚠️ 两者**语义不对称**，别当同一类开关：
-    #     · fallback-enabled 是**运行时总闸**，管整条链；
-    #     · last-resort-enabled 是**构建期 bean 注册开关**（bigmodel 需额外凭据，故单独设）。
-    #     后果：想"只开 bigmodel 兜底、不开 DashScope"目前**做不到**——总闸一开，
-    #     degradeTiers() 会把已注册的 DashScope 一并放进链里（白等一次 TLS 超时）。
-    #     要单独启用某一级，需把总闸下沉为按级开关（见 docs/03-技术决策记录.md 待办）。
+    # ADR-52（2026-09-27）：开关拆成三层，**语义不再混用**。
+    #   背景：此前 app.llm.fallback-enabled 一个 key 干两件事（既决定 dashscope bean 是否注册，
+    #   又被 LlmGatewayProperties 顺带绑成"降级总闸"），导致"想只开 bigmodel 却做不到"
+    #   —— 见 ADR-51 §已知限制 口子 1。
+    #     degrade-enabled        【运行时总闸】false 时整条链一级都不走（应急用）。默认 true。
+    #     fallback-enabled       【构建期】只决定 dashscope 级 bean 是否注册。默认 false。
+    #     last-resort-enabled    【构建期】只决定 bigmodel 级 bean 是否注册。默认 false。
+    #   可复现组合：
+    #     只开 bigmodel 兜底  → degrade-enabled=true,  fallback-enabled=false, last-resort-enabled=true
+    #     当前默认（单 provider）→ degrade-enabled=true,  两个级开关都 false（总闸开着也无级可走）
+    #     应急硬关整条链      → degrade-enabled=false
     #   ⚠️ 代价：单 provider 无兜底，DeepSeek 侧故障/额度耗尽时用户直接拿 5000。
+    degrade-enabled: ${LLM_DEGRADE_ENABLED:true}
+    # ADR-51：降级目标**默认全部不注册**，退化为「主链 + 重试」。
+    #   原因不是"不需要容灾"，而是这两个目标**实测都不可用**：
+    #     · dashscope 级（qwen-plus）：域名 dashscope.aliyuncs.com 本机不可达
+    #       （TLS 握手被中断，2026-09-16 起即如此）
+    #     · bigmodel 级（glm-4-flash）：返回 400 Bad Request
+    #   保留"假备用"比没有备用更糟：它让链路看起来有多层、实际只有一层，
+    #   还让每次主链故障都白等一次上游超时，并污染指标与排障判据。
     fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
-    # ADR-48 引入；ADR-51 起默认 false（bigmodel 实测 400）。置 true 即恢复第三级。
     last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:false}
+    # ADR-52：dashscope 级的模型与端点改为**可配置**（原为 Java 字面量 / 类常量）。
+    #   换供应商不必改代码 —— 这是 ADR-51 §已知限制 口子 3 的修法。
+    #   注：本节点不被 LlmGatewayProperties 绑定（它没有 fallback 字段），仅由
+    #   ChatModelConfig#dashScopeFallbackTier 的 @Value 读取。
+    fallback:
+      model: ${LLM_FALLBACK_MODEL:qwen-plus}
+      base-url: ${LLM_FALLBACK_BASE_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation}
     retry:
       max-attempts: 3
       backoff-ms: 250

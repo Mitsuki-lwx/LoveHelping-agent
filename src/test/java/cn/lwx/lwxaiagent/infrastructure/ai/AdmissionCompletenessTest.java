@@ -34,11 +34,28 @@ class AdmissionCompletenessTest {
     private static final String GATEWAY = "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java";
 
     /**
-     * 匹配任何形式的 {@code Qualifier("openAiChatModel")} / {@code Qualifier("deepSeekChatModel")}，
+     * 匹配任何形式的 {@code Qualifier("openAiChatModel")} 等直连供应商模型 bean 的写法，
      * 含全限定写法 {@code @org.springframework.beans.factory.annotation.Qualifier(...)}。
+     *
+     * <p>ADR-52：降级级的 bean 名从 {@code deepSeekChatModel} / {@code bigModelChatModel}
+     * 改为 {@code dashScopeFallbackTier} / {@code bigModelLastResortTier}
+     * （类型也从 {@code ChatModel} 变为 {@code LlmFallbackTier}）—— 名单同步更新。</p>
      */
     private static final Pattern DIRECT_PROVIDER = Pattern.compile(
-            "Qualifier\\(\\s*\"(openAiChatModel|deepSeekChatModel)\"\\s*\\)");
+            "Qualifier\\(\\s*\"(openAiChatModel|deepSeekChatModel|dashScopeFallbackTier|bigModelLastResortTier)\"\\s*\\)");
+
+    /**
+     * ADR-52 新增的绕过向量：{@code LlmFallbackTier} 里包着**裸供应商 {@code ChatModel}**，
+     * 所以"注入一个 tier"等价于"绕过网关拿到裸模型"。合法的提及者只有四个文件。
+     */
+    private static final Pattern RAW_TIER_TYPE = Pattern.compile("\\bLlmFallbackTier\\b");
+
+    /** 允许提及 {@link cn.lwx.lwxaiagent.infrastructure.ai.LlmFallbackTier} 的文件（生产者 + 唯一消费者 + 类型自身）。 */
+    private static final List<String> TIER_ALLOWED = List.of(
+            "cn/lwx/lwxaiagent/infrastructure/ai/LlmFallbackTier.java",
+            "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
+            "cn/lwx/lwxaiagent/config/ChatModelConfig.java",
+            "cn/lwx/lwxaiagent/config/BigModelLastResortConfig.java");
 
     @Test
     void onlyGatewayMayReachRawProviderModels() throws IOException {
@@ -66,5 +83,39 @@ class AdmissionCompletenessTest {
         assertTrue(violations.isEmpty(),
                 "以下位置绕过 LlmGateway 直连供应商模型，破坏 ADR-23 的单一准入点"
                         + "（并发许可 / 供应商熔断 / 重试预算 / 用量归因 全部失效）：" + violations);
+    }
+
+    /**
+     * ADR-52 的补充守护：{@code LlmFallbackTier} 是**降级链的注入点**，
+     * 它包着裸供应商 {@code ChatModel}，谁注入它谁就绕过了网关。
+     * 只允许"类型自身 + 两个生产者 + 网关"提及它。
+     */
+    @Test
+    void onlyTierProducersAndGatewayMayMentionFallbackTier() throws IOException {
+        Path root = Paths.get("src", "main", "java");
+        assumeTrue(Files.isDirectory(root), "跳过：测试未在模块根目录运行");
+
+        List<String> mentions = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(root)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                String rel = root.relativize(file).toString().replace('\\', '/');
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("*") || trimmed.startsWith("//")) continue;
+                    if (RAW_TIER_TYPE.matcher(line).find()) {
+                        mentions.add(rel);
+                        break;
+                    }
+                }
+            }
+        }
+
+        assertFalse(mentions.isEmpty(),
+                "守护失效：一个 LlmFallbackTier 提及点都没扫到，但类型自身应当被命中——请检查扫描逻辑");
+        List<String> violations = mentions.stream().filter(m -> !TIER_ALLOWED.contains(m)).toList();
+        assertTrue(violations.isEmpty(),
+                "以下文件提及 LlmFallbackTier（它包着裸供应商 ChatModel）："
+                        + "若在此注入它，等于绕过 LlmGateway 的闸门 / 熔断 / 重试 / 用量归因。"
+                        + "确属合法请加入 TIER_ALLOWED 并说明理由：" + violations);
     }
 }

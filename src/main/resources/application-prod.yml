@@ -37,11 +37,18 @@ spring:
 
 app:
   llm:
-    # ADR-51：两级降级目标实测都不可用（dashscope 域名不可达 / bigmodel 400），
-    # 故默认全关，链路退化为「主链 + 重试」。置 true 即开关式恢复，无需改代码。
+    # ADR-52：开关分三层，语义不再混用（见 application.yml 的同名注释）。
+    #   degrade-enabled  运行时总闸；两个级开关只管"bean 是否注册"。
+    degrade-enabled: ${LLM_DEGRADE_ENABLED:true}
+    # ADR-51：两个降级目标实测都不可用（dashscope 域名不可达 / bigmodel 400），
+    # 故默认都不注册，链路退化为「主链 + 重试」。置 true 即开关式恢复，无需改代码。
     # ⚠️ 代价：单 provider 无兜底。
     fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
     last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:false}
+    # ADR-52：dashscope 级的模型与端点可配（换供应商不必改代码）。
+    fallback:
+      model: ${LLM_FALLBACK_MODEL:qwen-plus}
+      base-url: ${LLM_FALLBACK_BASE_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation}
 
 logging:
   level:
