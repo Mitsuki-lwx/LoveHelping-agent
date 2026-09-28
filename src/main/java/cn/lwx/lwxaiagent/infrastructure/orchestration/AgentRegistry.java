@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Component
+@org.springframework.context.annotation.DependsOn("scopeWording")
 public class AgentRegistry {
 
     private final ConcurrentHashMap<String, AgentDefinition> registry = new ConcurrentHashMap<>();
@@ -23,7 +24,7 @@ public class AgentRegistry {
     public AgentRegistry(ToolCallback[] allTools,
                          @org.springframework.beans.factory.annotation.Value("${app.memory.agent-window-size:50}") int agentWindowSize) {
         this.allTools = allTools;
-        this.generalSystemPrompt = ChatExecutor.SYSTEM_PROMPT;
+        this.generalSystemPrompt = ScopeWording.activeSystemPrompt();
     }
 
     @PostConstruct

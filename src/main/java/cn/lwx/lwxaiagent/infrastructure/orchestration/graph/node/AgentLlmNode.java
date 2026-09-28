@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node;
 
 import cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor;
+import cn.lwx.lwxaiagent.infrastructure.orchestration.ScopeWording;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.StreamRegistry;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphNodes;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
@@ -135,7 +136,7 @@ public class AgentLlmNode {
     }
 
     static String systemPrompt() {
-        return ChatExecutor.SYSTEM_PROMPT + "\n\n" + NEXT_STEP;
+        return ScopeWording.activeSystemPrompt() + "\n\n" + NEXT_STEP;
     }
 
     private static final String NEXT_STEP = """

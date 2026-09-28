@@ -37,6 +37,17 @@ public class GuardrailRule {
     @TableField("description")
     private String description;
 
+    /**
+     * 适用范围（ADR-55 / V25）：{@code BOTH}（默认）/ {@code INPUT} / {@code OUTPUT}。
+     *
+     * <p>为什么需要它：{@code check()} 一个方法同时服务输入侧（用户原话）与输出侧（助手回复），
+     * 而同一个词在两侧含义完全不同 —— 输入侧「伤害自己」= 用户有风险（要转介）；
+     * 输出侧「你最近有没有想过伤害自己？」= 专业危机干预指导（不该拦）。
+     * 实测 6/6 轮「如何帮助低落的朋友」的正常求助被输出侧误判为 L3。</p>
+     */
+    @TableField("scope")
+    private String scope;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 }

@@ -194,6 +194,15 @@ app:
   chat:
     timeout-ms: 90000
     provider: deepseek           # 默认聊天模型提供商（历史配置，主备结构见 app.llm）
+    # 范围护栏（Scope）措辞版本（ADR-53 / phase21）
+    #   adjacent-help（默认）= 情感相邻议题（失眠/焦虑/压力大…）先给具体建议再轻接回关系维度；
+    #                           只有明显事务性请求（写代码/做菜谱…）才礼貌拒绝。
+    #   strict              = 修复前措辞：一律对"明显无关请求"拒绝 → 会无谓拒答。
+    #                          **仅作对照臂**，用于复验上述修复（同 provider、只差措辞）。
+    #                          线上不建议启用。
+    # 开关存在的理由：ADR-48 要求"改完必须用两臂对照复验"，但原对照是两个模型，
+    # ADR-51 切 DeepSeek 官方后已不可复现；不设开关就分不清"修复有效"与"本模型本来就不拒"。
+    scope-wording: ${APP_CHAT_SCOPE_WRITING:adjacent-help}
 
   # LlmGateway 配置（ADR-7 建立；ADR-48 改为三级降级链）
   #
@@ -382,7 +391,13 @@ app:
     api-key: ${JEV_API_KEY:}          # 只走环境变量，禁止写入配置文件（AGENTS.md §3）
     base-url: ${JEV_BASE_URL:https://api.typesafe.ai}
     model: ${JEV_MODEL:jev-latest}
-    timeout-ms: 3000                  # 故意设短：失败就回退，不许拖慢请求
+    # 2026-09-28（ADR-54）：3000 → 默认 8000，且改为可配。
+    # 依据实测：**启动后首次调用**在 3s 内建不完连接 → `HttpConnectTimeoutException`，
+    # 白付一次超时再回退（`scripts/run_jev_verify.sh` 抓到 1 次）。
+    # ⚠️ 代价必须知道：本调用在**用户发消息的主路径**上（`ChatEntry:233`，同步、先于 SSE 建流），
+    #    所以网络异常时用户最多多等这个时长才回退 —— 这不是"纯后台增强"。
+    #    正常调用是几百毫秒，加长只影响异常路径。
+    timeout-ms: ${JEV_TIMEOUT_MS:8000}
     guardrail:
       # 护栏口语化危机"加召回"：只升级、不放行，词典仍是唯一兜底（详见 docs/phase7-guardrail-recall）
       # mode 三态（docs/phase7-jev-shadow）：

@@ -47,14 +47,40 @@ public class StreamRegistry {
     private final ConcurrentHashMap<String, StreamSink> sinks = new ConcurrentHashMap<>();
     /** 思考过程出站策略（app.output.reasoning-mode，默认 discard：思考不糊用户脸） */
     private final String reasoningMode;
+    /**
+     * 输出侧护栏判定（ADR-55）。null = 不检查（单测 / 无护栏场景），行为等于改造前。
+     *
+     * <p>用<b>函数接口</b>而不是直接依赖 {@code GuardrailRuleService}：一是让本类不必绑定
+     * 具体判定实现（单测可传 null 或桩），二是避免 {@code orchestration} 包对
+     * {@code harness.governance} 的强耦合。</p>
+     */
+    private final OutputGuardrail outputGuardrail;
 
-    public StreamRegistry(@Value("${app.output.reasoning-mode:discard}") String reasoningMode) {
+    /** 出站护栏判定：返回命中的 rule_id；{@code null} = 未命中，应正常送达 */
+    @FunctionalInterface
+    public interface OutputGuardrail {
+        String hit(String text);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public StreamRegistry(@Value("${app.output.reasoning-mode:discard}") String reasoningMode,
+                          cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService guardrailRules) {
         this.reasoningMode = reasoningMode == null ? "discard" : reasoningMode;
+        this.outputGuardrail = guardrailRules == null ? null : text -> {
+            var v = guardrailRules.check(text,
+                    cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService.Scope.OUTPUT);
+            return v.level() >= 3 ? v.ruleId() : null;
+        };
+    }
+
+    /** 兼容构造器（单测用）：不做出站护栏检查 —— 单测零改动，行为与 ADR-55 之前一致 */
+    public StreamRegistry(String reasoningMode) {
+        this(reasoningMode, null);
     }
 
     /** Subscription-scoped registration. Duplicate sessions fail without replacing the original sink. */
     public StreamSink register(String chatId, FluxSink<String> sink) {
-        StreamSink fresh = new StreamSink(sink, reasoningMode);
+        StreamSink fresh = new StreamSink(sink, reasoningMode, outputGuardrail);
         if (sinks.putIfAbsent(chatId, fresh) != null) {
             throw new cn.lwx.lwxaiagent.common.BizException(409, "当前会话仍有请求处理中，请等待完成或先停止");
         }
@@ -94,10 +120,30 @@ public class StreamRegistry {
         private volatile boolean toolsStreamed;
         private volatile boolean cancelled;
         private String pendingHighSurrogate = "";
+        /** 输出侧护栏判定（ADR-55）；null = 不检查（单测/兼容构造） */
+        private final StreamRegistry.OutputGuardrail outputGuardrail;
+        /**
+         * 护栏尾部窗口：关键词可能**跨 chunk**到达（"伤害" + "自己"），
+         * 所以累积最近 {@link #GUARDRAIL_WINDOW} 个字符再判定，而不是只看当次 chunk。
+         */
+        private final StringBuilder guardrailWindow = new StringBuilder();
+        private static final int GUARDRAIL_WINDOW = 64;
+        /** 已因 L3 拦截：后续所有 chunk 丢弃（替换文案已在拦截时推过一次） */
+        private volatile boolean guardrailBlocked;
 
         StreamSink(FluxSink<String> sink, String reasoningMode) {
+            this(sink, reasoningMode, null);
+        }
+
+        StreamSink(FluxSink<String> sink, String reasoningMode, StreamRegistry.OutputGuardrail outputGuardrail) {
             this.sink = sink;
             this.reasoningMode = reasoningMode;
+            this.outputGuardrail = outputGuardrail;
+        }
+
+        /** 出站是否已被护栏拦截（{@code ChatEntry} 据此避免重复推送替换文案） */
+        public boolean guardrailBlocked() {
+            return guardrailBlocked;
         }
 
         /** 开启 advice marker 剥离（仅话术三级协议请求调用，须在首次 append 前） */
@@ -184,7 +230,58 @@ public class StreamRegistry {
             cancelled = true;
         }
 
+        /**
+         * 出站护栏检查点（ADR-55 / D1）。
+         *
+         * <p><b>为什么必须在这里做</b>：本方法是**所有出站文本的唯一出口**
+         * （{@code append} / {@code appendReasoning} / {@code flush} 都走它），
+         * 所以在这里加一道检查点，四条流式入口（Normal / QuickAnswer / AgentTool / OffTopic）
+         * <b>一次性全被覆盖</b> —— 不必在每个节点各加一遍（那是漏改的温床）。</p>
+         *
+         * <p>⛔ <b>顺序是"先判后发"</b>：命中则<b>这段文本不推送</b>，直接改推替换文案。
+         * 原来的缺陷正是"先发后判"（图末端 {@code CheckNode} 事后替换，而正文早已流出）。</p>
+         *
+         * <p>⚠️ <b>判定异常时放行</b>（fail-open）：护栏是本地规则匹配，异常概率极低；
+         * 若因护栏故障就阻断对话，等于把一个安全增强变成可用性事故。
+         * 异常会打 WARN，且图末端的 {@code CheckNode} 仍有一道事后兜底。</p>
+         */
         private void emit(String s) {
+            if (cancelled || sink.isCancelled() || s.isEmpty()) {
+                return;
+            }
+            if (guardrailBlocked) {
+                return; // 已拦：后续 chunk 全部丢弃（不能只拦命中的那一块）
+            }
+            if (outputGuardrail != null) {
+                String hitRule = guardrailHitRule(s);
+                if (hitRule != null) {
+                    guardrailBlocked = true;
+                    log.warn("流式出站护栏 L3 拦截（ADR-55, rule={}）：已丢弃命中文本，改推替换文案（前 40 字：{}）",
+                            hitRule, s.length() > 40 ? s.substring(0, 40) + "…" : s);
+                    // 文案按命中的规则选（自伤类 / 其它）—— 不能一律推自伤转介
+                    doEmit(cn.lwx.lwxaiagent.harness.governance.GuardrailMessages.forRule(hitRule));
+                    return;
+                }
+            }
+            doEmit(s);
+        }
+
+        /** 累积尾部窗口后判定（关键词跨 chunk 也能命中）；返回命中的 rule_id 或 null。护栏故障一律放行 */
+        private String guardrailHitRule(String s) {
+            guardrailWindow.append(s);
+            if (guardrailWindow.length() > GUARDRAIL_WINDOW) {
+                guardrailWindow.delete(0, guardrailWindow.length() - GUARDRAIL_WINDOW);
+            }
+            try {
+                return outputGuardrail.hit(guardrailWindow.toString());
+            } catch (RuntimeException e) {
+                log.warn("出站护栏判定异常，放行正文（不因护栏故障阻断对话）：{}", e.toString());
+                return null;
+            }
+        }
+
+        /** 实际的出站动作（不含护栏检查，避免拦截时递归） */
+        private void doEmit(String s) {
             if (cancelled || sink.isCancelled() || s.isEmpty()) {
                 return;
             }

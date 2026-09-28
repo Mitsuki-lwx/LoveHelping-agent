@@ -17,6 +17,7 @@ import java.util.Optional;
  * 聚合全文并将 {@code @@ADVICE@@} 标记剥离为结构化 tiers（SSE advice 事件用）。
  * 2026-09-02 真流式：LLM 增量经 {@link StreamRegistry} 实时转发 SSE，不再聚合完才吐。</p>
  */
+@lombok.extern.slf4j.Slf4j
 @Component
 public class NormalChatNode {
 
@@ -36,6 +37,10 @@ public class NormalChatNode {
         AgentResult.ShallowResult sr = (AgentResult.ShallowResult)
                 chatExecutor.executeWithRag(message, chatId, null, advice);
         StreamRegistry.StreamSink sink = streamRegistry.get(chatId);
+        // 诊断（ADR-55 验证用）：拿不到 sink = 本轮回退到"聚合完再推"，**流式拦截不可能触发**。
+        // 排查"流式拦截为何不触发"时靠它区分"根本没走流式"与"拦截失效"。
+        log.info("NormalChatNode sink={} chatId={}（NULL 表示本轮回退非流式）",
+                sink != null ? "OK" : "NULL", chatId);
         if (sink != null && advice) {
             sink.enableMarkerStripping(); // 仅话术三级协议请求剥离 marker（防误剥正文）
         }

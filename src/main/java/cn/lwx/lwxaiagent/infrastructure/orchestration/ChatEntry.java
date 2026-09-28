@@ -155,7 +155,16 @@ public class ChatEntry {
                             Object tools = result.get(GraphStateKeys.TOOL_EVENTS);
                             if (tools instanceof List<?> list) for (Object tool : list) sink.next("调用工具: " + tool);
                         }
-                        if (!stream.streamed()) for (String part : chunk(Objects.toString(result.get(GraphStateKeys.OUTPUT), ""))) sink.next(part);
+                        // ADR-55：流式出站护栏若已拦截（StreamSink 已改推替换文案），
+                        // 这里不能再推 CheckNode 事后替换的 OUTPUT，否则用户会看到两遍。
+                        if (!stream.streamed() && !stream.guardrailBlocked()) {
+                            // 诊断（ADR-55 验证用）：本行出现 = 走的是**非流式补推**，
+                            // 说明流式路径没推正文（sink 为 null，或 flush 未被调用）。
+                            // 排查"流式拦截为何不触发"时，靠它区分"根本没走流式"与"拦截失效"。
+                            log.info("非流式补推 OUTPUT（streamed={} guardrailBlocked={}）",
+                                    stream.streamed(), stream.guardrailBlocked());
+                            for (String part : chunk(Objects.toString(result.get(GraphStateKeys.OUTPUT), ""))) sink.next(part);
+                        }
                         Object advice = result.get(GraphStateKeys.ADVICE_TIERS);
                         if (advice != null && !advice.toString().isBlank()) sink.next(ChatExecutor.ADVICE_EVENT_MARKER + advice);
                         sink.complete();

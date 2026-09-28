@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration.graph.node;
 
+import cn.lwx.lwxaiagent.harness.governance.GuardrailMessages;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService.Verdict;
@@ -19,6 +20,17 @@ import java.util.Map;
 @Component
 public class CheckNode {
 
+    /**
+     * 输出侧自伤拦截的替换文案（ADR-55）。
+     *
+     * <p>⚠️ 唯一的文案事实源在 {@link GuardrailMessages} —— {@code StreamRegistry} 的流式拦截
+     * 也用同一份，两条路径必须给出一致的话。</p>
+     */
+    public static final String OUTPUT_SELF_HARM_REPLACEMENT = GuardrailMessages.SELF_HARM_OUTPUT;
+
+    /** 输出侧其它 L3（伤人/违法/操控）的婉拒文案 */
+    public static final String OUTPUT_OTHER_REPLACEMENT = GuardrailMessages.OTHER_OUTPUT;
+
     private final GuardrailRuleService guardrailRuleService;
 
     public CheckNode(GuardrailRuleService guardrailRuleService) {
@@ -30,12 +42,12 @@ public class CheckNode {
         if (output.isBlank()) {
             return Map.of();
         }
-        Verdict v = guardrailRuleService.check(output);
+        // ADR-55：**必须显式传 OUTPUT** —— 输入侧与输出侧共用一套词表时，
+        // 输出侧会把"专业地提到自伤"当成"危险内容"（实测 6/6 轮正常求助被误判）。
+        Verdict v = guardrailRuleService.check(output, GuardrailRuleService.Scope.OUTPUT);
         if (v.level() >= 3) {
             log.warn("Final-reply guardrail L3 blocked ({}): {}", v.ruleId(), output.length() > 40 ? output.substring(0, 40) : output);
-            String replaced = "self_harm".equals(v.ruleId())
-                    ? "我注意到你现在的状态可能非常难受。如果你正在经历难以承受的时刻，请一定联系专业援助：全国心理援助热线 400-161-9995，北京心理危机研究与干预中心 010-82951332。你不需要独自面对，我们慢慢聊。"
-                    : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
+            String replaced = isSelfHarm(v.ruleId()) ? OUTPUT_SELF_HARM_REPLACEMENT : OUTPUT_OTHER_REPLACEMENT;
             Map<String, Object> out = new HashMap<>();
             out.put(GraphStateKeys.OUTPUT, replaced);
             return out;
@@ -45,5 +57,10 @@ public class CheckNode {
                     output.length() > 40 ? output.substring(0, 40) : output);
         }
         return Map.of();
+    }
+
+    /** {@code self_harm}（输入侧裸词）/ {@code self_harm_incite}（输出侧教唆）都算自伤类 */
+    static boolean isSelfHarm(String ruleId) {
+        return ruleId != null && ruleId.startsWith("self_harm");
     }
 }

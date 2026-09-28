@@ -23,6 +23,11 @@ shanghai_plan.md
 ops/reranker/models/
 ops/reranker/__pycache__/
 .env
+# 2026-09-28 补：`.env.local` 此前**没被忽略**（只有 `.env` 被忽略），
+# 而它恰恰是本项目"集中放本地凭据"的标准位置 → 一旦往里写 key 就会被 git 追踪。
+# 同族风险已发生过一次（.workbuddy-ai/backup 含 345 行用户记忆明文，见下方注释）。
+.env.local
+*.env.local
 outputs/
 
 ### Runtime generated files ###
