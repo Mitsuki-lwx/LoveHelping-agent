@@ -1,2 +1,9 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# Shell 脚本统一 LF。
+# ⚠️ 这条是**预防性**的，不是修实测故障：本机 Git Bash 的 bash 带 igncr，实测 CRLF 的 .sh
+#    （含字符串比较）也能正常跑。但本仓 core.autocrlf=true，检出会把 .sh 转成 CRLF，
+#    而 WSL / Linux 容器里的 bash **没有** igncr —— 仓库有 Dockerfile，届时会踩。
+*.sh text eol=lf
+
