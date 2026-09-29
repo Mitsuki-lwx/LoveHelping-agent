@@ -658,7 +658,20 @@ public class LlmGateway implements ChatModel {
         span.tag("langfuse.observation.type", "generation");
         span.tag("llm.provider", provider);
         span.tag("llm.attempt", String.valueOf(attempt));
+        // ADR-62/F4：把**实际端点**写进 trace。此前只有 llm.provider=primary 这种**逻辑名**，
+        // 三代供应商切换在 trace 里长得一模一样 —— ADR-48 的"生效端点零痕迹"在 trace 上依旧。
+        String endpoint = endpointFor(provider);
+        if (!endpoint.isBlank()) span.tag("llm.endpoint", endpoint);
         return span;
+    }
+
+    /** 该级实际生效的端点（primary 用装配者告知的 baseUrl，降级级用各自 tier 的）。取不到就不写，绝不编造。 */
+    private String endpointFor(String provider) {
+        if ("primary".equals(provider)) return primaryBaseUrl == null ? "" : primaryBaseUrl;
+        for (LlmFallbackTier tier : tiers) {
+            if (tier.name().equals(provider)) return tier.baseUrl() == null ? "" : tier.baseUrl();
+        }
+        return "";
     }
     private void finish(Span span, String provider, String outcome, long start) {
         try {

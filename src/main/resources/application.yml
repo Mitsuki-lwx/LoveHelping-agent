@@ -266,6 +266,11 @@ app:
       #   api-key: ${CLINE_API_KEY:}
       #   model: ${CLINE_MODEL:deepseek/deepseek-v4.1-flash}
       #   response-envelope: data
+    # ADR-62/F1：是否让 Spring AI 再产生一条 `chat <model>` span。
+    #   默认 false —— 那条 span 在流式路径上**自成一条 trace**，与业务 trace 1:1 双计
+    #   （冒烟窗口实测 12 业务 ↔ 11 孤儿），而它带的 model/usage 我们的 `llm.attempt` 全都有。
+    #   置 true 即恢复（开关式回滚，无需改代码）。
+    chat-observation: ${LLM_CHAT_OBSERVATION:false}
     # ADR-52 的运行时总闸保留：false 时整条链一级都不走（应急用）。
     #   与构建期开关的区别：那些开关已由上面的 enabled 取代。
     degrade-enabled: ${LLM_DEGRADE_ENABLED:true}

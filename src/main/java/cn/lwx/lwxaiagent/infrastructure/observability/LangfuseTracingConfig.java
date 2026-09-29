@@ -37,6 +37,10 @@ public class LangfuseTracingConfig {
             throw new IllegalArgumentException("Invalid Langfuse host");
         if (p.getMaxBatchSize() > p.getMaxQueueSize()) throw new IllegalArgumentException("Langfuse batch exceeds queue capacity");
         String endpoint = p.getHost().replaceAll("/+$", "") + "/api/public/otel/v1/traces";
+        // ADR-62/F6：导出"生效"必须有可查询证据。此前启用后**一条日志都没有** ——
+        // 冒烟时我 grep 不到任何 langfuse 字样，只能靠"去实例里查有没有新 trace"反推。
+        org.slf4j.LoggerFactory.getLogger(LangfuseTracingConfig.class).info(
+                "[langfuse] 导出已启用：endpoint={}（trace 元数据，**不含原文**，ADR-44）", endpoint);
         String credentials = Base64.getEncoder().encodeToString((p.getPublicKey() + ":" + p.getSecretKey()).getBytes(StandardCharsets.UTF_8));
         return builder -> {
             SpanExporter exporter = new SafeExporter(OtlpHttpSpanExporter.builder()
@@ -142,9 +146,30 @@ public class LangfuseTracingConfig {
                 "http.request.method", "http.method", "http.response.status_code", "http.status_code", "http.route",
                 "gen_ai.request.model", "gen_ai.response.model", "gen_ai.operation.name", "gen_ai.system",
                 "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.prompt_tokens", "gen_ai.usage.completion_tokens",
-                "llm.provider", "llm.attempt", "llm.outcome", "graph.route", "graph.node", "graph.outcome",
+                "llm.provider", "llm.attempt", "llm.outcome", "llm.endpoint", "graph.route", "graph.node", "graph.outcome",
                 "rag.candidates", "rag.results", "rag.outcome", "rag.mode", "tool.name", "tool.outcome",
                 "error.category", "chat.outcome", "langfuse.observation.status_message");
+        /** 已被警告过的 key（每个只警告一次）—— 出口是**白名单**，未列出的 tag 会被丢弃。 */
+        private static final Set<String> WARNED_KEYS = ConcurrentHashMap.newKeySet();
+        private static final int WARNED_LIMIT = 64;
+
+        /**
+         * ADR-62/F4-根因：本导出边界是**白名单**（见 {@link #EXACT}），未列出的 span tag 会被**丢弃**。
+         *
+         * <p>⛔ 此前这件事是**静默**的 —— 2026-09-29 我加了一个 {@code llm.endpoint} tag，
+         * 运行期实测「tag 已设上」（诊断日志证明），但 Langfuse 里**就是没有**，
+         * 直到读到这里才发现被白名单丢了。<b>静默丢观测数据是最难查的一类</b>。</p>
+         *
+         * <p>保留白名单是刻意的**隐私姿态**（只有经过审查的 key 才出进程，撑住 docs/07 的"不含原文"），
+         * 故**不改成黑名单**；改为把丢弃行为**变响**：每个 key 只警告一次。</p>
+         */
+        private static void warnDroppedOnce(String key) {
+            if (key == null || WARNED_KEYS.size() >= WARNED_LIMIT || !WARNED_KEYS.add(key)) return;
+            org.slf4j.LoggerFactory.getLogger(SafeExporter.class).warn(
+                    "[langfuse] span tag 不在导出白名单，已丢弃：key={}"
+                            + "（需要导出请加入 SafeExporter.EXACT；白名单是刻意的隐私边界）", key);
+        }
+
         @Override public CompletableResultCode export(Collection<SpanData> spans) {
             // 一个 actuator 请求的 span 树里，只有根 span 自己带 /actuator 字样；它的子 span
             // （Spring Security 的 secured request / authorize request / security filterchain）
@@ -165,7 +190,10 @@ public class LangfuseTracingConfig {
                     // llm.attempt) loses its own usage. A standalone SDK chat span keeps its usage.
                     boolean sdkChat = "gateway".equals(s.getAttributes().get(AttributeKey.stringKey("llm.usage.owner")));
                     s.getAttributes().forEach((key, value) -> {
-                        if (!EXACT.contains(key.getKey()) || key.getKey().equals("langfuse.observation.status_message")) return;
+                        if (!EXACT.contains(key.getKey()) || key.getKey().equals("langfuse.observation.status_message")) {
+                            warnDroppedOnce(key.getKey());
+                            return;
+                        }
                         if (sdkChat && (key.getKey().startsWith("gen_ai.usage.") || key.getKey().equals("langfuse.observation.usage_details"))) return;
                         put(out, key, value);
                     });

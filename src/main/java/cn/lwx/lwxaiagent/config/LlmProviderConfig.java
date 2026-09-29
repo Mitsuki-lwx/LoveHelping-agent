@@ -15,6 +15,7 @@ import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -67,6 +68,17 @@ public class LlmProviderConfig {
     private static final String FIELD_CHOICES = "choices";
 
     /**
+     * ADR-62 / F1：是否让 Spring AI **自己**再产生一条 {@code chat <model>} span。
+     *
+     * <p>默认 <b>false</b>（不产生）。原因（2026-09-29 实测）：那条 span 在流式路径上
+     * <b>会自成一条 trace</b>，与业务 trace **1:1 双计**（冒烟窗口 12 业务 ↔ 11 孤儿）；
+     * 而它携带的信息（model / usage）**我们的 {@code llm.attempt} 全都有**，纯冗余。
+     * 置 true 即恢复（开关式回滚，无需改代码）。</p>
+     */
+    @Value("${app.llm.chat-observation:false}")
+    private boolean chatObservation;
+
+    /**
      * 整条链路（主链 + 降级级）由 {@code app.llm.providers} 装配。
      * 单一 bean 类型而非"动态条数的 tier bean"，理由见 {@link LlmProviderChain} 的类注释。
      */
@@ -104,7 +116,7 @@ public class LlmProviderConfig {
     }
 
     /** 每条 provider 一个 OpenAiChatModel：自己的 WebClient（超时 + 可选信封拆封）+ 单次重试。 */
-    private static ChatModel build(LlmProviderProperties.Provider p, LlmGatewayProperties gw,
+    private ChatModel build(LlmProviderProperties.Provider p, LlmGatewayProperties gw,
                                    ObjectProvider<ObservationRegistry> observations,
                                    ObjectProvider<ToolCallingManager> toolManagers,
                                    ObjectMapper mapper) {
@@ -119,7 +131,11 @@ public class LlmProviderConfig {
         OpenAiApi api = apiBuilder.build();
 
         // toolCallingManager 不能为 null（OpenAiChatModel 构造器直接断言）——传 null 会让应用起不来。
-        ObservationRegistry observationRegistry = observations.getIfAvailable(() -> ObservationRegistry.NOOP);
+        // ADR-62/F1：默认把 observation 关掉（NOOP）——Spring AI 的 `chat <model>` span 在流式路径上
+        // 自成一条 trace 造成双计，且信息与我们的 llm.attempt 重复。开关见 chatObservation。
+        ObservationRegistry observationRegistry = chatObservation
+                ? observations.getIfAvailable(() -> ObservationRegistry.NOOP)
+                : ObservationRegistry.NOOP;
         ToolCallingManager toolCallingManager = toolManagers.getIfAvailable(
                 () -> DefaultToolCallingManager.builder().observationRegistry(observationRegistry).build());
 
