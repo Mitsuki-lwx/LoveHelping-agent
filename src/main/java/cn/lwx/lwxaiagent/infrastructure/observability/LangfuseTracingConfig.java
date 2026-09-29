@@ -147,6 +147,9 @@ public class LangfuseTracingConfig {
                 "gen_ai.request.model", "gen_ai.response.model", "gen_ai.operation.name", "gen_ai.system",
                 "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.prompt_tokens", "gen_ai.usage.completion_tokens",
                 "llm.provider", "llm.attempt", "llm.outcome", "llm.endpoint", "graph.route", "graph.node", "graph.outcome",
+                // ADR-62/F2+F3：把两条"绕网关"路径与 embedding 变可见（值均**不含原文**）
+                "embedding.model", "embedding.batch", "embedding.outcome",
+                "jev.field", "jev.outcome", "vision.images", "vision.outcome",
                 "rag.candidates", "rag.results", "rag.outcome", "rag.mode", "tool.name", "tool.outcome",
                 "error.category", "chat.outcome", "langfuse.observation.status_message");
         /** 已被警告过的 key（每个只警告一次）—— 出口是**白名单**，未列出的 tag 会被丢弃。 */

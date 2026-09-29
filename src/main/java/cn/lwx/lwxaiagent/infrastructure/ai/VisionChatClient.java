@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.ai;
 
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -13,6 +14,7 @@ import org.springframework.web.client.RestClient;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
+import io.micrometer.tracing.Span;
 
 /**
  * 视觉聊天客户端（ADR-11，手写 OpenAI 兼容调用）。
@@ -32,10 +34,14 @@ public class VisionChatClient implements VisionPort {
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String model;
+    /** ADR-62/F3：只为让这条绕网关的链路在 Langfuse 里可见。 */
+    private final AiTelemetry telemetry;
 
     public VisionChatClient(@Value("${spring.ai.openai.base-url:}") String baseUrl,
                             @Value("${spring.ai.openai.api-key:}") String apiKey,
-                            @Value("${app.llm.vision-model:}") String model) {
+                            @Value("${app.llm.vision-model:}") String model,
+                            AiTelemetry telemetry) {
+        this.telemetry = telemetry;
         this.model = model;
         // 与 curl 直连一致：{base}/v1/chat/completions；同步、长超时（视觉请求可达 30s+）
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
@@ -58,6 +64,11 @@ public class VisionChatClient implements VisionPort {
      * @return 模型回复全文
      */
     public String chat(String prompt, List<byte[]> images, String mime) {
+        // ADR-62/F3：视觉链路绕过网关（既有 P3），观测上也**不存在** → 这里补上。
+        // ⛔ 只记图片数量与结局，**绝不**记 prompt/图片内容（docs/07 §6.1「不含原文」）。
+        Span span = telemetry.start("vision.call", telemetry.capture());
+        span.tag("vision.images", String.valueOf(images == null ? 0 : images.size()));
+        try (var ignored = telemetry.scope(span)) {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("model", model);
         ArrayNode messages = body.putArray("messages");
@@ -83,10 +94,16 @@ public class VisionChatClient implements VisionPort {
                     .retrieve()
                     .body(String.class);
             JsonNode root = objectMapper.readTree(respBody);
+            span.tag("vision.outcome", "success");
             return root.path("choices").path(0).path("message").path("content").asText("");
         } catch (Exception e) {
             log.warn("Vision chat failed: {}", e.getMessage());
+            span.tag("vision.outcome", "fail");
+            telemetry.failure(span, e.getClass().getSimpleName());
             throw new cn.lwx.lwxaiagent.common.BizException(5000, "图片理解服务暂时不可用");
+        }
+        } finally {
+            span.end();
         }
     }
 }

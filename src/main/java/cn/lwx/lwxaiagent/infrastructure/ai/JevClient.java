@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.ai;
 
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -15,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import io.micrometer.tracing.Span;
 
 /**
  * Jev（TypeSafe AI / System One）客户端 —— 只做<b>窄的结构化判定</b>。
@@ -45,7 +47,10 @@ public class JevClient {
     private final ObjectMapper mapper;
     private final HttpClient http;
 
-    public JevClient(JevProperties props, ObjectMapper mapper) {
+    private final AiTelemetry telemetry;
+
+    public JevClient(JevProperties props, ObjectMapper mapper, AiTelemetry telemetry) {
+        this.telemetry = telemetry;
         this.props = props;
         this.mapper = mapper;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
@@ -132,6 +137,11 @@ public class JevClient {
     /** 发一次请求并返回 {@code answers} 节点；任何失败返回空。 */
     private Optional<JsonNode> answers(String stateField, String stateValue, ObjectNode questions) {
         if (!available()) return Optional.empty();
+        // ADR-62/F3：JEV 是**唯一绕过 LlmGateway** 的外部依赖（治理盲区），
+        // 此前在 Langfuse 里**完全不存在**（观测盲区）→ 双盲。这里只记**非内容**标签。
+        Span span = telemetry.start("jev.call", telemetry.capture());
+        span.tag("jev.field", stateField == null ? "" : stateField);
+        try (var ignored = telemetry.scope(span)) {
         try {
             ObjectNode state = mapper.createObjectNode();
             state.put(stateField, abbreviate(stateValue));
@@ -153,13 +163,21 @@ public class JevClient {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
                 log.warn("jev call failed: http={}", response.statusCode());
+                span.tag("jev.outcome", "http_" + response.statusCode());
+                telemetry.failure(span, "http_" + response.statusCode());
                 return Optional.empty();
             }
+            span.tag("jev.outcome", "success");
             return Optional.of(mapper.readTree(response.body()).path("answers"));
         } catch (Exception e) {
             // 超时/连接失败/解析失败一律返回空；单行 WARN，不打堆栈（ADR-33）
             log.warn("jev call failed: {}", e.getClass().getSimpleName() + ": " + e.getMessage());
+            span.tag("jev.outcome", "fail");
+            telemetry.failure(span, e.getClass().getSimpleName());
             return Optional.empty();
+        }
+        } finally {
+            span.end();
         }
     }
 

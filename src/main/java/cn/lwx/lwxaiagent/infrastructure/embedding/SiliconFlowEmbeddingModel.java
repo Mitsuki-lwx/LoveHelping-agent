@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.infrastructure.embedding;
 
 import cn.lwx.lwxaiagent.config.SiliconFlowProperties;
+import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.document.Document;
@@ -66,7 +67,10 @@ public class SiliconFlowEmbeddingModel implements EmbeddingModel {
     private final HttpClient client;
     private final URI endpoint;
 
-    public SiliconFlowEmbeddingModel(SiliconFlowProperties props, ObjectMapper json) {
+    private final AiTelemetry telemetry;
+
+    public SiliconFlowEmbeddingModel(SiliconFlowProperties props, ObjectMapper json, AiTelemetry telemetry) {
+        this.telemetry = telemetry;
         this.props = props;
         this.json = json;
         String base = props.getBaseUrl() == null ? "" : props.getBaseUrl().trim();
@@ -167,13 +171,31 @@ public class SiliconFlowEmbeddingModel implements EmbeddingModel {
                     "SF_API_KEY 未配置：硅基流动 embedding 不可用。"
                             + "请在环境变量 SF_API_KEY 中注入，或把 app.rag.embedding.provider 切回 dashscope");
         }
-        int batch = Math.max(1, props.getMaxBatchSize());
-        List<float[]> out = new ArrayList<>(texts.size());
-        for (int from = 0; from < texts.size(); from += batch) {
-            int to = Math.min(texts.size(), from + batch);
-            out.addAll(callOnce(texts.subList(from, to)));
+        // ⛔ ADR-62/F2：span 必须打在这个**唯一咽喉点**上，不能打在某个入口。
+        // 第一版我打在 call(EmbeddingRequest) 里 —— 实测 Langfuse 里**一条都没有**，
+        // 因为真实检索走的是 embed(Document)/embed(List)，**绕过 call**。
+        // 三个入口（call / embed(Document) / embed(List)）全汇到这里。
+        // 同族教训：**接了 ≠ 传对了** —— 要打在真正被走的那个点上。
+        var span = telemetry.start("embedding.call", telemetry.capture());
+        span.tag("embedding.model", modelName()).tag("embedding.batch", String.valueOf(texts.size()));
+        try (var ignored = telemetry.scope(span)) {
+            try {
+                int batch = Math.max(1, props.getMaxBatchSize());
+                List<float[]> out = new ArrayList<>(texts.size());
+                for (int from = 0; from < texts.size(); from += batch) {
+                    int to = Math.min(texts.size(), from + batch);
+                    out.addAll(callOnce(texts.subList(from, to)));
+                }
+                span.tag("embedding.outcome", "success");
+                return out;
+            } catch (RuntimeException e) {
+                span.tag("embedding.outcome", "fail");
+                telemetry.failure(span, e.getClass().getSimpleName());
+                throw e;
+            }
+        } finally {
+            span.end();
         }
-        return out;
     }
 
     /** 单批请求：构造请求体 → 发送 → 解析 → 校验维度。 */

@@ -53,7 +53,7 @@ class JevSelfHarmSignalTest {
         props.setTimeoutMs(2000);
         props.getGuardrail().setMode(mode);
         props.getGuardrail().setMinProbability(threshold);
-        return new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
+        return new JevSelfHarmSignal(new JevClient(props, new ObjectMapper(), new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)), props);
     }
 
     @Test
@@ -97,7 +97,7 @@ class JevSelfHarmSignalTest {
     void thresholdIsExposedForAudit() {
         JevProperties props = new JevProperties();
         props.getGuardrail().setMinProbability(0.42);
-        var signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
+        var signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper(), new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)), props);
         assertEquals(0.42, signal.threshold(), 1e-9);
     }
 
@@ -132,7 +132,7 @@ class JevSelfHarmSignalTest {
         props.setBaseUrl("http://127.0.0.1:1");
         props.setTimeoutMs(500);
         props.getGuardrail().setMode(JevProperties.Mode.ENFORCE);
-        JevSelfHarmSignal signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
+        JevSelfHarmSignal signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper(), new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)), props);
         assertDoesNotThrow(() -> assertTrue(signal.judge("我不想活了").isEmpty()));
     }
 
@@ -155,7 +155,7 @@ class JevSelfHarmSignalTest {
             props.setApiKey("apikey_test_only");
             props.setBaseUrl("http://127.0.0.1:" + stub.server().getAddress().getPort());
             props.getGuardrail().setMode(JevProperties.Mode.ENFORCE);
-            JevSelfHarmSignal signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
+            JevSelfHarmSignal signal = new JevSelfHarmSignal(new JevClient(props, new ObjectMapper(), new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)), props);
             assertFalse(signal.enabled());
             assertTrue(signal.judge("我不想活了").isEmpty());
             assertEquals(0, stub.calls().get());

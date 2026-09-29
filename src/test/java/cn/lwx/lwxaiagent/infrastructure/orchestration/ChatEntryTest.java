@@ -61,7 +61,7 @@ class ChatEntryTest {
         props.setTimeoutMs(2000);
         props.getGuardrail().setMode(mode);
         props.getGuardrail().setMinProbability(0.6);
-        return new JevSelfHarmSignal(new JevClient(props, new ObjectMapper()), props);
+        return new JevSelfHarmSignal(new JevClient(props, new ObjectMapper(), new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)), props);
     }
 
     private ChatEntry newEntry(JevSelfHarmSignal jevSignal) {

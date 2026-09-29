@@ -46,7 +46,7 @@ class JevClientTest {
         props.setApiKey("apikey_test_only");
         props.setBaseUrl("http://127.0.0.1:" + stub.server().getAddress().getPort());
         props.setTimeoutMs(2000);
-        return new JevClient(props, MAPPER);
+        return new JevClient(props, MAPPER, new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP));
     }
 
     private static String moodBody(double score) {
@@ -120,7 +120,7 @@ class JevClientTest {
             noKey.setEnabled(true);
             noKey.setApiKey("  ");
             noKey.setBaseUrl("http://127.0.0.1:" + stub.server().getAddress().getPort());
-            assertTrue(new JevClient(noKey, MAPPER).score("q `t`", "t", "x").isEmpty());
+            assertTrue(new JevClient(noKey, MAPPER, new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)).score("q `t`", "t", "x").isEmpty());
             assertEquals(0, stub.calls().get(), "没有密钥时不得发出任何请求");
         }
     }
@@ -133,6 +133,6 @@ class JevClientTest {
         props.setApiKey("apikey_test_only");
         props.setBaseUrl("http://127.0.0.1:1");   // 必然连不上
         props.setTimeoutMs(500);
-        assertTrue(new JevClient(props, MAPPER).score("q `t`", "t", "x").isEmpty());
+        assertTrue(new JevClient(props, MAPPER, new cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry(io.micrometer.tracing.Tracer.NOOP)).score("q `t`", "t", "x").isEmpty());
     }
 }

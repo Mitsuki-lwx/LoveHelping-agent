@@ -49,7 +49,8 @@ public class EmbeddingModelConfig {
      * bean 也在容器里，便于运行时诊断与"配置切换即生效"，不必重启改代码。</p>
      */
     @Bean("siliconFlowEmbeddingModel")
-    public EmbeddingModel siliconFlowEmbeddingModel(SiliconFlowProperties props, ObjectMapper objectMapper) {
+    public EmbeddingModel siliconFlowEmbeddingModel(SiliconFlowProperties props, ObjectMapper objectMapper,
+                                                   cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry telemetry) {
         if (!props.hasApiKey()) {
             log.warn("app.siliconflow.api-key 未配置（环境变量 SF_API_KEY 为空）——"
                     + "若 app.rag.embedding.provider=siliconflow，启动后检索/写入将报错。"
@@ -58,7 +59,7 @@ public class EmbeddingModelConfig {
             log.info("SiliconFlow embedding 已装配: model={}, baseUrl={}",
                     props.getEmbeddingModel(), props.getBaseUrl());
         }
-        return new SiliconFlowEmbeddingModel(props, objectMapper);
+        return new SiliconFlowEmbeddingModel(props, objectMapper, telemetry);
     }
 
     /**
