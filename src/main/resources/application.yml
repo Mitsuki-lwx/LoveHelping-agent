@@ -420,6 +420,12 @@ app:
       #   enforce = 判定 + 越阈值拦截（抛 4001 转介文案）
       mode: ${JEV_GUARDRAIL_MODE:off}
       min-probability: 0.6            # 标定值（0.3~0.6 召回 8/8 且误报 0；0.9 只剩 3/8）
+    # ADR-63（phase30）：JEV 是**唯一绕过 LlmGateway** 的外部依赖 → 给它并发闸门 + 熔断，
+    #   字段与默认值照抄 rerank 那套（已有范式）。熔断打开后**直接回退**，
+    #   不再让每条用户消息白等 timeout-ms（judge 在发消息主路径上、同步、先于 SSE 建流）。
+    max-concurrent: ${JEV_MAX_CONCURRENT:8}
+    failure-threshold: ${JEV_FAILURE_THRESHOLD:3}
+    circuit-open-ms: ${JEV_CIRCUIT_OPEN_MS:30000}
 
   # 编排图能力治理（ADR-19）：agent 节点工具白名单（能力域，逗号分隔）
   orchestration:

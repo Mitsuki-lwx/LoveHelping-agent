@@ -33,6 +33,15 @@ public class JevProperties {
      */
     @Min(200) @Max(30000) private long timeoutMs = 3000;
 
+    // ── 治理（ADR-63 / phase30）：JEV 此前是**唯一绕过 LlmGateway** 的外部依赖，
+    //    无并发闸门、无熔断、无计量。字段名与默认值**照抄** RerankProperties（已有范式，不新造）。
+    /** 并发上限（信号量）。 */
+    @Min(1) @Max(16) private int maxConcurrent = 8;
+    /** 连续失败多少次打开熔断。 */
+    @Min(1) private int failureThreshold = 3;
+    /** 熔断打开后多久允许再试一次（毫秒）。 */
+    @Min(1000) private long circuitOpenMs = 30000;
+
     /**
      * 护栏加召回（安全边界）。
      *

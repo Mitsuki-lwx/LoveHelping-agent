@@ -17,6 +17,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import io.micrometer.tracing.Span;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.concurrent.Semaphore;
 
 /**
  * Jev（TypeSafe AI / System One）客户端 —— 只做<b>窄的结构化判定</b>。
@@ -48,12 +50,26 @@ public class JevClient {
     private final HttpClient http;
 
     private final AiTelemetry telemetry;
+    /** 治理（ADR-63 / phase30）：并发闸门 + 熔断 —— 与 LocalDocumentReranker **同一套范式**。 */
+    private final Semaphore permits;
+    private final ProviderCircuit circuit;
+    private final MeterRegistry meters;
 
+    /** 测试用（无 MeterRegistry）：Spring 只认下面那个 {@code @Autowired} 构造器。 */
     public JevClient(JevProperties props, ObjectMapper mapper, AiTelemetry telemetry) {
+        this(props, mapper, telemetry, null);
+    }
+
+    /** ⛔ 只能有这一个 {@code @Autowired} 构造器 —— 并存两个 Spring 直接拒绝启动（仓里有前车之鉴）。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public JevClient(JevProperties props, ObjectMapper mapper, AiTelemetry telemetry, MeterRegistry meters) {
         this.telemetry = telemetry;
         this.props = props;
         this.mapper = mapper;
+        this.meters = meters;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+        this.permits = new Semaphore(Math.max(1, props.getMaxConcurrent()));
+        this.circuit = new ProviderCircuit(true, props.getFailureThreshold(), props.getCircuitOpenMs());
     }
 
     /** 判定结果：档位下标（0 起）+ 档位描述。 */
@@ -141,8 +157,21 @@ public class JevClient {
         // 此前在 Langfuse 里**完全不存在**（观测盲区）→ 双盲。这里只记**非内容**标签。
         Span span = telemetry.start("jev.call", telemetry.capture());
         span.tag("jev.field", stateField == null ? "" : stateField);
+        // ADR-63：熔断打开 → **直接回退**，不再让每条用户消息白等 timeoutMs(8000)。
+        // ⛔ 顺序很重要：放在 available() 之后，既有测试断言"未启用/无 key 时**零请求**"。
+        ProviderCircuit.Ticket ticket = circuit.acquire();
+        if (ticket == null) {
+            span.tag("jev.outcome", "circuit_open");
+            telemetry.failure(span, "circuit_open");
+            if (meters != null) meters.counter("jev.call", "outcome", "circuit_open").increment();
+            span.end();
+            return Optional.empty();
+        }
+        boolean acquired = false;
         try (var ignored = telemetry.scope(span)) {
         try {
+            permits.acquire();
+            acquired = true;
             ObjectNode state = mapper.createObjectNode();
             state.put(stateField, abbreviate(stateValue));
 
@@ -165,18 +194,25 @@ public class JevClient {
                 log.warn("jev call failed: http={}", response.statusCode());
                 span.tag("jev.outcome", "http_" + response.statusCode());
                 telemetry.failure(span, "http_" + response.statusCode());
+                ticket.failure();
+                if (meters != null) meters.counter("jev.call", "outcome", "http_" + response.statusCode()).increment();
                 return Optional.empty();
             }
             span.tag("jev.outcome", "success");
+            ticket.success();
+            if (meters != null) meters.counter("jev.call", "outcome", "success").increment();
             return Optional.of(mapper.readTree(response.body()).path("answers"));
         } catch (Exception e) {
             // 超时/连接失败/解析失败一律返回空；单行 WARN，不打堆栈（ADR-33）
             log.warn("jev call failed: {}", e.getClass().getSimpleName() + ": " + e.getMessage());
             span.tag("jev.outcome", "fail");
             telemetry.failure(span, e.getClass().getSimpleName());
+            ticket.failure();
+            if (meters != null) meters.counter("jev.call", "outcome", "fail").increment();
             return Optional.empty();
         }
         } finally {
+            if (acquired) permits.release();
             span.end();
         }
     }
