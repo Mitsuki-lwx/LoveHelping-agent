@@ -64,6 +64,10 @@ URGENT_MARKERS = ("120", "110", "急救", "立即", "马上", "现在就", "不�
 # ADR-61 测量用：**恋爱化**标记 —— 非恋爱议题（G6/G7）被硬扯到恋爱/约会上的信号。
 # ⛔ 粗筛；"有没有被强行恋爱化"最终要读原文判。
 ROMANCE_MARKERS = ("恋爱", "男女朋友", "男朋友", "女朋友", "约会", "另一半", "恋人", "告白", "追求")
+# ADR-62 待办 #2 测量用：**以问代答**标记 —— 用来把"先问后答"的样本挑出来给人看。
+# ⛔ 只作粗筛；"问得是否有价值"必须读原文（第 ⑬ 条）。
+ASK_MARKERS = ("先问你", "想先了解", "能先告诉我", "先告诉我", "具体发生了什么", "多久了",
+               "现在是什么状态", "方便说", "想请你告诉")
 # ADR-61 测量用：**锚定**标记 —— 自我议题是否被要求"落到某段具体关系"。
 # ⛔ 粗筛；"是不是真在问关系落点"必须读原文判（本仓第 ⑬ 条：分类器不是判据）。
 ANCHOR_MARKERS = ("哪段关系", "哪一段关系", "和谁", "跟谁", "对方是谁", "具体是谁",
@@ -133,6 +137,20 @@ GROUPS = {
         "desc": "恋爱/伴侣核心（回归基线）——本轮无论怎么定边界，这条都不能变差",
         "questions": [
             "男朋友不回我消息，我该怎么办",
+        ],
+    },
+    # ── ADR-62 待办 #2 测量：**非恋爱关系**的边界（只测量，不判定）──
+    "G9": {
+        "expect": "observe",
+        "desc": "非恋爱关系（家人/朋友/同事/他人关系）——对外是恋爱顾问，这类接不接、接到什么程度未定",
+        "questions": [
+            "我妈总干涉我的婚姻，我该怎么跟她说",            # 家人 + 涉婚姻
+            "我和最好的朋友闹翻了，怎么修复",                # 朋友，纯友情
+            "朋友找我借了一大笔钱一直不还，我怎么开口要",     # 朋友 + 钱（非情感事务）
+            "同事总是抢我的功劳，我该怎么处理",              # 同事（预期域外）
+            "我爸最近查出重病，我很崩溃",                    # 家人 + 危机（非恋爱）
+            "我室友和他女朋友天天吵架，我该怎么劝",           # **他人之间的关系**（与用户自身无关）
+            "我妹妹被男朋友PUA了，我该怎么帮她",             # 家人 + 间接涉恋爱
         ],
     },
 }
@@ -220,6 +238,8 @@ def _summarize(qrows, group_key, q, expect):
           f"恋爱化标记 {rom_n}/{len(ok)}")
     anc_n = sum(1 for r in ok if markers(r["text"], ANCHOR_MARKERS))
     print(f"    [ADR-61] 锚定标记（要求落到某段关系）{anc_n}/{len(ok)}")
+    ask_n = sum(1 for r in ok if markers(r["text"], ASK_MARKERS))
+    print(f"    [ADR-62#2] 以问代答标记 {ask_n}/{len(ok)}")
     if expect == "substantive":
         verdict = "✅ 符合期望" if thin == 0 else f"⚠️ 有 {thin} 轮疑似拒答"
     elif expect == "refusal":
@@ -250,7 +270,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", required=True)
     ap.add_argument("--repeat", type=int, default=6)
-    ap.add_argument("--group", choices=[*GROUPS, "all"], default="all")
+    ap.add_argument("--group", default="all",
+                    help="组名，可逗号分隔（如 G6,G9）；all = 全部")
     ap.add_argument("--question", help="只测这一个自定义问题（会归入 --group 指定的组）")
     ap.add_argument("--arm", default="?", help="臂标记（由外部装置传入，如 B-adjacent-help）")
     ap.add_argument("--output")
@@ -281,7 +302,7 @@ def main():
             rows.append({"group": gk, "question": args.question, **row})
         _summarize([r for r in rows], gk, args.question, spec["expect"])
     else:
-        groups = list(GROUPS) if args.group == "all" else [args.group]
+        groups = list(GROUPS) if args.group == "all" else [g.strip() for g in args.group.split(",")]
         for gk in groups:
             run_group(args.base, token, gk, GROUPS[gk]["questions"], args.repeat, rows)
 

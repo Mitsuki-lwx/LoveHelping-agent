@@ -97,6 +97,7 @@ run_arm() {
   grep -aoE "\[scope-wording\].*" "$LOG" | head -2 | sed 's/^/  /'
   cd scripts
   $PY probe_refusal_scope.py --base "http://127.0.0.1:$PORT/api" --repeat "$REPEAT" \
+    --group "${GROUPS:-all}" \
     --arm "$ARM_NAME" --output "../outputs/refusal-$ARM_NAME-$STAMP.json" 2>&1
   cd /d/java/lwx-ai-agent
   echo "  402(带上下文)=$(grep -acE 'HTTP[ /]?402|status[ =:]+402|"status" *: *402' "$LOG")  应用层ERROR=$(grep -acE '^[0-9]{4}-.* ERROR' "$LOG")"
