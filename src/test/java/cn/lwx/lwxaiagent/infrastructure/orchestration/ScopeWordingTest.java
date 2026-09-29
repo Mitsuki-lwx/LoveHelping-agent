@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link ScopeWording}（ADR-53 / phase21）单元测试。
  *
- * <p>核心不变量：<b>默认必须是 {@code bounded-help}</b>（ADR-60 起；ADR-53~59 期间是
- * {@code adjacent-help}）。若默认值被误改成 {@code strict}，
+ * <p>核心不变量：<b>默认必须是 {@code anchored-help}</b>（ADR-61 起；ADR-60 是
+ * {@code bounded-help}、ADR-53~59 是 {@code adjacent-help}）。若默认值被误改成 {@code strict}，
  * 线上会静默回到"无谓拒答"——而这个回退<b>不报错、不降级、指标全绿</b>，
  * 没有任何现有自动化会发现它（本仓反复踩的"结构性缺陷伪装成正常"形状）。
  */
@@ -26,8 +26,8 @@ class ScopeWordingTest {
     void resetToDefault() {
         // ScopeWording 的生效值是静态的（启动期装配一次）→ 每个测试后复位，
         // 否则一个 strict / 对照臂测试会让后续测试在错误的前提下变绿。
-        // ADR-60 起生产默认是 bounded-help（此前是 adjacent-help）。
-        new ScopeWording(ScopeWording.BOUNDED_HELP);
+        // ADR-61 起生产默认是 anchored-help（此前依次是 bounded-help / adjacent-help）。
+        new ScopeWording(ScopeWording.ANCHORED_HELP);
     }
 
     @Test
@@ -40,18 +40,18 @@ class ScopeWordingTest {
     }
 
     @Test
-    @DisplayName("@Value 的兜底默认值也是 bounded-help（改 yml/注解默认值时单测能察觉）")
-    void fallbackDefaultInAnnotationIsBoundedHelp() {
+    @DisplayName("@Value 的兜底默认值也是 anchored-help（改 yml/注解默认值时单测能察觉）")
+    void fallbackDefaultInAnnotationIsAnchoredHelp() {
         var param = ScopeWording.class.getConstructors()[0].getParameters()[0];
         var value = param.getAnnotation(org.springframework.beans.factory.annotation.Value.class);
         assertTrue(value != null, "scope-wording 必须用 @Value 注入");
-        // 字面值是 ${app.chat.scope-wording:bounded-help} —— 冒号后是兜底默认值
+        // 字面值是 ${app.chat.scope-wording:anchored-help} —— 冒号后是兜底默认值
         String expression = value.value();
         assertTrue(expression.startsWith("${") && expression.endsWith("}"),
                 "@Value 应当是 ${key:default} 形态，实际=" + expression);
         String fallback = expression.substring(expression.lastIndexOf(':') + 1, expression.length() - 1);
-        assertEquals(ScopeWording.BOUNDED_HELP, fallback,
-                "@Value 的兜底默认值必须是 bounded-help（ADR-60），实际=" + fallback);
+        assertEquals(ScopeWording.ANCHORED_HELP, fallback,
+                "@Value 的兜底默认值必须是 anchored-help（ADR-61），实际=" + fallback);
     }
 
     @Test
@@ -82,11 +82,11 @@ class ScopeWordingTest {
     }
 
     @Test
-    @DisplayName("SYSTEM_PROMPT 常量 = HEAD + BOUNDED_HELP + TAIL（与运行期默认一致）")
+    @DisplayName("SYSTEM_PROMPT 常量 = HEAD + ANCHORED_HELP + TAIL（与运行期默认一致）")
     void systemPromptConstantMatchesDefault() {
         // ⛔ 这个常量不是装饰：PromptVersionService 拿它当"产品提示词"的**版本指纹基线**。
         //    它必须与运行期默认一致，否则版本记录对的是错基线（改了措辞却检测不到版本变化）。
-        assertEquals(ScopeWording.activeSystemPrompt(ScopeWording.BOUNDED_HELP), ChatExecutor.SYSTEM_PROMPT);
+        assertEquals(ScopeWording.activeSystemPrompt(ScopeWording.ANCHORED_HELP), ChatExecutor.SYSTEM_PROMPT);
     }
 
     @Test
@@ -102,10 +102,12 @@ class ScopeWordingTest {
     void strictIsLabelledAsControlArm() {
         new ScopeWording(ScopeWording.STRICT);
         assertTrue(ScopeWording.describe().contains("对照臂"), "strict 自报必须标出是对照臂");
-        // ADR-60：生产默认已从 adjacent-help 换成 bounded-help；
-        // adjacent-help 也随之降为**对照臂**（它的 (A) 类无下界，会展开域外事务）。
+        // ADR-61：生产默认已从 bounded-help 换成 anchored-help；
+        // 前三档（bounded / adjacent / strict）全部降为**对照臂**。
+        new ScopeWording(ScopeWording.ANCHORED_HELP);
+        assertTrue(ScopeWording.describe().contains("生产默认"), "anchored-help 自报应为生产默认");
         new ScopeWording(ScopeWording.BOUNDED_HELP);
-        assertTrue(ScopeWording.describe().contains("生产默认"), "bounded-help 自报应为生产默认");
+        assertTrue(ScopeWording.describe().contains("对照臂"), "bounded-help 自报应标为对照臂");
         new ScopeWording(ScopeWording.ADJACENT_HELP);
         assertTrue(ScopeWording.describe().contains("对照臂"), "adjacent-help 自报应标为对照臂");
     }

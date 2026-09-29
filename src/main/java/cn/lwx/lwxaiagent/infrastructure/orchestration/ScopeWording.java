@@ -33,21 +33,25 @@ import org.springframework.stereotype.Component;
 @Component
 public class ScopeWording {
 
-    /** 生产默认（ADR-60/phase27）：域内先帮再接回；域外事务只给一句方向 + 转介，不展开。 */
+    /** 生产默认（ADR-61/phase28）：在 bounded 之上，**自我议题必须落到某段关系**（答但锚定）。 */
+    public static final String ANCHORED_HELP = "anchored-help";
+    /** 上一版（ADR-60）：域外事务不展开；但**纯自我心理**仍会拿到无落点的通用方案。**保留作对照臂**。 */
     public static final String BOUNDED_HELP = "bounded-help";
     /** 上一版（ADR-53 起）：与上者的差别只在 (A) 的下界 —— 它写作"生活困扰"（无下界）。**保留作对照臂**。 */
     public static final String ADJACENT_HELP = "adjacent-help";
     /** 修复前措辞：一律对"明显无关请求"礼貌拒绝 —— 会无谓拒答，<b>仅作对照臂</b>。 */
     public static final String STRICT = "strict";
 
-    private static volatile String active = BOUNDED_HELP;
+    private static volatile String active = ANCHORED_HELP;
 
-    public ScopeWording(@Value("${app.chat.scope-wording:" + BOUNDED_HELP + "}") String wording) {
-        if (!BOUNDED_HELP.equals(wording) && !ADJACENT_HELP.equals(wording) && !STRICT.equals(wording)) {
+    public ScopeWording(@Value("${app.chat.scope-wording:" + ANCHORED_HELP + "}") String wording) {
+        if (!ANCHORED_HELP.equals(wording) && !BOUNDED_HELP.equals(wording)
+                && !ADJACENT_HELP.equals(wording) && !STRICT.equals(wording)) {
             throw new IllegalStateException(
                     "app.chat.scope-wording 取值非法：" + wording
-                            + "；可选 " + BOUNDED_HELP + "（生产默认）| " + ADJACENT_HELP
-                            + "（上一版，对照臂）| " + STRICT + "（修复前，对照臂，线上不建议启用）");
+                            + "；可选 " + ANCHORED_HELP + "（生产默认）| " + BOUNDED_HELP
+                            + "（对照臂）| " + ADJACENT_HELP + "（对照臂）| " + STRICT
+                            + "（修复前，对照臂，线上不建议启用）");
         }
         active = wording;
         // 对照臂"真的切了"必须有可查询证据 —— 不能靠"我 export 了"（本仓纪律：
@@ -72,6 +76,8 @@ public class ScopeWording {
                     ChatExecutor.SYSTEM_PROMPT_HEAD + ChatExecutor.SCOPE_ADJACENT_HELP + ChatExecutor.SYSTEM_PROMPT_TAIL;
             case BOUNDED_HELP ->
                     ChatExecutor.SYSTEM_PROMPT_HEAD + ChatExecutor.SCOPE_BOUNDED + ChatExecutor.SYSTEM_PROMPT_TAIL;
+            case ANCHORED_HELP ->
+                    ChatExecutor.SYSTEM_PROMPT_HEAD + ChatExecutor.SCOPE_ANCHORED + ChatExecutor.SYSTEM_PROMPT_TAIL;
             default -> throw new IllegalStateException("app.chat.scope-wording 取值非法：" + wording);
         };
     }
@@ -84,7 +90,10 @@ public class ScopeWording {
         if (ADJACENT_HELP.equals(active)) {
             return "[scope-wording] 生效范围护栏措辞 = adjacent-help（⚠️ 对照臂：域外事务会展开，ADR-60 修复前）";
         }
-        return "[scope-wording] 生效范围护栏措辞 = bounded-help（生产默认：域外事务不展开）";
+        if (BOUNDED_HELP.equals(active)) {
+            return "[scope-wording] 生效范围护栏措辞 = bounded-help（⚠️ 对照臂：自我议题会给无落点通用方案）";
+        }
+        return "[scope-wording] 生效范围护栏措辞 = anchored-help（生产默认：自我议题答但必须锚定到关系）";
     }
 
     static String current() {
