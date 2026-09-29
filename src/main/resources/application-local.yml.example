@@ -1,30 +1,51 @@
 # ==========================================================================
 # application-local.yml 模板 —— 复制为 application-local.yml 并填入真实值
-# 该文件已在 .gitignore 中排除，不会被提交到 Git
+#   位置二选一（Spring 都能读到）：
+#     · 仓库根/application-local.yml
+#     · target/classes/application-local.yml   ← Spring 实际加载的那个
+#       ⛔ 别跑 `mvn clean`，它会删掉 target/ 下的这份
+# 该文件已在 .gitignore 中排除（`.env.local` / `application-local.yml`），不会被提交。
 # ==========================================================================
 
 spring:
   datasource:
     password: your_mysql_password
   ai:
-    dashscope:
-      api-key: sk-xxx                        # DashScope embedding API key
-      chat:
-        options:
-          model: glm-5.2
-    deepseek:
-      api-key: sk-xxx                        # DeepSeek chat API key
-      chat:
-        options:
-          model: deepseek-v4-flash
+    # ⚠️ 自 ADR-58 起，**主链 LLM 不再看这里** —— 主链由下方 app.llm.providers 决定。
+    #    本段只剩 VisionChatClient 在用（它绕网关直连，是已知的 P3 待办）。
+    openai:
+      base-url: https://api.deepseek.com
+      api-key: sk-xxx                        # 视觉链路用（与主链可不同源）
+    # 硅基流动：embedding + 远端 rerank 的凭据（见 app.siliconflow）
+    # dashscope: 已停用（域名本机不可达），仅作历史留档
 
 app:
+  # ⭐ LLM provider 列表（ADR-58）：**加供应商 = 加一条，Java 零改动**。
+  #   顺序即链路顺序；**第一条 enabled=true 的是主链**，其余依次为降级级。
+  #   字段：name / base-url / api-key / model / completions-path(默认 /v1/chat/completions)
+  #         / enabled(默认 true) / response-envelope(可选) / connect-timeout-ms(可选)
+  llm:
+    providers:
+      - name: primary
+        base-url: https://api.deepseek.com
+        api-key: ${DEEPSEEK_API_KEY:}        # 或直接写 sk-xxx（本文件不入库）
+        model: deepseek-flash
+      # 第二个 provider = 第一个降级级。同一条链上一个挂了下一条接管。
+      # - name: cline
+      #   enabled: false
+      #   base-url: https://api.cline.bot/api
+      #   api-key: ${CLINE_API_KEY:}
+      #   model: deepseek/deepseek-v4.1-flash
+      #   response-envelope: data            # 该网关非流式响应带 {data:{...}} 信封
+    degrade-enabled: true                    # 运行时总闸；false = 整条链一级都不走
   pgvector:
     datasource:
       password: your_pg_password
+  siliconflow:
+    api-key: sk-xxx                          # 硅基流动：embedding + rerank
 
 search-api:
-  api-key: your_search_api_key               # 搜索 API key
+  api-key: your_search_api_key               # 搜索 API key（MCP 联网搜索）
 
 jwt:
   secret: lwx-ai-agent-secret-key-need-at-least-32-chars  # 改为随机字符串
