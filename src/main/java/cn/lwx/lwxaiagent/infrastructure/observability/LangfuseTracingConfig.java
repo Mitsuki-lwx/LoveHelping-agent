@@ -144,6 +144,10 @@ public class LangfuseTracingConfig {
                 "langfuse.session.id", "langfuse.user.id", "langfuse.trace.name", "langfuse.observation.type",
                 "langfuse.observation.model.name", "langfuse.observation.usage_details", "langfuse.observation.level",
                 "http.request.method", "http.method", "http.response.status_code", "http.status_code", "http.route",
+                // ADR-62 §十：WebFlux 仪器实际发出的是这两个**短名**，此前被丢 →
+                // 早期拒绝类请求（未过 filter 链）在 Langfuse 里变成"匿名 + 空属性"的噪声。
+                // 二者内容无关（"GET" / 数字状态码）；⛔ uri/http.url 仍丢（query string 含用户原话）。
+                "method", "status",
                 "gen_ai.request.model", "gen_ai.response.model", "gen_ai.operation.name", "gen_ai.system",
                 "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.usage.prompt_tokens", "gen_ai.usage.completion_tokens",
                 "llm.provider", "llm.attempt", "llm.outcome", "llm.endpoint", "graph.route", "graph.node", "graph.outcome",
