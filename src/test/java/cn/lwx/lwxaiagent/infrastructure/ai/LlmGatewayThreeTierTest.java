@@ -59,7 +59,7 @@ class LlmGatewayThreeTierTest {
     /**
      * 多级链专用工厂 —— 旧测试用的是四参构造器（单级降级），覆盖不到链上后续级。
      * <p>ADR-52：改用包私有构造器直接传 {@code List<LlmFallbackTier>}，
-     * 名字与 {@code ChatModelConfig} / {@code BigModelLastResortConfig} 保持一致。</p>
+     * 名字由 {@code app.llm.providers[].name} 决定（ADR-58）。</p>
      */
     private LlmGateway createThreeTier() {
         gateway = new LlmGateway(primary,

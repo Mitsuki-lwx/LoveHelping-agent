@@ -50,12 +50,12 @@ class AdmissionCompletenessTest {
      */
     private static final Pattern RAW_TIER_TYPE = Pattern.compile("\\bLlmFallbackTier\\b");
 
-    /** 允许提及 {@link cn.lwx.lwxaiagent.infrastructure.ai.LlmFallbackTier} 的文件（生产者 + 唯一消费者 + 类型自身）。 */
+    /** 允许提及 {@link cn.lwx.lwxaiagent.infrastructure.ai.LlmFallbackTier} 的文件（装配者 + 链路类型 + 唯一消费者 + 类型自身）。 */
     private static final List<String> TIER_ALLOWED = List.of(
             "cn/lwx/lwxaiagent/infrastructure/ai/LlmFallbackTier.java",
+            "cn/lwx/lwxaiagent/infrastructure/ai/LlmProviderChain.java",
             "cn/lwx/lwxaiagent/infrastructure/ai/LlmGateway.java",
-            "cn/lwx/lwxaiagent/config/ChatModelConfig.java",
-            "cn/lwx/lwxaiagent/config/BigModelLastResortConfig.java");
+            "cn/lwx/lwxaiagent/config/LlmProviderConfig.java");
 
     @Test
     void onlyGatewayMayReachRawProviderModels() throws IOException {
@@ -77,8 +77,11 @@ class AdmissionCompletenessTest {
             }
         }
 
-        assertFalse(offenders.isEmpty(),
-                "守护失效：一个直连点都没扫到，但网关自身应当被命中——请检查扫描逻辑或目录假设");
+        // 扫描器自检（ADR-58）：原先靠"网关必然命中"来证明正则没写坏，但网关已改为
+        // 经 LlmProviderChain 注入、不再使用限定符，于是改用**合成样本**自检 ——
+        // 仍然保证"正则一旦被改坏，这里先红"，不依赖真实命中。
+        assertTrue(DIRECT_PROVIDER.matcher("new @Qualifier(\"openAiChatModel\") ChatModel x").find(),
+                "守护失效：DIRECT_PROVIDER 正则已不再匹配它本该拦住的写法");
         List<String> violations = offenders.stream().filter(o -> !o.startsWith(GATEWAY)).toList();
         assertTrue(violations.isEmpty(),
                 "以下位置绕过 LlmGateway 直连供应商模型，破坏 ADR-23 的单一准入点"

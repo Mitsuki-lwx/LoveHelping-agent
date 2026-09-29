@@ -1,7 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.ai;
 
 import cn.lwx.lwxaiagent.common.BizException;
-import cn.lwx.lwxaiagent.config.RestFallbackChatModel;
 import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Span;
@@ -14,9 +13,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
@@ -40,6 +37,8 @@ import static cn.lwx.lwxaiagent.infrastructure.ai.LlmFailurePolicy.*;
 public class LlmGateway implements ChatModel {
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
     private final ChatModel primary;
+    /** ADR-58：主链端点由配置装配者告知（不再从 {@code spring.ai.openai.*} 反查）。 */
+    private final String primaryBaseUrl;
     /**
      * ADR-52：降级链。容器按 {@code @Order} 注入，**注册几个就有几级**；
      * 空列表 = 不降级（ADR-51 起的当前形态）。
@@ -62,26 +61,26 @@ public class LlmGateway implements ChatModel {
     private long refillNanos = System.nanoTime();
 
     /**
-     * ADR-52 降级链的唯一注入入口。**链长与目标全部由容器装配决定，网关本身不写死**：
-     * 降级级是 {@link LlmFallbackTier} 类型的 bean，注册几个就有几级，按 {@code @Order} 排序。
+     * ADR-58 的唯一注入入口：整条链（主链 + 降级级）由 {@code app.llm.providers}
+     * 配置装配成 {@link LlmProviderChain} —— <b>链长与目标全在配置里，网关与配置类都不写死供应商</b>。
      *
-     * <p><b>为什么是 {@code ObjectProvider} 而不是 {@code List<LlmFallbackTier>}</b>：
-     * 构造函数参数写成 {@code List<T>} 时，<b>零个候选 bean 会让 Spring 抛
-     * {@code NoSuchBeanDefinitionException}</b>，而"零个降级级"正是 ADR-51 起的当前配置
-     * —— 应用会起不来。{@code ObjectProvider#orderedStream()} 在零候选时返回空流。</p>
+     * <p><b>为什么不再用"动态条数的 tier bean"</b>：ADR-52 曾用
+     * {@code ObjectProvider<LlmFallbackTier>} 收集按 {@code @Order} 排序的降级级 bean。
+     * 问题是<b>降级级条数由配置决定</b>，而 Spring 无法从配置列表直接产出 N 个 bean
+     * 而不引入 bean-definition 注册魔法；用单一 {@code LlmProviderChain} 表达整条链，
+     * 既消灭了 {@code ObjectProvider<List<T>>} 的解析歧义，也让"加供应商 = 改配置"成立。</p>
      *
-     * <p><b>为什么必须 {@code filter(Objects::nonNull)}</b>：{@code BigModelLastResortConfig}
-     * 在缺 {@code BIGMODEL_API_KEY} 时<b>返回 null</b>（Spring 记为 {@code NullBean}，
-     * 这是刻意的：最低等级的兜底端点缺凭据不该阻断启动），流里可能解出 null。</p>
+     * <p>⚠️ 保留的历史教训（换实现后仍成立）：<b>零个降级级是正常配置</b>
+     * （单 provider 形态），任何写法都不能让它变成启动失败。</p>
      *
-     * <p><b>ADR-51（2026-09-27）起当前生效形态</b>：
-     * primary = DeepSeek 官方 {@code https://api.deepseek.com} + {@code deepseek-flash}，
-     * <b>两个降级级均未注册</b>，故 {@code tiers} 为空列表，行为退化为「主链 + 重试」。</p>
+     * <p><b>ADR-58 起当前生效形态</b>：主链 = DeepSeek 官方
+     * {@code https://api.deepseek.com} + {@code deepseek-flash}，
+     * {@code providers} 里只有它一条 → {@code tiers} 为空列表，行为退化为「主链 + 重试」。</p>
      *
      * <p><b>历史上这一级曾是什么</b>（改代码时别照旧注释理解）：
-     * primary 曾为 OpenRouter {@code stealth/space-bunny-alpha}（更早是 qwen-plus）；
+     * 主链曾为 OpenRouter {@code stealth/space-bunny-alpha}（更早是 qwen-plus）；
      * 降级级曾为 DashScope {@code qwen-plus}（域名本机不可达，属"假备用"）
-     * 与 bigmodel {@code glm-4-flash}（实测 400）。</p>
+     * 与 bigmodel {@code glm-4-flash}（实测 400）。两者现已降级为 yml 里可随时启用的配置条目。</p>
      *
      * <p>不变量（ADR-23 / ADR-31）在多级链下**不变**：
      * 网关仍是唯一重试所有者；每一级有独立熔断器；并发许可覆盖整条链；
@@ -92,11 +91,10 @@ public class LlmGateway implements ChatModel {
      * 这又一次印证："单测全绿"证明不了 Spring 装配正确，<b>必须真启动一次</b>。</p>
      */
     @Autowired
-    public LlmGateway(@Qualifier("openAiChatModel") ChatModel primary,
-                      ObjectProvider<LlmFallbackTier> tiers,
+    public LlmGateway(LlmProviderChain chain,
                       LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry,
                       ApplicationEventPublisher events, org.springframework.core.env.Environment env) {
-        this(primary, tiers.orderedStream().filter(Objects::nonNull).toList(),
+        this(chain.primary(), chain.primaryBaseUrl(), chain.tiers(),
                 props, meters, telemetry, events, env);
     }
 
@@ -106,7 +104,18 @@ public class LlmGateway implements ChatModel {
     LlmGateway(ChatModel primary, List<LlmFallbackTier> tiers,
                LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry,
                ApplicationEventPublisher events, org.springframework.core.env.Environment env) {
+        this(primary, null, tiers, props, meters, telemetry, events, env);
+    }
+
+    /**
+     * 核心构造器（ADR-58：额外带主链 base-url，供"生效端点"指标如实上报 ——
+     * 主链端点不再来自 {@code spring.ai.openai.*}，只能由装配者告知）。
+     */
+    LlmGateway(ChatModel primary, String primaryBaseUrl, List<LlmFallbackTier> tiers,
+               LlmGatewayProperties props, MeterRegistry meters, AiTelemetry telemetry,
+               ApplicationEventPublisher events, org.springframework.core.env.Environment env) {
         this.primary = primary;
+        this.primaryBaseUrl = primaryBaseUrl;
         this.tiers = List.copyOf(tiers);
         this.props = props;
         this.meters = meters;
@@ -178,17 +187,17 @@ public class LlmGateway implements ChatModel {
      * 尽力取出这一级的**端点 + 模型名**；取不到就如实写"未知"，<b>绝不编造</b>
      * —— 假端点比没端点更坏（它会让人以为已经观测到了）。
      *
-     * <p>base-url 只能从 Spring 配置里取（{@code spring.ai.openai.*}），
-     * ChatModel 实例本身不暴露它；模型名则从默认 options 取。</p>
+     * <p>base-url 由装配者经 {@link LlmProviderChain#primaryBaseUrl()} 告知（ADR-58）；
+     * ChatModel 实例本身不暴露它，模型名则从默认 options 取。</p>
      */
     private String endpointOf(String level, ChatModel model) {
         String name = "?";
         try {
             if (model instanceof org.springframework.ai.openai.OpenAiChatModel m
                     && m.getDefaultOptions() != null) {
+                // ADR-58：所有 provider（含降级级）都由配置装配成 OpenAiChatModel，
+                // 故这一步对每一级都能取到模型名。
                 name = String.valueOf(m.getDefaultOptions().getModel());
-            } else if (model instanceof RestFallbackChatModel) {
-                name = "dashscope-native"; // 自建 RestClient，模型名固定 qwen-plus
             } else {
                 name = model.getClass().getSimpleName();
             }
@@ -200,12 +209,12 @@ public class LlmGateway implements ChatModel {
     }
 
     /**
-     * 各级的 base-url 取法不同，故分两路（ADR-52 起不再按 {@code "fallback"} /
-     * {@code "last-resort"} 这种<b>字面量</b>分支 —— 那是 ADR-51 §已知限制 的口子 3）：
+     * 各级的 base-url 取法（ADR-52 起不再按 {@code "fallback"} / {@code "last-resort"}
+     * 这种<b>字面量</b>分支 —— 那是 ADR-51 §已知限制 的口子 3）：
      * <ul>
-     *   <li>{@code primary} → {@code spring.ai.openai.base-url}（Spring AI 自动配置的端点）</li>
-     *   <li>降级级 → 取该 {@link LlmFallbackTier#baseUrl()}（由产出它的配置类填，
-     *       因为这些级多为自建 client，Spring 属性里查不到）</li>
+     *   <li>{@code primary} → ADR-58 起由装配者经 {@link LlmProviderChain#primaryBaseUrl()} 告知；
+     *       取不到时**才**回退查 {@code spring.ai.openai.base-url}（旧形态兼容）</li>
+     *   <li>降级级 → 取该 {@link LlmFallbackTier#baseUrl()}</li>
      * </ul>
      * ⛔ 取不到就<b>不写 base</b>，绝不回退到主端点的 URL —— 第一版就犯过这个错，
      * 把兜底级显示成 {@code "openrouter.ai | glm-4-flash"}，<b>比不显示更有害</b>
@@ -213,6 +222,7 @@ public class LlmGateway implements ChatModel {
      */
     private String endpointBaseUrl(String level) {
         if ("primary".equals(level)) {
+            if (primaryBaseUrl != null && !primaryBaseUrl.isBlank()) return primaryBaseUrl;
             if (env == null) return "";
             try {
                 String v = env.getProperty("spring.ai.openai.base-url", "");

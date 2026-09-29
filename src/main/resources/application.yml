@@ -209,7 +209,7 @@ app:
   # 降级链：OpenRouter qwen/qwen-plus（primary）→ DashScope qwen-plus → bigmodel glm-4-flash（最低）
   llm:
     max-concurrent-calls: ${LLM_MAX_CONCURRENT_CALLS:24}
-    connect-timeout-ms: 3000
+    connect-timeout-ms: ${APP_LLM_CONNECT_TIMEOUT_MS:3000}
     # ADR-48：25000 → 45000。
     # 依据实测（scripts/probe_real_prompt_speed.py，真实 SYSTEM_PROMPT 4970 字符 + RAG top8，
     # prompt_tokens=3053，n=3）：qwen/qwen-plus 生成速率 42.8~51.1 tok/s。
@@ -230,36 +230,39 @@ app:
     # total 留在 60000 会让第三级只剩几百 ms，等于没有第三级。
     total-timeout-ms: ${APP_LLM_TOTAL_TIMEOUT_MS:90000}
     # 流式"chunk 间隔"上限，不是总时长。42.9 tok/s 下一个 chunk 间隔远小于此，不需要动。
-    stream-idle-timeout-ms: 15000
-    # ADR-52（2026-09-27）：开关拆成三层，**语义不再混用**。
-    #   背景：此前 app.llm.fallback-enabled 一个 key 干两件事（既决定 dashscope bean 是否注册，
-    #   又被 LlmGatewayProperties 顺带绑成"降级总闸"），导致"想只开 bigmodel 却做不到"
-    #   —— 见 ADR-51 §已知限制 口子 1。
-    #     degrade-enabled        【运行时总闸】false 时整条链一级都不走（应急用）。默认 true。
-    #     fallback-enabled       【构建期】只决定 dashscope 级 bean 是否注册。默认 false。
-    #     last-resort-enabled    【构建期】只决定 bigmodel 级 bean 是否注册。默认 false。
-    #   可复现组合：
-    #     只开 bigmodel 兜底  → degrade-enabled=true,  fallback-enabled=false, last-resort-enabled=true
-    #     当前默认（单 provider）→ degrade-enabled=true,  两个级开关都 false（总闸开着也无级可走）
-    #     应急硬关整条链      → degrade-enabled=false
-    #   ⚠️ 代价：单 provider 无兜底，DeepSeek 侧故障/额度耗尽时用户直接拿 5000。
+    stream-idle-timeout-ms: ${APP_LLM_STREAM_IDLE_TIMEOUT_MS:15000}
+    # ADR-58：LLM provider 统一由**配置列表**声明 —— 加供应商 = 加一条，Java 零改动。
+    #   顺序即链路顺序：**第一条 enabled 的是主链**，其余依次为降级级（名字即熔断器键，必须唯一）。
+    #   取代了 ADR-52 的三个构建期开关（fallback-enabled / last-resort-enabled / cline-*）
+    #   与四个每供应商一个的 Java 类。
+    #
+    #   字段：
+    #     name              唯一名（指标标签 + 熔断器键）
+    #     base-url          不含 /chat/completions 的基址
+    #     api-key           ${ENV:} 占位；真实值只在 gitignored 的 .env.local / application-local.yml
+    #     model             原样发给供应商的模型名
+    #     completions-path  默认 /v1/chat/completions
+    #     enabled           默认 true；false = 保留配置但不注册（换供应商时不必删记录）
+    #     response-envelope 可选，响应信封字段名（如 data）→ 自动拆 {"data":{...}}（仅非流式）
+    #     connect-timeout-ms 可选，覆盖 app.llm.connect-timeout-ms
+    #
+    #   当前形态：单 provider（DeepSeek 官方），**无降级级** → 主链故障时用户直接拿 5000。
+    #   ⚠️ 单 provider 无兜底的故障注入仍未做（ADR-51 H2 / ADR-52 遗留）。
+    providers:
+      - name: primary
+        base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+        api-key: ${OPENAI_API_KEY:}
+        model: ${OPENAI_MODEL:deepseek-flash}
+      # 示例（未启用）：cline.bot 网关。base-url 不含 /v1；其非流式响应带 {data:...} 信封。
+      # - name: cline
+      #   enabled: false
+      #   base-url: ${CLINE_BASE_URL:https://api.cline.bot/api}
+      #   api-key: ${CLINE_API_KEY:}
+      #   model: ${CLINE_MODEL:deepseek/deepseek-v4.1-flash}
+      #   response-envelope: data
+    # ADR-52 的运行时总闸保留：false 时整条链一级都不走（应急用）。
+    #   与构建期开关的区别：那些开关已由上面的 enabled 取代。
     degrade-enabled: ${LLM_DEGRADE_ENABLED:true}
-    # ADR-51：降级目标**默认全部不注册**，退化为「主链 + 重试」。
-    #   原因不是"不需要容灾"，而是这两个目标**实测都不可用**：
-    #     · dashscope 级（qwen-plus）：域名 dashscope.aliyuncs.com 本机不可达
-    #       （TLS 握手被中断，2026-09-16 起即如此）
-    #     · bigmodel 级（glm-4-flash）：返回 400 Bad Request
-    #   保留"假备用"比没有备用更糟：它让链路看起来有多层、实际只有一层，
-    #   还让每次主链故障都白等一次上游超时，并污染指标与排障判据。
-    fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
-    last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:false}
-    # ADR-52：dashscope 级的模型与端点改为**可配置**（原为 Java 字面量 / 类常量）。
-    #   换供应商不必改代码 —— 这是 ADR-51 §已知限制 口子 3 的修法。
-    #   注：本节点不被 LlmGatewayProperties 绑定（它没有 fallback 字段），仅由
-    #   ChatModelConfig#dashScopeFallbackTier 的 @Value 读取。
-    fallback:
-      model: ${LLM_FALLBACK_MODEL:qwen-plus}
-      base-url: ${LLM_FALLBACK_BASE_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation}
     retry:
       max-attempts: 3
       backoff-ms: 250

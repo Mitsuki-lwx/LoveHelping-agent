@@ -31,24 +31,29 @@ spring:
       chat:
         options:
           model: ${OPENAI_MODEL:deepseek-flash}
-    # ⚠️ 不覆盖 completions-path：那是为 bigmodel 的 /api/paas/v4 形态设的，
-    # 对 DeepSeek / OpenRouter 都会拼出错误路径。
-    # bigmodel 兜底级（现已默认关闭）的路径在 BigModelLastResortConfig 里单独指定。
+    # ⚠️ 不覆盖 completions-path：默认 /v1/chat/completions 对 DeepSeek / OpenRouter 都对；
+    # 需要别的形状时在 app.llm.providers[].completions-path 上单条指定（ADR-58）。
 
 app:
   llm:
-    # ADR-52：开关分三层，语义不再混用（见 application.yml 的同名注释）。
-    #   degrade-enabled  运行时总闸；两个级开关只管"bean 是否注册"。
+    # ADR-58：供应商列表（顺序即链路顺序，第一条 enabled 的是主链）。
+    #   ⚠️ 与全局 spring.ai.openai.* 的区别：这里才是**主链**的来源
+    #   （VisionChatClient 仍读 spring.ai.openai.*，那是已知的绕网关路径，见 P3 待办）。
+    providers:
+      - name: primary
+        base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+        api-key: ${OPENAI_API_KEY:}              # 必填：DeepSeek 官方 key（sk-...）
+        model: ${OPENAI_MODEL:deepseek-flash}
+      # 启用方式：把 enabled 去掉/置 true，并注入对应 key。加供应商不再需要写 Java。
+      # - name: cline
+      #   enabled: false
+      #   base-url: ${CLINE_BASE_URL:https://api.cline.bot/api}
+      #   api-key: ${CLINE_API_KEY:}
+      #   model: ${CLINE_MODEL:deepseek/deepseek-v4.1-flash}
+      #   response-envelope: data                  # 该网关非流式响应带 {data:...} 信封
+    # ADR-52：运行时总闸；false 时整条链一级都不走（应急用）。
+    #   ⚠️ 代价：当前默认单 provider 无兜底，主链故障时用户直接拿 5000。
     degrade-enabled: ${LLM_DEGRADE_ENABLED:true}
-    # ADR-51：两个降级目标实测都不可用（dashscope 域名不可达 / bigmodel 400），
-    # 故默认都不注册，链路退化为「主链 + 重试」。置 true 即开关式恢复，无需改代码。
-    # ⚠️ 代价：单 provider 无兜底。
-    fallback-enabled: ${LLM_FALLBACK_ENABLED:false}
-    last-resort-enabled: ${LLM_LAST_RESORT_ENABLED:false}
-    # ADR-52：dashscope 级的模型与端点可配（换供应商不必改代码）。
-    fallback:
-      model: ${LLM_FALLBACK_MODEL:qwen-plus}
-      base-url: ${LLM_FALLBACK_BASE_URL:https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation}
 
 logging:
   level:

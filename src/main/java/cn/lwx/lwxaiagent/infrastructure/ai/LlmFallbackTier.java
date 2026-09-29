@@ -7,9 +7,9 @@ import java.util.Objects;
 /**
  * ADR-52：**一个可注册的降级级**。
  *
- * <p>由配置类产出 bean（{@code ChatModelConfig} / {@code BigModelLastResortConfig}），
- * {@link LlmGateway} 经 {@code ObjectProvider} 收集、按 {@code @Order} 排序后构成降级链。
- * <b>注册几个就有几级</b>——网关不再有"具名槽位"，加一级只需加一个 bean。</p>
+ * <p>由配置装配类产出（ADR-58：{@code LlmProviderConfig} 从 {@code app.llm.providers} 构建），
+ * {@link LlmGateway} 经 {@link LlmProviderChain} 拿到整条链。
+ * <b>配置里写几条就有几级</b>——网关不再有"具名槽位"，加一级只需加一条配置。</p>
  *
  * <p><b>为什么是 record 而不是接口</b>：tier 是纯数据（名字 + 模型 + 报告用端点），无行为。
  * 每级的<b>熔断器由网关自己建</b>（{@code Map<String, ProviderCircuit>}）——

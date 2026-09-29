@@ -131,14 +131,22 @@ fi
   || echo "  ⚠️ A3-1：本轮生效值是 $SW（若为 strict 说明这是对照臂，不是生产默认）"
 
 echo
-echo "=== 断言 B：两个降级级**不得注册**（bean 应被 @ConditionalOnProperty 拦掉）==="
-F=$(grep -ac "降级链 fallback 级实际生效端点" "$LOG" || true)
-L=$(grep -ac "降级链 last-resort 级实际生效端点" "$LOG" || true)
-B=$(grep -ac "bigmodel 兜底已注册" "$LOG" || true)
-echo "  fallback 级自报行数=$F   last-resort 级自报行数=$L   bigmodel 兜底注册行数=$B"
-[ "$F" = "0" ] && [ "$L" = "0" ] && [ "$B" = "0" ] \
-  && echo "  ✅ B 通过：两个降级级都没注册" \
-  || echo "  ❌ B 失败：仍有降级级被注册"
+echo "=== 断言 B（ADR-58 重写）：provider 列表**真的被读到**，且默认只有一条（零降级级）==="
+# ⛔ 旧版 B 断言的是"没有 fallback/last-resort/bigmodel 的日志行"——那三个类自 ADR-58 起
+#    已删除，字符串永不出现 → **恒真**，毫无区分力（硬规矩 ⑯：判据里不许有恒真的兜底项）。
+#    改为断言"配置被读取"这一 ADR-58 新不变式：启动横幅必须逐条自报读到的 provider。
+grep -aoE "\[ADR-58\] LLM (主链|降级级)：.*" "$LOG" | sed 's/^/  /'
+P_MAIN=$(grep -ac "\[ADR-58\] LLM 主链：" "$LOG" || true)
+P_TIER=$(grep -ac "\[ADR-58\] LLM 降级级：" "$LOG" || true)
+[ "$P_MAIN" = "1" ] \
+  && echo "  ✅ B-1 通过：主链自报 1 条（配置列表被读到）" \
+  || echo "  ❌ B-1 失败：主链自报 $P_MAIN 条（应为 1 —— app.llm.providers 没被读到？）"
+[ "$P_TIER" = "0" ] \
+  && echo "  ✅ B-2 通过：零降级级（默认单 provider 形态）" \
+  || echo "  ❌ B-2 失败：出现了 $P_TIER 条降级级自报（默认配置不该有）"
+grep -aq "LLM 主链：name=primary base=https://api.deepseek.com model=deepseek-flash" "$LOG" \
+  && echo "  ✅ B-3 通过：主链 = primary/DeepSeek/deepseek-flash（与 yml 逐字一致）" \
+  || echo "  ❌ B-3 失败：主链自报与 yml 不符（配置被环境变量或 profile 覆盖了？）"
 
 echo
 echo "=== 真实 E2E（注册→SSE 聊天→RAG→Agent→记忆→安全负向）==="
