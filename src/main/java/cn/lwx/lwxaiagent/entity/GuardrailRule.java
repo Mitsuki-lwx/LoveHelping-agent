@@ -48,6 +48,20 @@ public class GuardrailRule {
     @TableField("scope")
     private String scope;
 
+    /**
+     * 前提/豁免式（ADR-59 / V28，可空）：一条 REGEX。
+     *
+     * <p><b>规则命中后</b>再看它：若豁免式也 {@code find()} 命中 → **本规则不算命中**。
+     * 用来表达"这条裸关键词，但仅当用户**不是**在转述别人的风险 / 求助时才算命中"——
+     * 例如「朋友说他想自杀，我该怎么回应」不该被 {@code self_harm} 拦。</p>
+     *
+     * <p>⛔ 为什么是独立一列而不是写进 {@code pattern}：15 条 {@code self_harm} 是 KEYWORD 行，
+     * 要把"除第三人称框架外"塞进 pattern 就得把每条都改成带 lookaround 的正则 ——
+     * 更难审、更易写错。独立一列让"什么情况下**不**拦"可单独审计与单测。</p>
+     */
+    @TableField("context_exclude")
+    private String contextExclude;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 }

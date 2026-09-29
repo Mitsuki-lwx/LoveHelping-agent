@@ -28,7 +28,8 @@ public class GuardrailRuleService {
     }
 
     /** 预编译规则（避免每次请求编译正则） */
-    private record CompiledRule(String ruleId, int level, Pattern regex, String keyword, Scope scope) {}
+    private record CompiledRule(String ruleId, int level, Pattern regex, String keyword, Scope scope,
+                                Pattern exclude) {}
 
     /**
      * 规则适用范围（ADR-55 / V25）。同一套词表服务两个语义完全不同的场景，
@@ -41,6 +42,21 @@ public class GuardrailRuleService {
         OUTPUT,
         /** 两侧都适用（默认值 —— 既有规则全部是这个，保证加字段不改变行为）。 */
         BOTH
+    }
+
+    /**
+     * 编译"前提/豁免式"（ADR-59 / V28）。**编译失败时降级为 null 并 WARN** ——
+     * 一条规则写坏了不该让整个护栏失效，也不该静默把豁免当"总是命中"。
+     */
+    private static Pattern compileExclude(String ruleId, String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return Pattern.compile(raw);
+        } catch (java.util.regex.PatternSyntaxException e) {
+            log.warn("guardrail_rule.context_exclude 正则非法（rule_id={}）→ 本规则不做豁免：{}",
+                    ruleId, e.getMessage());
+            return null;
+        }
     }
 
     /** DB 里的 scope 文本 → 枚举；非法/缺失一律落 BOTH（不为一条脏数据打断启动） */
@@ -64,7 +80,8 @@ public class GuardrailRuleService {
                     ? Pattern.compile(r.getPattern()) : null;
             String keyword = "KEYWORD".equalsIgnoreCase(r.getPatternType())
                     ? r.getPattern() : null;
-            return new CompiledRule(r.getRuleId(), r.getLevel(), regex, keyword, parseScope(r.getScope()));
+            return new CompiledRule(r.getRuleId(), r.getLevel(), regex, keyword, parseScope(r.getScope()),
+                    compileExclude(r.getRuleId(), r.getContextExclude()));
         }).toList();
         long in = rules.stream().filter(r -> r.scope() == Scope.INPUT).count();
         long out = rules.stream().filter(r -> r.scope() == Scope.OUTPUT).count();
@@ -110,6 +127,12 @@ public class GuardrailRuleService {
                 hit = r.regex().matcher(text).find();
             } else {
                 hit = r.keyword() != null && text.contains(r.keyword());
+            }
+            // ADR-59：命中后再看豁免式 —— 豁免式也命中则**本规则不算命中**（其余规则照常判）。
+            // 语义是"这条词很宽，但当用户是在转述别人的风险/求助时不该拦"，
+            // 所以豁免只作用于**本规则**，不做全局短路（否则会把别的 L3 规则一起放过）。
+            if (hit && r.exclude() != null && r.exclude().matcher(text).find()) {
+                continue;
             }
             if (hit && r.level() > maxLevel) {
                 maxLevel = r.level();
