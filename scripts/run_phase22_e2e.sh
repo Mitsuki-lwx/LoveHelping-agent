@@ -19,7 +19,7 @@
 #      —— 如果 ScopeWording 晚于 ChatExecutor 构造，配置的对照臂会被静默忽略，
 #      且表现与"配置生效"完全一样（都是 adjacent-help），排查时无从下手。
 #      所以**启动横幅里 scope-wording 自报的值**是本脚本的核心断言。
-#   2. 期望启动日志出现 `[scope-wording] 生效范围护栏措辞 = adjacent-help（生产默认）`。
+#   2. 期望启动日志出现 `[scope-wording] 生效范围护栏措辞 = bounded-help（生产默认，ADR-60）`。
 #   3. 期望 llm_endpoint_configured 只有 level="primary" 一条（零 tier，沿用 ADR-52）。
 #   4. 期望 llm.fallback 指标条数 = 0（沿用 ADR-52）。
 #
@@ -121,14 +121,14 @@ echo
 echo "=== 断言 A3（ADR-53 新增，本轮核心）：scope 措辞开关真的生效并自报 ==="
 grep -aoE "\[scope-wording\].*" "$LOG" | head -2 | sed 's/^/  /'
 SW=$(grep -aoE "\[scope-wording\] 生效范围护栏措辞 = [a-z-]+" "$LOG" | head -1 | grep -oE "[a-z-]+$")
-ACTIVE=${APP_CHAT_SCOPE_WRITING:-adjacent-help}
+ACTIVE=${APP_CHAT_SCOPE_WRITING:-bounded-help}
 if [ "$SW" = "$ACTIVE" ]; then
   echo "  ✅ A3 通过：scope 措辞生效值（$SW）== 配置值（$ACTIVE）"
 else
   echo "  ❌ A3 失败：自报=$SW 配置=$ACTIVE —— 开关被静默忽略（构造顺序问题？）"
 fi
-[ "$SW" = "adjacent-help" ] && echo "  ✅ A3-1 通过：默认生产值是 adjacent-help（未被误改成 strict）" \
-  || echo "  ⚠️ A3-1：本轮生效值是 $SW（若为 strict 说明这是对照臂，不是生产默认）"
+[ "$SW" = "bounded-help" ] && echo "  ✅ A3-1 通过：默认生产值是 bounded-help（ADR-60）" \
+  || echo "  ⚠️ A3-1：本轮生效值是 $SW（adjacent-help/strict 都是对照臂，不是生产默认）"
 
 echo
 echo "=== 断言 B（ADR-58 重写）：provider 列表**真的被读到**，且默认只有一条（零降级级）==="

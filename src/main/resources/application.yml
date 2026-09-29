@@ -195,14 +195,18 @@ app:
     timeout-ms: 90000
     provider: deepseek           # 默认聊天模型提供商（历史配置，主备结构见 app.llm）
     # 范围护栏（Scope）措辞版本（ADR-53 / phase21）
-    #   adjacent-help（默认）= 情感相邻议题（失眠/焦虑/压力大…）先给具体建议再轻接回关系维度；
-    #                           只有明显事务性请求（写代码/做菜谱…）才礼貌拒绝。
+    #   bounded-help（生产默认，ADR-60）= 域内（情感/关系及相邻身心状态）先帮再接回；
+    #                           域外**现实事务**（诈骗资金追回/法律/理财/纯诊疗）只给
+    #                           一句话方向 + 转专业渠道，**不展开**；纯任务类才礼貌拒绝。
+    #   adjacent-help       = 上一版（ADR-53 起）：(A) 写作"生活困扰"**没有下界** →
+    #                           域外事务也会被展开（实测「我被诈骗了」给 1011 字通用处置）。
+    #                           **保留作对照臂**。
     #   strict              = 修复前措辞：一律对"明显无关请求"拒绝 → 会无谓拒答。
     #                          **仅作对照臂**，用于复验上述修复（同 provider、只差措辞）。
     #                          线上不建议启用。
     # 开关存在的理由：ADR-48 要求"改完必须用两臂对照复验"，但原对照是两个模型，
     # ADR-51 切 DeepSeek 官方后已不可复现；不设开关就分不清"修复有效"与"本模型本来就不拒"。
-    scope-wording: ${APP_CHAT_SCOPE_WRITING:adjacent-help}
+    scope-wording: ${APP_CHAT_SCOPE_WRITING:bounded-help}
 
   # LlmGateway 配置（ADR-7 建立；ADR-48 改为三级降级链）
   #
