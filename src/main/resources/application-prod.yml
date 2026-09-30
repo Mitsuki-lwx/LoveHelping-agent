@@ -55,6 +55,21 @@ app:
     #   ⚠️ 代价：当前默认单 provider 无兜底，主链故障时用户直接拿 5000。
     degrade-enabled: ${LLM_DEGRADE_ENABLED:true}
 
+# ======================== 可观测（生产策略）========================
+# ADR-67：**生产与测试的开法必须不同**（四个维度，见 docs/11 §可观测）。
+app:
+  langfuse:
+    # ⛔ 生产**默认关**：开启 = trace 元数据（**不含原文**，ADR-44）出域到 Langfuse 实例，
+    #    属安全/合规决定 → 需登记 `docs/07` §6.1 后再由环境变量显式打开。
+    enabled: ${LANGFUSE_ENABLED:false}
+    public-key: ${LANGFUSE_PUBLIC_KEY:}
+    secret-key: ${LANGFUSE_SECRET_KEY:}
+    # ⛔ 生产必须指向**真实可达的内部实例**；指向 localhost 会静默丢全部 span。
+    host: ${LANGFUSE_HOST:}
+    # 采样见下（生产默认 10%，测试/本地 100%）。
+  # ⚠️ 高流量下队列会丢 span（有界队列）：队列/批量按实际量调，别用本地默认值。
+  #    app.langfuse.max-queue-size / max-batch-size / schedule-delay-ms
+
 logging:
   level:
     root: INFO
@@ -65,3 +80,9 @@ logging:
 management:
   tracing:
     enabled: ${LANGFUSE_ENABLED:false}
+    # ⭐ 生产与测试的关键差别：**采样率**。
+    #   本地/测试 = 1.0（要看全每一条，排查单点问题）；
+    #   生产 = 0.1（看**分布**就够：延迟/错误/成本的分位数不需要 100% 样本，
+    #   而全量会带来队列压力、存储成本与噪声）。要临时抓疑难问题再调高。
+    sampling:
+      probability: ${TRACING_SAMPLING:0.1}

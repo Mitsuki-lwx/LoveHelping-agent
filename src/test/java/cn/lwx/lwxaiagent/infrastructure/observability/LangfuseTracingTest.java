@@ -61,7 +61,7 @@ class LangfuseTracingTest {
         p.setHost("http://127.0.0.1:" + server.getAddress().getPort());
         p.setPublicKey(UUID.randomUUID().toString()); p.setSecretKey(UUID.randomUUID().toString());
         p.setScheduleDelayMs(10); p.setTimeoutMs(500); p.setMaxQueueSize(16); p.setMaxBatchSize(4);
-        var builder = SdkTracerProvider.builder(); new LangfuseTracingConfig().langfuseExporter(p).customize(builder);
+        var builder = SdkTracerProvider.builder(); new LangfuseTracingConfig().langfuseExporter(p, 1.0).customize(builder);
         try (var provider = builder.build()) {
             provider.get("test").spanBuilder("chat.pipeline").startSpan().end();
             provider.forceFlush().join(2, TimeUnit.SECONDS);
@@ -113,7 +113,7 @@ class LangfuseTracingTest {
     }
 
     @Test void missingLangfuseCredentialsFailFastNotSilently() {
-        assertThrows(IllegalArgumentException.class, () -> new LangfuseTracingConfig().langfuseExporter(new LangfuseProperties()));
+        assertThrows(IllegalArgumentException.class, () -> new LangfuseTracingConfig().langfuseExporter(new LangfuseProperties(), 1.0));
     }
     @Test void exporterOutageCannotBlockSpanCreation() {
         var failing = new SpanExporter() {

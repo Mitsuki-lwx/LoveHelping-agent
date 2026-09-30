@@ -28,7 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class LangfuseTracingConfig {
     @Bean
     @ConditionalOnProperty(prefix = "app.langfuse", name = "enabled", havingValue = "true")
-    SdkTracerProviderBuilderCustomizer langfuseExporter(LangfuseProperties p) {
+    SdkTracerProviderBuilderCustomizer langfuseExporter(
+            LangfuseProperties p,
+            @org.springframework.beans.factory.annotation.Value("${management.tracing.sampling.probability:1.0}")
+            double samplingProbability) {
         if (p.getPublicKey() == null || p.getPublicKey().isBlank() || p.getSecretKey() == null || p.getSecretKey().isBlank())
             throw new IllegalArgumentException("Langfuse enabled but LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY missing");
         URI host = URI.create(p.getHost());
@@ -39,8 +42,11 @@ public class LangfuseTracingConfig {
         String endpoint = p.getHost().replaceAll("/+$", "") + "/api/public/otel/v1/traces";
         // ADR-62/F6：导出"生效"必须有可查询证据。此前启用后**一条日志都没有** ——
         // 冒烟时我 grep 不到任何 langfuse 字样，只能靠"去实例里查有没有新 trace"反推。
+        // ⭐ 生产与测试的**开法不同**（ADR-67）：测试 100% 采样 + 本地实例；
+        //    生产低采样 + 内部实例。把这两个关键值自报出来，运维一眼能看出"现在是哪种开法"。
         org.slf4j.LoggerFactory.getLogger(LangfuseTracingConfig.class).info(
-                "[langfuse] 导出已启用：endpoint={}（trace 元数据，**不含原文**，ADR-44）", endpoint);
+                "[langfuse] 导出已启用：endpoint={} sampling={}（trace 元数据，**不含原文**，ADR-44；"
+                        + "生产/测试的差别见 docs/11 §可观测）", endpoint, samplingProbability);
         String credentials = Base64.getEncoder().encodeToString((p.getPublicKey() + ":" + p.getSecretKey()).getBytes(StandardCharsets.UTF_8));
         return builder -> {
             SpanExporter exporter = new SafeExporter(OtlpHttpSpanExporter.builder()
