@@ -138,7 +138,30 @@
 
 **未做（如实留白）**：Spring 上下文级 IT（真实 mapper 映射）· Redis/MCP/降级链 · E2E 未改容器化。
 
-## D. 建议顺序（①②③④ 已完成）
+## ⑤ 覆盖率 ✅ 已落地 / 评测收敛 ⛔ 建议**不做**（有证据）
+
+### C4 JaCoCo ✅
+- pom 加 `jacoco-maven-plugin`（prepare-agent / report / **check 在 verify**）；CI 的 integration-test 作业改跑 `mvn verify`。
+- **先测基线再定门槛**：实测 **总体行覆盖 38.8%**（2408/6207）、指令 40.6%、核心 `harness.governance` **48.7%**。
+- ⛔ `docs/09` §1 原写的"行 ≥70%、核心 ≥85%"**从未测过也未达到** → 门槛改为**钉在 0.38 的棘轮**（防退化，非达标线）。
+- 实测：`mvn verify` 全绿（单测 367 + IT 9/9 不跳过 + jacoco:check 通过）。
+
+### C5 评测收敛到 Langfuse dataset：⛔ **建议不做**（反转既有决定的代价 > 收益）
+
+**证据**：
+1. `scripts/answer_eval.py` 首行写着「**路线 B——不依赖 Langfuse 配置链**」，`docs/09` §5.6 同样口径
+   → "不用 Langfuse"是**刻意设计**，不是没做。
+2. 它**已有稳定基线与实战价值**：AC=**0.90**（n=16×3 轮），且"评测驱动修复闭环已实战三次"
+   （冷静期补年份 0.5→1.0、煤气灯文档拆分、QueryRewriter 关闭）。
+3. 今天实测到 **Langfuse 会挂/会丢**：应用侧 OTLP 导出在装置里连续报 `HttpExporter: Failed to export`
+   （本轮 E 断言的真凶）→ 把**唯一的质量回归手段**绑到一个**会挂的外部服务**上，是净负收益。
+
+**替代方案（任选，需拍板）**：
+- **A（建议）**：保持路线 B 为主线；Langfuse 只作**旁路 sink**（把同一批分数也推 dataset，fail-open，不阻塞评测）。
+- **B**：不动，维持现状（评测脚本 + `outputs/` 归档）。
+- **C**：真迁到 Langfuse experiments —— 需先解决"Langfuse 不可用时评测仍要能跑"的降级路径。
+
+## D. 建议顺序（①②③④⑤ 已完成；⑥ 待口径）
 
 1. **B1-1 收敛 E2E**（小、直接消除"两套门"）
 2. **A2 修 SRS §7**（小，但属"文档与代码偏离"，AGENTS.md §1 明令禁止）
