@@ -83,7 +83,16 @@
 首跑 FAIL（10 条全是 Langfuse OTLP 导出失败 = **装置形态**）。已改为只判**应用层** ERROR，
 噪声单列可见。**CI 未实跑**（本地无法触发 Actions）—— 已验证 YAML 结构 + 同一套命令在本地真跑。
 
-## D. 建议顺序（① 已完成）
+## ② 修 SRS §7 ✅ 已落地
+
+- **§7 可追溯性表**：`CORE-01/CORE-02` 从「（待立项）」改为**实测实现点**
+  （CORE-01：`CapabilityRouter.isAdviceRequest` → `ChatExecutor.ADVICE_ACTIVATE_PROMPT` → SSE `event: advice`，ADR-18，Phase 4；
+  CORE-02：`ChatEntry` 深夜+极端情绪 → `GuardrailRuleService.matchesEmotionBrake`，表 `guardrail_rule`（**V15**），ADR-6/ADR-18）。
+  ⇒ 与 §2.4（两者已 ✅）**不再自相矛盾**。
+- **顺带发现并修掉**：ADR-18/19 标题残留「（提议）」后缀，而正文早已写 `**状态**：✅ 已接受 + 已落地`。
+  全仓仅这 2 条（后起的 ADR 改用 `**状态**` 行，不再挂标题后缀），且**无外部引用**带后缀标题 → 删后缀，正文状态行保留。
+
+## D. 建议顺序（①② 已完成）
 
 1. **B1-1 收敛 E2E**（小、直接消除"两套门"）
 2. **A2 修 SRS §7**（小，但属"文档与代码偏离"，AGENTS.md §1 明令禁止）
