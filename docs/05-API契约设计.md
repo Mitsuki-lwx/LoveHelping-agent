@@ -43,8 +43,12 @@ SSE 基础设施要求：Nginx `proxy_buffering off; proxy_cache off; proxy_read
 | --- | --- | --- |
 | `GET /Love_app/chat/sse?prompt&chatId&mediaIds?` | 流式聊天（打字机） | `mediaIds` 非空时走视觉（ADR-11）；缺 chatId 返回 400 |
 | `GET /Love_app/chat/sse/rag?prompt&chatId` | 聊天 + 知识检索（RAG） | 能力开关形态，非独立模式（SRS COMM-04） |
-| `GET /Love_app/chat/sse/tools?prompt&chatId` | 聊天 + 工具调用 | 单轮 function calling |
 | `GET /Love_app/chat/sync?prompt&chatId` | 同步聊天（阻塞，测试/内部调用） | 非用户侧主路径 |
+
+> ⛔ **2026-10-01 更正（ADR-72 契约检查器首跑抓到）**：本表原有一行
+> `GET /Love_app/chat/sse/tools`（"聊天 + 工具调用"）—— **该端点从未实现过**，全仓只有这一行提到它。
+> 工具调用实际由 `/Love_app/chat/sse/rag`（RAG 工具）与 `/Love_app/chat/LoveManus`（多步 Agent）承担。
+> 一个把"不存在的端点"写成"现状实现"的文档，比没写更糟：**读它的人会照着调，然后 404**。
 
 SSE 事件序列（现状为文本 chunk 流）：
 ```
