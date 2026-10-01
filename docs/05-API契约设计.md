@@ -98,7 +98,7 @@ data: {"type":"advice","tiers":[{"name":"安全牌","content":"…","reaction":"
 | `GET /memory/conversations?chatType` | 本人对话列表（含消息数） | 按时间倒序 |
 | `GET /memory/{conversationId}` | 对话详情（完整历史） | IDOR 归属校验 |
 | `GET /memory/{conversationId}/count` | 消息数 | |
-| `DELETE /memory/{conversationId}` | 清空该会话历史（现状语义 = clearHistory，软删） | 与 SRS"删除对话/清空历史"口径对齐方式**待讨论** |
+| `DELETE /memory/{conversationId}` | 清空该会话历史（现状语义 = clearHistory，软删） | ✅ 口径已定（2026-10-01）：**软删 = 删除动作**，物理清除由 `MessagePurgeScheduler` 按保留期执行（ADR-5）；"清空全部历史"**不新增端点**，由前端逐会话循环 |
 | `POST /memory/message/{messageId}/feedback?value=LIKE/DISLIKE` | 单条消息赞踩反馈 | 写 message.feedback（SRS FB-01） |
 | `GET/PUT/DELETE /memory/facts[/{id}]` | 用户事实记忆（纠错闭环） | ADR-14 |
 | `GET /memory/admin/conversations` | 管理员全量会话 | AdminGuard 校验 |

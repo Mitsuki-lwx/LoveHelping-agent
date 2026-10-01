@@ -449,6 +449,11 @@ app:
   # stream：以 §R§ 前缀行发出（前端按前缀折叠展示为"思考过程"）。
   output:
     reasoning-mode: discard
+  # 保留期与删除权（ADR-5）：软删不是终点 —— 超过保留期的软删消息会被**物理清除**。
+  # ⛔ 这是业务口径，改口径改配置，不要改代码。清除任务尊重 scheduler.master-enabled 总闸。
+  retention:
+    deleted-message-days: 30        # 软删消息保留天数，超过即物理删除
+    purge-fixed-delay-ms: 86400000  # 清除任务间隔（默认每天一次）
   scheduler:
     master-enabled: true            # 总开关：false 时所有后台调度跳过
     llm-budget-per-minute: 30       # 每分钟后台共享配额（LLM+embedding 调用数，进程内令牌桶）
