@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
+import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
+import reactor.core.publisher.Flux;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -141,6 +143,65 @@ class GuardrailAdvisorTest {
 
         assertThat(textOf(out)).isEqualTo("先说说当时发生了什么？");
         verify(recorder, never()).record(anyString(), org.mockito.ArgumentMatchers.anyInt(), any(), anyString());
+    }
+
+    // ── 流式路径（此前未覆盖）─────────────────────────────────────────
+
+    private StreamAdvisorChain streamChainOf(String... texts) {
+        StreamAdvisorChain chain = mock(StreamAdvisorChain.class);
+        when(chain.nextStream(any())).thenReturn(Flux.fromArray(texts).map(GuardrailAdvisorTest::response));
+        return chain;
+    }
+
+    @Test
+    @DisplayName("流式 L3 + self_harm → 只发转介文案，且**不订阅下游**（不能先流出去再后悔）")
+    void stream_l3_blocks_without_subscribing() {
+        when(ruleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(3, "self_harm"));
+        StreamAdvisorChain chain = streamChainOf("模型输出");
+
+        List<ChatClientResponse> out = advisor.adviseStream(request("我想死"), chain).collectList().block();
+
+        assertThat(out).hasSize(1);
+        assertThat(textOf(out.get(0))).contains("400-161-9995");
+        verify(recorder).record(anyString(), eq(3), eq("self_harm"), eq("BLOCKED"));
+        verify(chain, never()).nextStream(any());
+    }
+
+    @Test
+    @DisplayName("流式 L2 → 放行到下游，只记 LOGGED")
+    void stream_soft_level_passes_through() {
+        when(ruleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(2, "emotion_brake"));
+        StreamAdvisorChain chain = streamChainOf("正常回复");
+
+        List<ChatClientResponse> out = advisor.adviseStream(request("有点低落"), chain).collectList().block();
+
+        assertThat(out).hasSize(1);
+        assertThat(textOf(out.get(0))).isEqualTo("正常回复");
+        verify(recorder).record(anyString(), eq(2), eq("emotion_brake"), eq("LOGGED"));
+    }
+
+    /**
+     * ⛔ 这条**故意钉住"事后只告警"**：流式的聚合回调在**流结束**时执行，文本早已送达，
+     * 改不了 —— 这是结构限制，不是漏写。真正的逐块拦截在 {@code StreamRegistry.StreamSink}
+     * （按 DB 规则的 Scope.OUTPUT 丢弃并改推文案）。
+     *
+     * <p>将来若给流式补"事后追发纠正文案"，**请先改这条测试**：它会提醒你这是一次有意的行为变更，
+     * 而不是顺手改绿。</p>
+     */
+    @Test
+    @DisplayName("流式：输出侧事后命中**只告警不改内容**（结构限制；逐块拦截在 StreamRegistry）")
+    void stream_output_hit_only_warns() {
+        when(ruleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(0, null));
+        when(outputGuardrail.check(any(), any()))
+                .thenReturn(new GuardrailResult(true, "missing_crisis_response", "危机文案", false));
+        StreamAdvisorChain chain = streamChainOf("已经发出去的回复");
+
+        List<ChatClientResponse> out = advisor.adviseStream(request("我最近总是想死"), chain).collectList().block();
+
+        assertThat(out).hasSize(1);
+        assertThat(textOf(out.get(0)))
+                .as("流式无法撤回已发出的文本；改这条前先想清楚要不要做事后追发")
+                .isEqualTo("已经发出去的回复");
     }
 
     @Test

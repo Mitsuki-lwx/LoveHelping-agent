@@ -24,7 +24,11 @@ import reactor.core.publisher.Flux;
  * <ul>
  *   <li><b>L3 硬阻断</b>：自伤（转介援助资源）/ 伤人 / 违法 / PUA 教学 / Prompt 注入 → 不调 LLM，返回阻断文案，记 event(BLOCKED)</li>
  *   <li><b>L1/L2 软处理</b>：模糊输入 / 辱骂 → 不阻断，记 event(LOGGED)（降温文案注入随 loop 重构完善）</li>
- *   <li><b>输出侧</b>：保留自伤信号检测（OutputGuardrail），命中仅告警不阻断生成</li>
+ *   <li><b>输出侧（非流式）</b>：{@link OutputGuardrail} 两层 —— ①用户提到自伤而回复缺危机应答 ②输出含有害建议；
+ *       <b>命中即替换文案，不得外发</b>（2026-09-05 中危修复：此前仅记日志，"最后防线"形同虚设）</li>
+ *   <li><b>输出侧（流式）</b>：⚠️ 本类只能**事后告警**（见 {@link #adviseStream}），
+ *       <b>真正的逐块拦截在 {@code StreamRegistry.StreamSink}</b>（按 DB 规则的 {@code Scope.OUTPUT}）。
+ *       ⛔ 两层判据的覆盖差异见 {@link #adviseStream} 的注释 —— 别把这里当"流式也被兜住了"</li>
  * </ul>
  * <p>规则存 DB（guardrail_rule），改动不发版；审计只存 content_hmac 不存原文（07 §6）。</p>
  */
@@ -109,12 +113,21 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
             recorder.record(userText, verdict.level(), verdict.ruleId(), "LOGGED");
         }
         Flux<ChatClientResponse> responses = chain.nextStream(request);
+        // ⚠️ 这里**只能告警**，不是漏写：aggregateChatClientResponse 在**流结束**时回调，
+        //    那时文本已经发给用户了，改不了。**逐块拦截在 StreamRegistry.StreamSink**：
+        //    它按 DB 规则的 Scope.OUTPUT 判定，命中即丢弃该块并改推替换文案（含跨 chunk 窗口）。
+        //
+        // ⛔ 于是两条路径的**判据覆盖不同**（2026-10-01 核查，此前只有类注释一句含糊的"仅告警"）：
+        //    · 非流式 adviseCall：DB 规则 L3 + OutputGuardrail 两层 → **两层都能替换**；
+        //    · 流式：只有 DB 规则 L3 会被**拦住**；OutputGuardrail 两层里
+        //      - missing_crisis_response（要"整段输出 + 用户输入"才判得出）→ 结构上做不到，只能事后告警；
+        //      - harmful_advice（**纯文本关键词**，本可以逐块拦）→ **目前没拦**，两路径不对称（已登记待决）。
         return new ChatClientMessageAggregator()
                 .aggregateChatClientResponse(responses, aggregated -> {
                     String outputText = getOutputText(aggregated);
                     GuardrailResult outputCheck = outputGuardrail.check(outputText, userText);
                     if (outputCheck.blocked()) {
-                        log.warn("Output guardrail (stream): {}", outputCheck.reason());
+                        log.warn("Output guardrail (stream, 事后告警——已无法撤回): {}", outputCheck.reason());
                     }
                 });
     }
