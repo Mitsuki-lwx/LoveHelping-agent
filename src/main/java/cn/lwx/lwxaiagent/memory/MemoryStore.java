@@ -152,10 +152,15 @@ public class MemoryStore {
             if (profile.getStage() != null && !profile.getStage().isBlank()) {
                 sb.append("- 关系阶段：").append(profile.getStage()).append("\n");
             }
-            if (profile.getKeyPeople() != null && !"null".equals(profile.getKeyPeople())) {
+            // ⛔ 与上面 stage 保持一致：**空白也算没有**。原实现只挡 null 与字面量 "null"，
+            //    于是纯空白的值会渲染出 `- 关键人物：   ` 这样一行空标签塞进模型提示词
+            //    （2026-10-01 补测时发现三处判据不一致）。
+            if (profile.getKeyPeople() != null && !"null".equals(profile.getKeyPeople())
+                    && !profile.getKeyPeople().isBlank()) {
                 sb.append("- 关键人物：").append(profile.getKeyPeople()).append("\n");
             }
-            if (profile.getAlerts() != null && !"null".equals(profile.getAlerts())) {
+            if (profile.getAlerts() != null && !"null".equals(profile.getAlerts())
+                    && !profile.getAlerts().isBlank()) {
                 sb.append("- 预警事项：").append(profile.getAlerts()).append("\n");
             }
             sb.append("</memory_profile>\n");
