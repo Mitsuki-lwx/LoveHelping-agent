@@ -28,6 +28,28 @@ jobs:
           OPENAI_API_KEY: dummy-for-context-test
           DASHSCOPE_API_KEY: dummy-for-context-test
 
+  # ---- 前端单测（27 条，2026-10-01 接入）----
+  # ⛔ 此前 CI **完全不碰前端**（无 node/npm 步骤）—— 而 `front/src/__tests__/sseEventRouting.test.js`
+  #    守的是"event:status 不得被拼进正文"那条**真踩过的坑**（前端是手写 fetch 解析，凡 data: 行都当正文）。
+  #    没有 CI 的门 = 没有门。同时把 5 条"描述旧 UI 的永久红测试"重写为当前契约后已 27/27 全绿。
+  frontend-test:
+    name: Frontend Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Run unit tests
+        run: npm test
+
   # ---- 集成测试层（Testcontainers，ADR-69）：真容器跑**迁移链/约束/向量栈契约** ----
   # 为什么单列：`mvn test` 的 48 个类**全是 Mockito 单测**，SQL/约束/迁移从没被真执行过
   # （ADR-46 那类"载荷契约"事故正是这层盲区）。用 failsafe 与单测分离：
