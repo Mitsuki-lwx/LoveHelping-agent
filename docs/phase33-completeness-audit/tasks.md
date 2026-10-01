@@ -146,7 +146,7 @@
 - ⛔ `docs/09` §1 原写的"行 ≥70%、核心 ≥85%"**从未测过也未达到** → 门槛改为**钉在 0.38 的棘轮**（防退化，非达标线）。
 - 实测：`mvn verify` 全绿（单测 367 + IT 9/9 不跳过 + jacoco:check 通过）。
 
-### C5 评测收敛到 Langfuse dataset：⛔ **建议不做**（反转既有决定的代价 > 收益）
+### C5 评测收敛到 Langfuse：**改为旁路 sink（方案 A）**，已落地
 
 **证据**：
 1. `scripts/answer_eval.py` 首行写着「**路线 B——不依赖 Langfuse 配置链**」，`docs/09` §5.6 同样口径
@@ -156,10 +156,12 @@
 3. 今天实测到 **Langfuse 会挂/会丢**：应用侧 OTLP 导出在装置里连续报 `HttpExporter: Failed to export`
    （本轮 E 断言的真凶）→ 把**唯一的质量回归手段**绑到一个**会挂的外部服务**上，是净负收益。
 
-**替代方案（任选，需拍板）**：
-- **A（建议）**：保持路线 B 为主线；Langfuse 只作**旁路 sink**（把同一批分数也推 dataset，fail-open，不阻塞评测）。
-- **B**：不动，维持现状（评测脚本 + `outputs/` 归档）。
-- **C**：真迁到 Langfuse experiments —— 需先解决"Langfuse 不可用时评测仍要能跑"的降级路径。
+**✅ 拍板：选 A 并已落地**（ADR-70，`scripts/langfuse_sink.py`）。
+路线 B 仍是主线；同一批**真实**分数额外推 Langfuse dataset `answer-correctness`（默认开，`--no-langfuse` 关）。
+实测：16 条真条目 API 读回一致；真跑 `answer_eval.py` 得 `items=2 run_items=2 scores=2 回读 2 failed=0`（含真实 judge 理由与 traceId）；
+死主机 2.0s 放弃（fail-fast）。
+⛔ 途中三条实测教训（都已写进 ADR-70）：**`scores` 只带 `datasetRunId` 会 200 后静默丢弃**；
+**`traceId` 与 `datasetRunId` 互斥**；**score 异步入库**，回读要有界重试 + 按本批 trace 比对。
 
 ## ⑥ 删除语义（口径已拍板）✅ 已落地
 

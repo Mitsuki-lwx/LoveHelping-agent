@@ -8,6 +8,8 @@
   （智谱 key 优先级：环境变量 ZHIPU_API_KEY → 本地 gitignored 的 application-local.yml，无需手动传）
 """
 import argparse, io, json, os, re, time, uuid, urllib.request, urllib.parse
+import secrets  # noqa: E402  —— traceparent 需要
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ⛔ 2026-09-26 修复：原实现只看 `src/main/resources/application-local.yml`，而本仓凭据只存在于
@@ -96,9 +98,15 @@ def judge(api_key, question, golden, answer):
                 return 0.0, "judge调用失败: %s" % str(e)[:100]
             time.sleep(5)
 
-def ask_app(base, token, question, cid):
+def ask_app(base, token, question, cid, trace_id):
+    """⛔ 带上 `traceparent`：app 侧 OTel 用它当 trace-id → Langfuse 旁路 sink 才能把
+    分数挂到对应 trace 上（与 `verification_support.sse` 同一约定）。"""
     url = base + "/Love_app/chat/sse?" + urllib.parse.urlencode({"prompt": question, "chatId": cid})
-    r = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+    span = secrets.token_hex(8)
+    r = urllib.request.Request(url, headers={
+        "Authorization": "Bearer " + token,
+        "traceparent": "00-%s-%s-01" % (trace_id, span),
+    })
     resp = urllib.request.urlopen(r, timeout=180)
     parts = []
     while True:
@@ -132,6 +140,7 @@ def main():
     # 是应用回了错误文案？三种原因的处置完全相反）。凡是"打分型"量具，都要留存被评的原文。
     ap.add_argument("--out", default=None, help="把每例的原始回答+分数写成 JSON，便于事后归因")
     ap.add_argument("--limit", type=int, default=0, help="只跑前 N 例（>0 时），用于小规模标定量具")
+    ap.add_argument("--no-langfuse", action="store_true", help="关闭 Langfuse 旁路 sink（默认开启，fail-open）")
     args = ap.parse_args()
     key = args.api_key or load_zhipu_key()
     gt = json.load(io.open(args.cases, encoding="utf-8"))["cases"]
@@ -160,8 +169,13 @@ def main():
         per = []
         raw_rounds = []
         worst = ("", 0.0)
+        case_trace = None
         for rnd in range(rounds):
-            answer = ask_app(args.base, token, c["question"], "ac_%s_%s_r%d" % (run_tag, c["id"], rnd))
+            # 每轮一个 trace-id：app 侧 OTel 用它；首轮的留给 Langfuse 旁路 sink 挂分数
+            trace_id = secrets.token_hex(16)
+            if case_trace is None:
+                case_trace = trace_id
+            answer = ask_app(args.base, token, c["question"], "ac_%s_%s_r%d" % (run_tag, c["id"], rnd), trace_id)
             if looks_like_denial(answer):
                 denied += 1
                 if ci == 0:
@@ -170,11 +184,11 @@ def main():
                         "   先查清原因（会话归属、限流、上游故障）再跑，否则整轮分数都是假的。" % answer)
             if not answer:
                 per.append(0.0)
-                raw_rounds.append({"round": rnd, "answer": "", "score": 0.0, "reason": "(回答为空)"})
+                raw_rounds.append({"round": rnd, "answer": "", "score": 0.0, "reason": "(回答为空)", "trace_id": trace_id})
                 continue
             s, reason = judge(key, c["question"], c["golden_answer"], answer)
             per.append(s)
-            raw_rounds.append({"round": rnd, "answer": answer, "score": s, "reason": reason})
+            raw_rounds.append({"round": rnd, "answer": answer, "score": s, "reason": reason, "trace_id": trace_id})
             if reason and (worst[1] == 0.0 or s < worst[1]):
                 worst = (reason[:60], s)
             time.sleep(0.3)
@@ -184,7 +198,7 @@ def main():
         print("%-8s %-24s %-6.2f %s" % (c["id"], " ".join("%.2f" % x for x in per), m,
               ("(全部正确)" if worst[0] == "" else worst[0])))
         report.append({"id": c["id"], "question": c["question"], "golden": c["golden_answer"],
-                       "mean": m, "tag": tag, "rounds": raw_rounds})
+                       "mean": m, "tag": tag, "rounds": raw_rounds, "trace_id": case_trace})
         if args.out:
             # 每例都落盘：中途崩了也有证据
             io.open(args.out, "w", encoding="utf-8").write(
@@ -196,6 +210,22 @@ def main():
                ", 被拒/降级 %d 次" % denied if denied else ""))
     if args.out:
         print("已写入 %s" % args.out)
+
+    # Langfuse **旁路 sink**（ADR-70 方案 A）：把同一批真实分数额外推一份，fail-open。
+    # ⛔ 它失败**不影响**上面的分数与退出码；`--no-langfuse` 可显式关闭。
+    if not args.no_langfuse and report:
+        try:
+            sys.path.insert(0, os.path.join(ROOT, "scripts"))
+            import langfuse_sink
+            langfuse_sink.push(
+                items=[{"id": r["id"], "question": r["question"], "expected": r["golden"],
+                        "score": r["mean"],
+                        "reason": next((x["reason"] for x in r["rounds"] if x.get("reason")), ""),
+                        "trace_id": r.get("trace_id")} for r in report],
+                run_name="ac-%s" % run_tag,
+                description="Answer Correctness 固定集（scripts/answer_eval.py 实跑，ADR-70 旁路 sink）")
+        except Exception as e:  # noqa: BLE001 —— 旁路不许弄崩主线
+            print("  [langfuse-sink] ⚠️ 跳过（%s: %s）" % (type(e).__name__, e))
 
 if __name__ == "__main__":
     main()
