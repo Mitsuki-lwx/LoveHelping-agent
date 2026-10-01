@@ -108,7 +108,7 @@ public class GoldenSetRunner {
 
     private List<GoldenCase> loadCases() {
         try {
-            String json = new String(new ClassPathResource("golden-set.json").getInputStream().readAllBytes());
+            String json = new String(new ClassPathResource("golden-set.json").getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             return Arrays.asList(new ObjectMapper().readValue(json, GoldenCase[].class));
         } catch (Exception e) {
             log.error("Failed to load golden-set.json: {}", e.getMessage());

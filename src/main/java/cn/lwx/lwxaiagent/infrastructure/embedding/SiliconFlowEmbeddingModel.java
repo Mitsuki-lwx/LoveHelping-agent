@@ -5,6 +5,7 @@ import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.chat.metadata.EmptyUsage;
 import org.springframework.ai.embedding.Embedding;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.embedding.EmbeddingRequest;
@@ -124,14 +125,14 @@ public class SiliconFlowEmbeddingModel implements EmbeddingModel {
     public EmbeddingResponse call(EmbeddingRequest request) {
         List<String> texts = request == null ? null : request.getInstructions();
         if (texts == null || texts.isEmpty()) {
-            return new EmbeddingResponse(List.of(), new EmbeddingResponseMetadata(modelName(), null));
+            return new EmbeddingResponse(List.of(), new EmbeddingResponseMetadata(modelName(), new EmptyUsage()));
         }
         List<float[]> vectors = doEmbed(texts);
         List<Embedding> embeddings = new ArrayList<>(vectors.size());
         for (int i = 0; i < vectors.size(); i++) {
             embeddings.add(new Embedding(vectors.get(i), i));
         }
-        return new EmbeddingResponse(embeddings, new EmbeddingResponseMetadata(modelName(), null));
+        return new EmbeddingResponse(embeddings, new EmbeddingResponseMetadata(modelName(), new EmptyUsage()));
     }
 
     /** 声明维度，供 Spring AI 内部（如 PgVectorStore 建表/校验）使用。 */

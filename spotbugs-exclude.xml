@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs 豁免清单（ADR-71）。
+
+  ⛔ 纪律：**每条豁免都必须写出理由**，且优先**精确到 类+方法+模式**，不要整类/整模式豁免 ——
+     整类豁免等于把"以后这个类里**新出现**的同类问题"也一起放行了。
+  ⛔ 只豁免**已人工复核**的条目。2026-10-01 首次建立时共 7 条，全部来自当时的 High 清单。
+
+  基线（2026-10-01 首次测量，149 条）：High 10 / Medium 139。
+  Medium 的大头是 `EI_EXPOSE_REP2`（95 条）= Spring 依赖注入把 bean 引用存进字段，
+  那是**框架常态、不是缺陷** ⇒ 门槛只设在 **High**，不把 Medium 变成噪声监狱。
+-->
+<FindBugsFilter>
+
+  <!-- ── DE_MIGHT_IGNORE：捕获后不处理 ────────────────────────────────
+       这 5 处都是**刻意的**：要么是"指标上报不得带崩对话/检索"这类加固，
+       要么是"解析失败用默认值"（默认值在 try 之前已赋好）。代码里都有就地注释。 -->
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.evolution.SkillRetriever"/>
+    <Method name="retrieveAsContext"/>
+    <Bug pattern="DE_MIGHT_IGNORE"/>
+  </Match>
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.evolution.SkillRetriever"/>
+    <Method name="search"/>
+    <Bug pattern="DE_MIGHT_IGNORE"/>
+  </Match>
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphObservability"/>
+    <Method name="simpleHit"/>
+    <Bug pattern="DE_MIGHT_IGNORE"/>
+  </Match>
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.rag.DegradingDocumentRetriever"/>
+    <Method name="retrieve"/>
+    <Bug pattern="DE_MIGHT_IGNORE"/>
+  </Match>
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.admin.GoldenSetRunner"/>
+    <Method name="judge"/>
+    <Bug pattern="DE_MIGHT_IGNORE"/>
+  </Match>
+
+  <!-- ── 已登记的结构性缺陷（**不是**"没问题"，是"这轮不动"）────────────
+       两条都在 ADR-71 里留了记录与风险，属于**已知未修**，不是已解决。 -->
+
+  <!-- ChatExecutor.SYSTEM_PROMPT：5662 字符的常量，且**在另外 3 个 class 文件里重复出现**。
+       ⇒ 真正的风险是**提示词多处副本会漂移**（本仓已被"编译期常量 + 断言判旧文本"坑过一次）。
+       修它=把提示词集中化，属行为风险改动，单独一轮做。 -->
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.infrastructure.orchestration.ChatExecutor"/>
+    <Bug pattern="HSC_HUGE_SHARED_STRING_CONSTANT"/>
+  </Match>
+
+  <!-- ScopeWording：在实例方法里写 static 字段（发布"当前生效措辞"）。
+       这是**刻意的**（ADR-53 的可查询证据就是靠它），但同一类曾因**装配顺序**导致配置被静默忽略
+       ⇒ 属于"知道它脆、暂时保留"，已在 ADR-71 登记。 -->
+  <Match>
+    <Class name="cn.lwx.lwxaiagent.infrastructure.orchestration.ScopeWording"/>
+    <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
+  </Match>
+
+</FindBugsFilter>

@@ -398,6 +398,33 @@
     <!-- ======================== 构建配置 ======================== -->
     <build>
         <plugins>
+            <!-- SpotBugs：静态缺陷扫描（ADR-71）。⛔ 先**只报告、不设门槛** ——
+                 新引入的静态分析器在大仓上动辄几百条，直接当门禁只会被"调参调到绿"。
+                 做法与覆盖率一致：**先测基线，再按类别定棘轮**。 -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>4.8.6.6</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <!-- ⛔ 门槛只设在 **High**：Medium 的大头是 EI_EXPOSE_REP2（95 条）=
+                         Spring 依赖注入存 bean 引用，属框架常态、不是缺陷 —— 把 Medium 当门禁
+                         只会变成"噪声监狱"，最后被人习惯性忽略。 -->
+                    <threshold>High</threshold>
+                    <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+                    <failOnError>true</failOnError>
+                </configuration>
+                <executions>
+                    <!-- 在 verify 阶段跑：`mvn test` 不受影响（与 jacoco/failsafe 同一套分层） -->
+                    <execution>
+                        <id>spotbugs-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Jacoco：**覆盖率度量**（docs/09 §1 要求门槛）。
                  ⛔ 分两步走：先**测出基线**，再把门槛钉在基线上（棘轮），绝不拍一个"理想值"上去 ——
                  那只会让 CI 长期变红，然后被人习惯性忽略（本仓对"恒真的判据"有硬规矩）。 -->
