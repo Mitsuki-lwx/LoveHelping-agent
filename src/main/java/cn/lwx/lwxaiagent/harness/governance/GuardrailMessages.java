@@ -32,8 +32,21 @@ public final class GuardrailMessages {
     public static final String OTHER_OUTPUT =
             "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
 
-    /** 按 rule_id 选文案（{@code self_harm} 前缀统一归入自伤类） */
+    /**
+     * 输出侧命中<b>有害建议</b>（{@code harmful_advice}，V30 起由规则表管辖）时的文案。
+     *
+     * <p>⛔ 与 {@link #OTHER_OUTPUT} 分开是刻意的：这类被拦的场景是"助手在教唆暴力/报复/跟踪"，
+     * 给一句**指向健康处理方式**的话比通用婉拒更有帮助（且与迁移前的文案逐字一致，行为不变）。</p>
+     */
+    public static final String HARMFUL_ADVICE =
+            "我无法提供此类建议。在亲密关系中，暴力、报复或控制行为都不是解决问题的健康方式，"
+                    + "建议双方冷静沟通或寻求专业调解。";
+
+    /** 按 rule_id 选文案：{@code self_harm*} → 自伤类；{@code harmful_advice*} → 有害建议类；其余 → 通用婉拒 */
     public static String forRule(String ruleId) {
-        return ruleId != null && ruleId.startsWith("self_harm") ? SELF_HARM_OUTPUT : OTHER_OUTPUT;
+        if (ruleId == null) return OTHER_OUTPUT;
+        if (ruleId.startsWith("self_harm")) return SELF_HARM_OUTPUT;
+        if (ruleId.startsWith("harmful_advice")) return HARMFUL_ADVICE;
+        return OTHER_OUTPUT;
     }
 }

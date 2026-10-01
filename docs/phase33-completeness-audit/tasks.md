@@ -414,6 +414,18 @@ MyBatis-Plus 的 lambda wrapper（`Message::getXxx`）依赖 **TableInfo 缓存*
 - 补流式三条测试（L3 只发转介且**不订阅下游**、L2 放行、**事后命中只告警**——最后这条**故意钉住现状**，
   将来若做"事后追发纠正"会先撞上它，提醒那是**有意的行为变更**）。
 
-### 待决（需口径）
-`harmful_advice` 该不该在流式路径也拦？它是**纯文本关键词**（不依赖整段输出），
-`StreamSink` 完全做得到 —— 不做的结果是：走流式（主路径）时"报复他/你应该打"这类能出去。
+### ✅ 拍板与落地：把 `harmful_advice` **搬进规则表**（Scope=OUTPUT）
+
+理由：① 回到 **ADR-6「规则外置（DB 表，非硬编码）」**（原实现本就偏离）；② `StreamSink` 自动覆盖流式；
+③ 两路径不再有第二套真相。
+
+- **V30 迁移**：7 条关键词入 `guardrail_rule`（`rule_id=harmful_advice`, `level=3`, `scope=OUTPUT`）。
+  选 OUTPUT 而非 BOTH：这些词针对**助手回复**，不该拿去拦用户输入（用户说"我想报复他"是在倾诉）。
+- **`OutputGuardrail`**：删掉硬编码层（clean cutover），只留"危机应答缺失"那层（规则表达不了）。
+- **`adviseCall`**：输出侧改查 `ruleService.check(text, Scope.OUTPUT)`，与流式 StreamSink **同一份规则**；
+  文案走 `GuardrailMessages.forRule`（新增 harmful_advice 专属文案，与迁移前逐字一致 ⇒ 行为不变）。
+- ⭐ **顺带修正**：原先命中时**一律用通用 BLOCK_TEXT**，把本层自带文案丢了 ——
+  而"用户提到自伤、回复缺危机资源"最该给**援助热线**（`CRISIS_FALLBACK` 就为此存在）。已改用本层 fallback。
+
+**证据链**：Flyway `Migrating to version "30"` ✅ · 启动日志 `OUTPUT-only=10`（**3 → 10**，正好 +7）✅ ·
+单测 420/420 · IT 20+1（V30 契约）· E2E **27/27** + 附加断言 18/18。

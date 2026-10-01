@@ -55,15 +55,13 @@ class OutputGuardrailTest {
     }
 
     @Test
-    @DisplayName("输出里出现有害建议 → 拦（暴力/报复/跟踪类）")
-    void harmful_advice_is_blocked() {
-        for (String bad : new String[]{"你可以报复他，让他也难受", "这种情况下你应该打回去",
-                "以牙还牙才是办法", "可以跟踪她看看去哪了"}) {
-            GuardrailResult r = guardrail.check(bad, "他老是骗我");
-            assertThat(r.blocked()).as("有害建议必须拦：" + bad).isTrue();
-            assertThat(r.reason()).isEqualTo("harmful_advice");
-            assertThat(r.fallback()).isNotBlank();
-        }
+    @DisplayName("⚠️ 有害建议**已搬走**（V30 起由规则表 scope=OUTPUT 管辖）—— 本类不再拦它")
+    void harmful_advice_is_no_longer_handled_here() {
+        // ⛔ 这条**故意钉住搬迁结果**：本类只剩"危机应答缺失"一层。
+        //    若有人把关键词表加回来，这里会红，提醒你先读 V30 与 ADR-6（规则外置）。
+        assertThat(guardrail.check("你可以报复他，让他也尝尝滋味", "他老是骗我").blocked())
+                .as("搬到 guardrail_rule 了；两路径（流式 StreamSink / 非流式 advisor）都用那一份")
+                .isFalse();
     }
 
     @Test

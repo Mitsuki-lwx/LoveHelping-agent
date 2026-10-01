@@ -54,6 +54,10 @@ class GuardrailAdvisorTest {
         recorder = mock(GuardrailEventRecorder.class);
         advisor = new GuardrailAdvisor(outputGuardrail, ruleService, recorder);
         when(outputGuardrail.check(any(), any())).thenReturn(new GuardrailResult(false, null, null, false));
+        // ⛔ 2026-10-01（V30）：输出侧 L3 现在由**规则层**承担（scope=OUTPUT），
+        //    与流式 StreamSink 同一份规则。默认"未命中"，否则未 stub 会返回 null 触发 NPE。
+        when(ruleService.check(anyString(), eq(GuardrailRuleService.Scope.OUTPUT)))
+                .thenReturn(new GuardrailRuleService.Verdict(0, null));
     }
 
     private static ChatClientRequest request(String userText) {
@@ -118,19 +122,38 @@ class GuardrailAdvisorTest {
     }
 
     @Test
-    @DisplayName("⛔ 输出侧命中 → **必须替换掉模型原文**（最后防线，不是只记日志）")
-    void blocked_output_is_replaced_not_merely_logged() {
+    @DisplayName("⛔ 输出侧命中 → **必须替换掉模型原文**，且用**本层自己的文案**（不是通用婉拒）")
+    void blocked_output_is_replaced_with_layer_specific_fallback() {
         when(ruleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(0, null));
         when(outputGuardrail.check(any(), any()))
-                .thenReturn(new GuardrailResult(true, "输出含操控话术", null, false));
-        CallAdvisorChain chain = chainReturning("你应该这样拿捏对方……");
+                .thenReturn(new GuardrailResult(true, "missing_crisis_response",
+                        "危机文案：请联系全国心理援助热线 400-161-9995", false));
+        CallAdvisorChain chain = chainReturning("嗯，那你先冷静一下，我们聊点别的。");
 
-        ChatClientResponse out = advisor.adviseCall(request("怎么回复"), chain);
+        ChatClientResponse out = advisor.adviseCall(request("我最近总是想死"), chain);
 
         assertThat(textOf(out))
                 .as("命中的输出绝不能外发 —— 这是 2026-09-05 修掉的中危缺陷")
-                .doesNotContain("拿捏")
-                .contains("这个话题涉及的内容我不能帮你处理");
+                .doesNotContain("冷静一下");
+        assertThat(textOf(out))
+                .as("⛔ 2026-10-01 修正：原先一律用通用婉拒，把危机资源丢了 —— 该场景最需要热线")
+                .contains("400-161-9995");
+    }
+
+    @Test
+    @DisplayName("⛔ 输出侧 L3 规则（scope=OUTPUT）：与非流式/流式**同一份规则**，命中即替换")
+    void output_scope_rule_hit_is_replaced() {
+        when(ruleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(0, null));
+        when(ruleService.check(anyString(), eq(GuardrailRuleService.Scope.OUTPUT)))
+                .thenReturn(new GuardrailRuleService.Verdict(3, "harmful_advice"));
+        CallAdvisorChain chain = chainReturning("你可以报复他，让他也尝尝这滋味");
+
+        ChatClientResponse out = advisor.adviseCall(request("他老是骗我"), chain);
+
+        assertThat(textOf(out))
+                .as("V30 起这层走规则表；文案由 GuardrailMessages 按 rule_id 选")
+                .doesNotContain("报复他")
+                .contains("我无法提供此类建议");
     }
 
     @Test

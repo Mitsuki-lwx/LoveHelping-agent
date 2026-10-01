@@ -34,14 +34,16 @@ import java.util.List;
  *   <li>如果 AI 回复缺少危机干预内容 → <b>拦截输出，替换为危机干预信息和心理援助热线</b></li>
  * </ol>
  *
- * <h3>第二层：有害建议检测</h3>
- * <p>检查 AI 输出中是否包含可能引发危险行为的建议（{@link #HARMFUL_ADVICE_KEYWORDS}）：</p>
- * <ul>
- *   <li><b>暴力行为：</b>"你应该打..."、"动手教训"</li>
- *   <li><b>报复行为：</b>"报复他"、"以牙还牙"</li>
- *   <li><b>跟踪/控制行为：</b>"跟踪她"、"查他手机"、"控制对方"</li>
- * </ul>
- * <p>这些内容在健康的情感咨询中绝不应出现，如果检测到则直接拦截并返回安全提示。</p>
+ * <h3>本类现在只有这一层</h3>
+ * <p>⚠️ <b>2026-10-01（V30）起，"有害建议"检测已搬进规则表</b>
+ * （{@code guardrail_rule}，{@code rule_id=harmful_advice}，{@code scope=OUTPUT}），不再在这里硬编码。
+ * 原因：那份硬编码表偏离 ADR-6「规则外置（DB 表，非硬编码）」，且**只有非流式路径会拦**，
+ * 而主路径是流式 ⇒ 「报复他」这类能直接出去。搬进规则后，
+ * {@code StreamRegistry.StreamSink}（流式逐块）与 {@link GuardrailAdvisor}（非流式）
+ * 走的是**同一份规则**。</p>
+ * <p>为什么会留下这一层：下面这个判据需要<b>"整段输出 + 用户输入"两个条件</b>才判得出
+ * （用户提了自伤 且 回复里没有任何危机资源），<b>规则表达不了</b>，
+ * 且流式路径结构上无法事后替换（只能告警）。</p>
  *
  * <h2>与输入护栏的区别</h2>
  * <p>与 {@link InputGuardrail} 不同，当输出护栏检测到问题时：</p>
@@ -92,10 +94,12 @@ public class OutputGuardrail {
      * <p><strong>注意：</strong>此列表使用 {@link String#contains} 进行子串匹配，
      * 不需要精确匹配，只要 AI 输出中出现这些子串即触发拦截。</p>
      */
-    private static final List<String> HARMFUL_ADVICE_KEYWORDS = List.of(
-            "你应该打", "动手教训", "报复他", "以牙还牙",
-            "跟踪她", "查他手机", "控制对方"
-    );
+    // ⛔ 2026-10-01（V30）：原先这里有一份**硬编码**的有害建议关键词表（你应该打/报复他/…）。
+    //    它偏离 ADR-6「规则外置（DB 表，非硬编码）」，且**只有非流式路径会拦** ——
+    //    而主路径是流式 ⇒ 「报复他」这类能直接出去。现在它已搬进 `guardrail_rule`
+    //    （rule_id=harmful_advice, scope=OUTPUT），由规则引擎统一判定：流式 StreamSink 与非流式
+    //    走的是**同一份规则**。本类因此只剩"危机应答缺失"这一层 —— 那一层需要
+    //    "整段输出 + 用户输入"才判得出，规则表达不了，所以留在代码里。
 
     /**
      * <h3>心理危机干预 Fallback 回复</h3>
@@ -180,15 +184,7 @@ public class OutputGuardrail {
             return GuardrailResult.block("missing_crisis_response", CRISIS_FALLBACK);
         }
 
-        // ===== 第二层：有害建议检测 =====
-        for (String kw : HARMFUL_ADVICE_KEYWORDS) {
-            if (output.contains(kw)) {
-                log.warn("Output guardrail: harmful advice detected: '{}'", kw);
-                String fallback = "我无法提供此类建议。在亲密关系中，暴力、报复或控制行为都不是解决问题的健康方式，建议双方冷静沟通或寻求专业调解。";
-                return GuardrailResult.block("harmful_advice", fallback);
-            }
-        }
-
+        // 第二层（有害建议）已搬进规则表，见类字段处的说明与 `guardrail_rule`(V30)。
         return GuardrailResult.pass();
     }
 }

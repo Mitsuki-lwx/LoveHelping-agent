@@ -129,6 +129,24 @@ class MysqlMigrationIT {
     }
 
     @Test
+    @DisplayName("V30 契约：有害建议规则进了规则表且 scope=OUTPUT（ADR-6 规则外置；两路径共用）")
+    void harmful_advice_rules_are_output_scoped() throws Exception {
+        migrate();
+        List<String> rows = query("SELECT pattern, scope, level FROM guardrail_rule "
+                + "WHERE rule_id='harmful_advice' ORDER BY pattern");
+        assertThat(rows).as("V30 的 7 条种子必须都在").hasSize(7);
+        assertThat(rows).allSatisfy(r -> {
+            String[] p = r.split("\\|");
+            assertThat(p[1]).as("必须是 OUTPUT —— 这些词针对助手回复，不该拿去拦用户输入：" + r).isEqualTo("OUTPUT");
+            assertThat(p[2]).as("L3 才拦：" + r).isEqualTo("3");
+        });
+        // 反向：不能把用户输入侧也一起拦了（用户说"我想报复他"是在倾诉）
+        List<String> inputHit = query("SELECT rule_id FROM guardrail_rule "
+                + "WHERE rule_id='harmful_advice' AND scope IN ('INPUT','BOTH')");
+        assertThat(inputHit).as("输入侧不该受这条影响").isEmpty();
+    }
+
+    @Test
     @DisplayName("V6 契约：message.feedback 默认 NONE（软反馈免连表）")
     void message_feedback_default() throws Exception {
         migrate();

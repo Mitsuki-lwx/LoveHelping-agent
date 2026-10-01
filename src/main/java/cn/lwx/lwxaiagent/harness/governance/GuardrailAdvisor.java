@@ -88,12 +88,27 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         }
         ChatClientResponse response = chain.nextCall(request);
         String outputText = getOutputText(response);
+
+        // ① 危机应答缺失（需要"整段输出 + 用户输入"，规则表达不了）
         GuardrailResult outputCheck = outputGuardrail.check(outputText, userText);
         if (outputCheck.blocked()) {
             log.warn("Output guardrail: {}", outputCheck.reason());
-            // 中危修复（2026-09-05）：blocked 输出不得外发——替换为通用引导话术
-            // （此前仅记日志，'最后防线'形同虚设；agent/非流路径均走本方法）
-            return fallbackResponse(BLOCK_TEXT);
+            // ⛔ 2026-10-01 修正：这里原先**一律用通用 BLOCK_TEXT**，把本层自带的文案丢了 ——
+            //    而"用户提到自伤、回复缺危机资源"恰恰最该给出**援助热线**，
+            //    {@code CRISIS_FALLBACK} 就是为此存在的。改用本层自己的 fallback。
+            String text = outputCheck.fallback() != null && !outputCheck.fallback().isBlank()
+                    ? outputCheck.fallback() : BLOCK_TEXT;
+            return fallbackResponse(text);
+        }
+
+        // ② 输出侧 L3 规则（scope=OUTPUT）——**与流式 StreamSink 同一份 DB 规则**（ADR-6 规则外置）
+        //    2026-10-01（V30）：原先这层是本类里硬编码的关键词表，流式路径收不到。
+        GuardrailRuleService.Verdict outVerdict =
+                ruleService.check(outputText, GuardrailRuleService.Scope.OUTPUT);
+        if (outVerdict.level() >= 3) {
+            log.warn("Output guardrail (rule, scope=OUTPUT): {} blocked rule={}",
+                    "L3", outVerdict.ruleId());
+            return fallbackResponse(GuardrailMessages.forRule(outVerdict.ruleId()));
         }
         return response;
     }
