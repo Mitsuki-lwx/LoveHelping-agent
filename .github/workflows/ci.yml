@@ -44,8 +44,9 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - name: Run integration tests (*IT.java)
-        run: ./mvnw -B test-compile failsafe:integration-test failsafe:verify
+      # `verify` = 单测 + 集成测试(failsafe) + **覆盖率门槛(jacoco:check)** —— 三者缺一不算过
+      - name: Run integration tests + coverage gate
+        run: ./mvnw -B verify
 
   # ---- 全链路 E2E（ADR-68：与本地同一套 —— e2e_live.py 27 项 + 附加断言 + 输出侧探针）----
   # 需要真实 LLM secrets（模型调用无法 mock）——secrets 未配置时 gate step

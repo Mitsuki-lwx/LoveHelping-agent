@@ -398,6 +398,53 @@
     <!-- ======================== 构建配置 ======================== -->
     <build>
         <plugins>
+            <!-- Jacoco：**覆盖率度量**（docs/09 §1 要求门槛）。
+                 ⛔ 分两步走：先**测出基线**，再把门槛钉在基线上（棘轮），绝不拍一个"理想值"上去 ——
+                 那只会让 CI 长期变红，然后被人习惯性忽略（本仓对"恒真的判据"有硬规矩）。 -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <!-- ⛔ 这是**棘轮**，不是"达标线"：钉在 **2026-10-01 实测基线**上。
+                                 实测：总体行覆盖 **38.8%**（2408/6207），核心 `harness.governance` 48.7%。
+                                 docs/09 §1 写的"行 ≥70%、核心 ≥85%"**从未测过，也没有达到** ——
+                                 保持它只会让门长期变红后被无视。棘轮的作用是"新代码必须带测试"。 -->
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.38</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Failsafe：**集成测试**（`*IT.java`，Testcontainers）。
                  ⛔ 与 surefire 分离是有意的：`mvn test` 必须保持**零外部依赖**（本机没 Docker 也能跑单测）；
                  集成测试只在 `mvn verify` 阶段跑（CI 由 Docker 提供容器）。 -->
