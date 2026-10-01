@@ -31,6 +31,10 @@ jobs:
       #    首跑即抓到 docs/05 把 `GET /Love_app/chat/sse/tools` 写成"现状实现"——该端点从未存在。
       - name: API contract drift check
         run: python3 scripts/check_api_contract.py
+      # ⛔ 提示词副本漂移（R1/ADR-73）：SpotBugs 报的"5662 字符常量在 3 个副本里重复"只是**物理前提**；
+      #    这道门守的是"同一段文本被复制成多份后各自演化"+ prompt 的**分档结构契约**。
+      - name: Prompt drift check
+        run: python3 scripts/check_prompt_drift.py
 
   # ---- 前端单测（27 条，2026-10-01 接入）----
   # ⛔ 此前 CI **完全不碰前端**（无 node/npm 步骤）—— 而 `front/src/__tests__/sseEventRouting.test.js`

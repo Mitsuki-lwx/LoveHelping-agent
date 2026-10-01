@@ -4,6 +4,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * <h3>保留期与删除权（ADR-5）的**执行体**</h3>
@@ -47,6 +48,17 @@ public final class RetentionPurge {
     /** @return 物理删除的行数 */
     public static int purgeDeletedMessages(JdbcTemplate jdbc, Instant cutoff) {
         return jdbc.update(PURGE_DELETED_MESSAGES_SQL, Timestamp.from(cutoff));
+    }
+
+    /**
+     * 找出**账号已禁用**的用户（注销后 {@code users.enabled = false}）。
+     *
+     * <p>用于补扫（ADR-75 / phase33 R3）：注销当时若 PG 不可用，向量删除失败、账号照样被禁用 ——
+     * 那些残留向量就落在这个集合里。⛔ 只按 {@code enabled = false} 认，
+     * **不引入新状态字段**（多一个字段就多一处可能不同步）。</p>
+     */
+    public static List<String> findDisabledUserIds(JdbcTemplate mysqlJdbc) {
+        return mysqlJdbc.queryForList("SELECT username FROM users WHERE enabled = FALSE", String.class);
     }
 
     /** @return 删除的向量条数 */

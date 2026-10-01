@@ -454,6 +454,10 @@ app:
   retention:
     deleted-message-days: 30        # 软删消息保留天数，超过即物理删除
     purge-fixed-delay-ms: 86400000  # 清除任务间隔（默认每天一次）
+    # 残留向量补扫（ADR-75，R3）：注销时若 PG 不可用，向量会删不掉而账号已禁用。
+    # 判据只用 users.enabled=false（不新增状态字段），按批限量跑，失败下轮重试。
+    rescan-fixed-delay-ms: 600000   # 补扫间隔（默认每 10 分钟）
+    rescan-batch-limit: 200         # 单轮最多扫多少个已注销账号（防把 PG 打满）
   scheduler:
     master-enabled: true            # 总开关：false 时所有后台调度跳过
     llm-budget-per-minute: 30       # 每分钟后台共享配额（LLM+embedding 调用数，进程内令牌桶）

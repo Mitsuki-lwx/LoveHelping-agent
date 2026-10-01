@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +40,20 @@ import java.util.Map;
 @Slf4j
 @Service
 public class MemoryService {
+
+    /**
+     * 消息历史条目：**带持久化 id** 的视图（ADR-74 / phase33 R2）。
+     *
+     * <p>⛔ 为什么需要它：{@code GET /memory/{cid}} 返回的是 Spring AI 的
+     * {@code Message}（{@code List<org.springframework.ai.chat.messages.Message>}），
+     * <b>响应里没有 messageId</b> ⇒ {@code POST /memory/message/{messageId}/feedback}
+     * 一直<b>从 API 面够不着</b>（前端实际走的是索引制的 {@code /evolution/vote}）。</p>
+     *
+     * <p>📍 放在 Service 而不是 Controller：controller → service 是本仓既定依赖方向，
+     * 放错位置会逼 service 反向依赖 controller（我第一版就犯了这个）。</p>
+     */
+    public record HistoryItem(Long messageId, String role, String content,
+                             String feedback, LocalDateTime createdAt) {}
 
     /** 消息 Mapper（message 表，Phase 2 对话历史真源）。 */
     private final MessageMapper messageMapper;
@@ -111,6 +126,36 @@ public class MemoryService {
                 case "SYSTEM" -> result.add(new SystemMessage(content));
                 default -> result.add(new AssistantMessage(content));
             }
+        }
+        return result;
+    }
+
+    /**
+     * <h3>获取带持久化 id 的历史（ADR-74 / phase33 R2）</h3>
+     *
+     * <p>与 {@link #getHistory} 内容一致，但每条额外带 {@code messageId} ——
+     * 因为 Spring AI 的 {@code Message} 类型里**没有 id**，导致
+     * {@code POST /memory/message/{messageId}/feedback} 从 API 面够不着。</p>
+     *
+     * <p>⛔ 与 {@link #getHistory} 同样<b>只查未删除</b>（{@code deleted = 0}）、同样<b>按 id 正序</b> ——
+     * 两处若哪天分叉，用户会看到"两次打开的对话内容不一样"。</p>
+     *
+     * @param conversationId 会话 ID
+     * @return 带 id 的历史列表（时间正序）
+     */
+    public List<HistoryItem> getHistoryWithIds(String conversationId) {
+        List<Message> rows = messageMapper.selectList(new LambdaQueryWrapper<Message>()
+                .eq(Message::getConversationId, conversationId)
+                .eq(Message::getDeleted, 0)
+                .orderByAsc(Message::getId));
+        List<HistoryItem> result = new ArrayList<>(rows.size());
+        for (Message row : rows) {
+            result.add(new HistoryItem(
+                    row.getId(),
+                    row.getRole() == null ? "" : row.getRole().toUpperCase(),
+                    decryptContent(row.getContent(), row.getUserId()),
+                    row.getFeedback(),
+                    row.getCreatedAt()));
         }
         return result;
     }

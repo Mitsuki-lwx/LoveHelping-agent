@@ -257,6 +257,24 @@ public class MemoryController {
     }
 
     /**
+     * <h3>消息历史（**带 messageId**，ADR-74 / phase33 R2）</h3>
+     *
+     * <p>与 {@link #getHistory} 内容一致，但每条<strong>额外带持久化 id</strong>，
+     * 使 {@code POST /memory/message/{messageId}/feedback} 可被前端调用。</p>
+     *
+     * <p>⛔ 归属校验与 {@code getHistory} 完全一致（{@code checkOwnership}）——
+     * 这是<strong>新增的越权面</strong>，必须同样守住（docs/07 §3）。</p>
+     *
+     * @param conversationId 对话 ID
+     * @return 带 messageId 的历史列表（时间正序）
+     */
+    @GetMapping("/{conversationId}/messages")
+    public Result<List<MemoryService.HistoryItem>> getHistoryWithIds(@PathVariable String conversationId) {
+        checkOwnership(conversationId);
+        return Result.ok(memoryService.getHistoryWithIds(conversationId));
+    }
+
+    /**
      * <h3>查询对话消息数量</h3>
      * <p>
      * 统计指定对话中包含的消息总数（用户消息 + AI 回复）。
