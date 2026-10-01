@@ -98,6 +98,60 @@ def run(base, output):
     else: check("沙盘原型可读", False, status)
     status, facts = json_request(base, "/memory/facts", token=token)
     check("结构化记忆查询", status == 200 and facts.get("code") == 200)
+
+    # ── phase33 ③：补齐 docs/09 §7.8 登记的四类用例（"待补充（随实现）"，实现早已到位）──
+    # 1) 创建对话（POST /memory/register）显式用例 —— §7.8 第 1 条
+    new_cid = "v_new_" + uuid.uuid4().hex
+    st_reg, reg = json_request(base, "/memory/register",
+                               {"conversationId": new_cid, "title": "E2E 显式创建"}, token=token)
+    _, clist = json_request(base, "/memory/conversations", token=token)
+    check("创建对话：注册成功后出现在本人列表",
+          st_reg == 200 and reg.get("code") == 200 and new_cid in json.dumps(clist))
+
+    # 2) 删除会话 —— §7.8 第 2 条。⛔ 不只查 HTTP 200：删后**列表无**且**详情不再返回正文**（软删）
+    st_del, _ = json_request(base, "/memory/" + new_cid, token=token, method="DELETE")
+    _, clist2 = json_request(base, "/memory/conversations", token=token)
+    _, gone = json_request(base, "/memory/" + new_cid, token=token)
+    check("删除会话：列表移除且详情不再返回正文（软删生效）",
+          st_del == 200 and new_cid not in json.dumps(clist2)
+          and "E2E 显式创建" not in json.dumps(gone, ensure_ascii=False),
+          {"delete_status": st_del, "still_listed": new_cid in json.dumps(clist2)})
+
+    # 2b) 归属校验（docs/07 §3）：**别人的**会话不能被删
+    other_user, other_token = register(base)
+    victim_cid = "v_victim_" + uuid.uuid4().hex
+    json_request(base, "/memory/register", {"conversationId": victim_cid}, token=other_token)
+    st_x, resp_x = json_request(base, f"/memory/{victim_cid}", token=token, method="DELETE")
+    check("跨用户删除会话被拒（归属校验）",
+          st_x in (403, 404) or (resp_x or {}).get("code") in (403, 404),
+          {"status": st_x, "code": (resp_x or {}).get("code")})
+
+    # 3) 赞踩反馈 —— §7.8 第 3 条。⛔ 走**产品真实路径** `/evolution/vote`（前端 `voteMessage` 用的就是它，
+    #    索引制 sessionId+messageIndex）。**不用** `/memory/message/{messageId}/feedback`：
+    #    `GET /memory/{cid}` 返回的是 **Spring AI 的 Message**（不是持久化实体）→ **响应里没有 messageId**，
+    #    而全仓**没有任何端点暴露 messageId** ⇒ 那个端点从 API 面**够不着**（已登记为 phase33 发现）。
+    st_vote, vote = json_request(base, "/evolution/vote",
+                                 {"sessionId": cid, "messageIndex": 0,
+                                  "voteType": "DISLIKE", "feedbackText": "e2e 冒烟"}, token=token)
+    st_bad, bad = json_request(base, "/evolution/vote",
+                               {"sessionId": cid, "messageIndex": 0, "voteType": "NOT_A_VOTE"}, token=token)
+    check("赞踩反馈：产品路径 /evolution/vote 受理，且非法 voteType 被拒",
+          st_vote == 200 and vote.get("code") == 200 and st_bad >= 400,
+          {"vote_status": st_vote, "vote_code": vote.get("code"),
+           "invalid_status": st_bad, "invalid_code": (bad or {}).get("code")})
+
+    # 4) 情绪刹车片 —— §7.8 第 4 条。⛔ 依赖**深夜时段**，评测装置把窗口强制为 0-24（见 wrapper/CI），
+    #    否则这条用例会随"跑测试的时刻"时红时绿。再验 `continueBrake=true` 能继续（信任红线：不替用户决定）
+    brake_prompt = "分手吧，我真的受不了了"
+    _, brake = ask("brake", brake_prompt)
+    # ⛔ SSE 事件里没有 code 字段（只有 event/data）→ 在整个载荷里找刹车片特征，不猜事件形状
+    brake_blob = json.dumps(brake, ensure_ascii=False)
+    brake_fired = ("情绪比较激动" in brake_blob) or ("4002" in brake_blob)
+    _, brake_bypass = ask("brake-bypass", brake_prompt, params={"prompt": brake_prompt, "chatId": "v_bp_" + uuid.uuid4().hex, "continueBrake": "true"})
+    check("情绪刹车片：深夜+极端词触发 4002，且 continueBrake=true 可继续",
+          brake_fired and brake_bypass["success"],
+          {"fired": brake_fired, "bypass_success": brake_bypass["success"], "brake_text": brake["text"][:120]})
+
     report = {"passed":sum(c["passed"] for c in checks), "total":len(checks),"checks":checks,"traces":traces}
     if output:
         Path(output).write_text(json.dumps(report, ensure_ascii=False,indent=2),encoding="utf-8")

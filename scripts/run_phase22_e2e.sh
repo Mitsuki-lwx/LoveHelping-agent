@@ -82,8 +82,56 @@ export ADMIN_API_KEY=lwx-admin-eval-2026
 # 评测期冻结后台任务：后台萃取会写库，污染检索输入
 export APP_SCHEDULER_MASTER_ENABLED=false
 
+# phase33 ③：情绪刹车片用例需要「深夜时段」，而"跑测试的时刻"不可控 →
+# 把窗口强制为 0-24（isLateNight: start<=end ? hour>=0 && hour<24 : ... → **恒真**）。
+# ⛔ 这是**评测装置**，不是生产值；生产默认 23:00-06:00（application.yml）。
+export APP_EMOTION_BRAKE_START_HOUR=0
+export APP_EMOTION_BRAKE_END_HOUR=24
+
 echo
 echo "=== 启动（配置走 yml 默认值 + 仅密钥走环境变量）==="
+# ⛔ 预检：上一轮残留的应用 JVM（尤其**带活跃 SSE 连接被 kill** 的那种）会让端口处于
+#    TIME_WAIT / 仍被占用（Windows 默认 ~240s）→ 新实例启动报「Port 8088 already in use」，
+#    **看着像代码回归，其实是装置不干净**（本轮实测连踩两次，白排查两轮）。
+#    所以：先杀，再**轮询等端口真正释放**才启动；等不到就明确报错，别让它变成"神秘的启动失败"。
+#    只清**应用端口**；被复用的 mcp-server(8392) 不动。
+kill_port 8088
+$PY - <<'PYEOF_WAIT'
+import os, subprocess, time, sys
+port = "8088"
+for i in range(30):
+    out = subprocess.run(['cmd','/c','netstat -ano | findstr :'+port], capture_output=True,
+                         errors='replace').stdout or ''
+    text = out.decode('utf-8','replace') if isinstance(out, bytes) else out
+    holders = {l.split()[-1] for l in text.splitlines() if 'LISTENING' in l}
+    if not holders:
+        print(f"  端口 {port} 已释放（第 {i+1} 次探测）"); sys.exit(0)
+    for pid in holders:
+        subprocess.run(['taskkill','/F','/PID',pid], capture_output=True)
+    time.sleep(1)
+print(f"  ⛔ 端口 {port} 30s 内仍未释放 —— 启动必然失败，先解决占用再跑"); sys.exit(1)
+PYEOF_WAIT
+
+# ⛔ 端口**不是**"没人 LISTENING 就一定能绑"。Windows 会动态**保留端口段**
+#    （`netsh int ipv4 show excludedportrange protocol=tcp`，Hyper-V/WSL/Docker 引起）——
+#    落在保留段里的端口**看着空闲、绑不上**，Spring 报 `Port N was already in use`。
+#    本轮实测：某时刻起 **8083-8182 被保留**（netsh 直接可见），8088 落在里面 → 连踩 4 轮"启动失败"，
+#    而 netstat 里 8088 干干净净；实绑测试显示 **8088-8120 全不可绑**（=落在保留段内）。
+#    ⛔ 教训：**"没人 LISTENING" ≠ "能绑"**（**看着像代码回归，其实是宿主环境变了**）。
+#    所以：启动前**真的试绑**一个端口，把选中的端口用 SERVER_PORT 交给应用（Spring relaxed binding）。
+APP_PORT=$($PY - <<'PYEOF_PORT'
+import socket
+for p in range(9000, 9100):
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", p)); s.close(); print(p); break
+    except OSError:
+        s.close()
+PYEOF_PORT
+)
+: "${APP_PORT:?没有可绑端口（9000-9099 全被占用或保留）}"
+export SERVER_PORT="$APP_PORT"
+echo "  应用端口 = $APP_PORT（实绑测试通过，避开 Windows 保留段）"
 $JAVA -classpath "$CP" "-Dclassworlds.conf=$CW" "-Dmaven.home=$MVN" \
   "-Dmaven.multiModuleProjectDirectory=$MPD" \
   org.codehaus.plexus.classworlds.launcher.Launcher -o spring-boot:run > "$LOG" 2>&1 &
