@@ -55,17 +55,20 @@ app:
     #   ⚠️ 代价：当前默认单 provider 无兜底，主链故障时用户直接拿 5000。
     degrade-enabled: ${LLM_DEGRADE_ENABLED:true}
 
-# ======================== 可观测（生产策略）========================
-# ADR-67：**生产与测试的开法必须不同**（四个维度，见 docs/11 §可观测）。
-app:
+  # ======================== 可观测（生产策略）========================
+  # ADR-67：**生产与测试的开法必须不同**（四个维度，见 docs/11 §可观测）。
+  # ⛔ 注意：本文件**只能有一个顶层 `app:`** —— 加重复顶层键会让 SnakeYAML 直接启动失败
+  #    （2026-09-29 我踩过：`yaml.safe_load` **不报重复键**，所以"结构校验通过"是假绿）。
   langfuse:
     # ⛔ 生产**默认关**：开启 = trace 元数据（**不含原文**，ADR-44）出域到 Langfuse 实例，
     #    属安全/合规决定 → 需登记 `docs/07` §6.1 后再由环境变量显式打开。
     enabled: ${LANGFUSE_ENABLED:false}
     public-key: ${LANGFUSE_PUBLIC_KEY:}
     secret-key: ${LANGFUSE_SECRET_KEY:}
-    # ⛔ 生产必须指向**真实可达的内部实例**；指向 localhost 会静默丢全部 span。
-    host: ${LANGFUSE_HOST:}
+    # 本部署的 Langfuse 实例就在**同机** localhost:3000（2026-09-29 实测可收 trace）。
+    # ⛔ 只有"应用与 Langfuse 不在同一台机器"时，才必须显式覆盖 —— 那种情况下
+    #    指 localhost 会**静默丢全部 span**（没有任何自动化会变红）。
+    host: ${LANGFUSE_HOST:http://localhost:3000}
     # 采样见下（生产默认 10%，测试/本地 100%）。
   # ⚠️ 高流量下队列会丢 span（有界队列）：队列/批量按实际量调，别用本地默认值。
   #    app.langfuse.max-queue-size / max-batch-size / schedule-delay-ms
