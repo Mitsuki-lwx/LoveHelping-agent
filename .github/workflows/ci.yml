@@ -28,7 +28,26 @@ jobs:
           OPENAI_API_KEY: dummy-for-context-test
           DASHSCOPE_API_KEY: dummy-for-context-test
 
-  # ---- 全链路 E2E（ADR-68：与本地同一套 —— e2e_live.py 21 项 + 附加断言 + 输出侧探针）----
+  # ---- 集成测试层（Testcontainers，ADR-69）：真容器跑**迁移链/约束/向量栈契约** ----
+  # 为什么单列：`mvn test` 的 48 个类**全是 Mockito 单测**，SQL/约束/迁移从没被真执行过
+  # （ADR-46 那类"载荷契约"事故正是这层盲区）。用 failsafe 与单测分离：
+  # Docker 缺失时这些用例**跳过而不是假绿**（disabledWithoutDocker）。
+  # 不需要任何 secrets —— 纯容器 + 迁移脚本。
+  integration-test:
+    name: Integration Tests (Testcontainers)
+    needs: backend-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Run integration tests (*IT.java)
+        run: ./mvnw -B test-compile failsafe:integration-test failsafe:verify
+
+  # ---- 全链路 E2E（ADR-68：与本地同一套 —— e2e_live.py 27 项 + 附加断言 + 输出侧探针）----
   # 需要真实 LLM secrets（模型调用无法 mock）——secrets 未配置时 gate step
   # 置 skip=true，其余步骤全部跳过，job 依然绿；配置后每次 push 即全链路回归。
   e2e-smoke:
@@ -132,6 +151,9 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ADMIN_API_KEY: smoke-test-admin-key
           MCP_SERVER_URL: http://localhost:8125/mcp
+          # phase33 ③：刹车片用例需要深夜时段；装置强制 0-24（恒真），非生产值
+          APP_EMOTION_BRAKE_START_HOUR: "0"
+          APP_EMOTION_BRAKE_END_HOUR: "24"
         run: |
           java -jar target/lwx-ai-agent-0.0.1-SNAPSHOT.jar --server.port=8088 > app.log 2>&1 &
           for i in $(seq 1 150); do

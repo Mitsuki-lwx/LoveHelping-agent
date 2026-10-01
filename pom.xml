@@ -58,6 +58,11 @@
     <properties>
         <!-- 使用 Java 21（支持虚拟线程、Record、模式匹配等新特性） -->
         <java.version>21</java.version>
+        <!-- ⛔ 必须覆盖：Spring Boot 3.4.4 的 BOM 给的是 1.20.6，其 docker-java 与
+             **Docker Desktop 4.82 / 引擎 29.6.1** 不兼容 —— 探测 npipe 时引擎返回 `Status 400`
+             （info 体全空），报 `Could not find a valid Docker environment`，IT 全部跳过。
+             实测：CLI 的 `docker info` 正常，仅 Testcontainers 探测失败 → 换 1.21.4 即可。 -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <!-- ======================== 依赖版本管理 ======================== -->
@@ -142,6 +147,25 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>           <!-- 只在测试 classpath 中可用 -->
+        </dependency>
+
+        <!-- Testcontainers：集成测试层（docs/09 §3，ADR-69）。⛔ 需要 Docker；
+             `*IT.java` 由 **failsafe** 在 `mvn verify` 阶段跑，`mvn test` 保持零外部依赖
+             （本机 Docker 未启动时不会误红）。版本由 spring-boot-starter-parent 的 BOM 管理。 -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- Hutool：国产 Java 工具类库，提供字符串、集合、文件、加密等常用工具方法 -->
@@ -374,6 +398,21 @@
     <!-- ======================== 构建配置 ======================== -->
     <build>
         <plugins>
+            <!-- Failsafe：**集成测试**（`*IT.java`，Testcontainers）。
+                 ⛔ 与 surefire 分离是有意的：`mvn test` 必须保持**零外部依赖**（本机没 Docker 也能跑单测）；
+                 集成测试只在 `mvn verify` 阶段跑（CI 由 Docker 提供容器）。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Spring Boot Maven Plugin：打包为可执行 JAR，提供 spring-boot:run 命令 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>

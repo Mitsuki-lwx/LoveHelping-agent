@@ -120,7 +120,25 @@
 ✅ 修法：装置启动前**真的试绑**一个端口（9000 起扫）交给 `SERVER_PORT`。
 📌 **"没人 LISTENING" 只是"能绑"的必要条件，不是充分条件**（已写入 `docs/11` §七）。
 
-## D. 建议顺序（①②③ 已完成）
+## ④ 集成测试层（Testcontainers）✅ 已落地（ADR-69）
+
+`docs/09` §3 里写了很久、从未落地的 testcontainers 层**已补齐**；实测 **9/9 通过、0 跳过**。
+
+| 文件 | 断言（都是**具体契约**，不是"容器起来了"）|
+|---|---|
+| `src/test/java/.../it/MysqlMigrationIT.java`（6）| 迁移链幂等 · `scope` 默认 `BOTH` · `self_harm` **每行**皆 `INPUT`（ADR-55）· `emotion_brake_*` 是 L2 且启用（ADR-6）· `message.feedback` 默认 `NONE`（V6）· **正文逐字读回**（防 ADR-46 类字段错位）· NOT NULL 真在拦 |
+| `src/test/java/.../it/PgVectorSchemaIT.java`（3）| 可建 `vector(1024)`+hnsw 余弦索引 · ⭐ **1023 维必须被拒**（维度漂移哨兵）· 余弦最近邻自洽 |
+
+- 分层：`mvn test` 零外部依赖（单测 **367/367** 实测仍绿、surefire 不碰 IT）；IT 走 failsafe `verify`。
+- CI 新增独立作业 `integration-test`（runner 自带 Docker，无需 secrets）。
+- ⛔ **版本必须覆盖** `testcontainers.version=1.21.4`：BOM 的 1.20.6 与 Docker Desktop 4.82/引擎 29.6.1 不兼容
+  → 探测失败 → **9 个 IT 被静默跳过而 `verify` 仍 BUILD SUCCESS**。📌 **"跳过"也会给出绿色。**
+- ⛔ 首跑 2/9 失败，**两条都是我的测试假设错**（共享容器致"空库"前提不成立；`self_harm` 是每关键词一行而非一行）
+  → 修的是**断言**，不是实现。📌 **新写的断言，其前提本身也是待验证的断言。**
+
+**未做（如实留白）**：Spring 上下文级 IT（真实 mapper 映射）· Redis/MCP/降级链 · E2E 未改容器化。
+
+## D. 建议顺序（①②③④ 已完成）
 
 1. **B1-1 收敛 E2E**（小、直接消除"两套门"）
 2. **A2 修 SRS §7**（小，但属"文档与代码偏离"，AGENTS.md §1 明令禁止）
