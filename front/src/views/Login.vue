@@ -9,18 +9,18 @@
 
       <form @submit.prevent="submit">
         <div class="field">
-          <label>用户名</label>
-          <input v-model="form.username" type="text" placeholder="请输入用户名" required />
+          <label for="login-username">用户名</label>
+          <input id="login-username" v-model="form.username" type="text" placeholder="请输入用户名" required autocomplete="username" />
         </div>
         <div class="field">
-          <label>密码</label>
-          <input v-model="form.password" type="password" placeholder="请输入密码" required />
+          <label for="login-password">密码</label>
+          <input id="login-password" v-model="form.password" type="password" placeholder="请输入密码" required autocomplete="current-password" />
         </div>
 
-        <p v-if="error" class="error-msg">{{ error }}</p>
+        <p v-if="error" class="error-msg" role="alert">{{ error }}</p>
 
         <button type="submit" class="submit-btn" :disabled="loading">
-          {{ loading ? '处理中...' : (isLogin ? '登录' : '注册') }}
+          {{ loading ? '处理中…' : (isLogin ? '登录' : '注册') }}
         </button>
       </form>
 
@@ -74,17 +74,17 @@ async function submit() {
 </script>
 
 <style scoped>
+/* ============================================================
+   登录页（2026-10-01 重做）：深夜书桌上的一张暖纸信卡。
+   改动：深色氛围 + 信卡是页面上唯一的"纸"（强对比焦点）；
+   a11y：label 关联（label-above-input，skill §4.6）、autocomplete、role=alert。
+   ============================================================ */
 .login-page {
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background:
-    radial-gradient(oklch(70% 0.02 78 / 0.18) 0.6px, transparent 0.8px),
-    radial-gradient(ellipse at 50% -10%, oklch(96% 0.025 78), transparent 55%),
-    var(--paper);
-  background-size: 21px 21px, auto, auto;
 }
 .login-card {
   width: min(400px, 94%);
@@ -105,20 +105,20 @@ async function submit() {
   border-width: 2.5px;
   margin-bottom: 4px;
 }
-.login-title { font-size: 26px; margin: 0; letter-spacing: 0.16em; }
+.login-title { font-size: 26px; margin: 0; letter-spacing: 0.16em; color: var(--ink-on-paper); }
 .subtitle {
   font-family: var(--font-hand);
   font-size: 13px;
-  color: var(--ink-faint);
+  color: oklch(48% 0.025 62);
   letter-spacing: 0.06em;
   margin: 0;
 }
-.field { margin-bottom: 18px; }
+.field { margin-bottom: 18px; text-align: left; }
 .field label {
   display: block;
   font-family: var(--font-hand);
   font-size: 13px;
-  color: var(--ink-soft);
+  color: oklch(40% 0.03 62);
   letter-spacing: 0.12em;
   margin-bottom: 6px;
 }
@@ -126,16 +126,16 @@ async function submit() {
   width: 100%;
   font-family: var(--font-body);
   font-size: 15px;
-  color: var(--ink);
+  color: var(--ink-on-paper);
   background: transparent;
   border: none;
-  border-bottom: 1.6px solid var(--ink-line);
+  border-bottom: 1.6px solid oklch(74% 0.024 62);
   padding: 8px 2px;
   outline: none;
   transition: border-color 0.18s;
 }
 .field input:focus { border-bottom-color: var(--wine); }
-.field input::placeholder { color: var(--ink-faint); }
+.field input::placeholder { color: oklch(58% 0.02 62); }
 .error-msg {
   color: var(--danger);
   font-size: 13px;
@@ -147,23 +147,24 @@ async function submit() {
   font-family: var(--font-hand);
   font-size: 16px;
   letter-spacing: 0.2em;
-  color: oklch(98% 0.012 78);
+  color: oklch(97% 0.012 80);
   background: linear-gradient(180deg, var(--wine), var(--wine-deep));
   border: none;
-  border-radius: 22px;
+  border-radius: 999px;
   padding: 12px 0;
   cursor: pointer;
   margin-top: 8px;
   transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s, opacity 0.15s;
-  box-shadow: 0 10px 20px -10px oklch(40% 0.1 25 / 0.6);
+  box-shadow: 0 10px 22px -10px oklch(30% 0.1 28 / 0.8);
 }
-.submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 26px -12px oklch(40% 0.1 25 / 0.7); }
+.submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 26px -12px oklch(36% 0.12 28 / 0.9); }
+.submit-btn:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
 .submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .switch-link {
   margin-top: 20px;
   text-align: center;
   font-size: 13.5px;
-  color: var(--ink-soft);
+  color: oklch(46% 0.02 62);
 }
 .switch-link a {
   color: var(--wine-deep);

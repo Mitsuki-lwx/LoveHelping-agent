@@ -6,7 +6,7 @@
         <span class="letterhead-stamp anim-stamp">恋</span>
         <div class="letterhead-titles">
           <h1 class="letterhead-title hand">恋爱解忧信</h1>
-          <span class="letterhead-sub">— 收信 · 回信 · 替你慢慢想 —</span>
+          <span class="letterhead-sub">收信 · 回信 · 替你慢慢想</span>
         </div>
       </div>
       <button class="new-chat-btn btn-hand" @click="newChat" title="新建对话">✎ 新一封信</button>
@@ -481,8 +481,8 @@ onUnmounted(() => {
   padding: 14px 22px 12px;
   flex-shrink: 0;
   border-bottom: 1.5px solid var(--ink-line);
-  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
-  box-shadow: 0 8px 18px -16px oklch(35% 0.04 62 / 0.5);
+  background: var(--desk-raised);
+  box-shadow: 0 10px 26px -18px oklch(12% 0.04 62 / 0.8);
   position: relative;
   z-index: 2;
 }
@@ -545,7 +545,7 @@ onUnmounted(() => {
   /* 极淡信纸横线（回信纸的横格） */
   background-image: repeating-linear-gradient(
     transparent 0, transparent 35px,
-    oklch(70% 0.02 78 / 0.13) 35px, oklch(70% 0.02 78 / 0.13) 36px
+    oklch(44% 0.02 66 / 0.16) 35px, oklch(44% 0.02 66 / 0.16) 36px
   );
   scroll-behavior: smooth;
 }
@@ -553,7 +553,7 @@ onUnmounted(() => {
 .chat-messages::-webkit-scrollbar-thumb {
   background: var(--ink-line);
   border-radius: 8px;
-  border: 2px solid var(--paper);
+  border: 2px solid var(--desk);
 }
 
 /* ---------- 消息（AI = 收到的回信；user = 你寄出的信） ---------- */
@@ -597,9 +597,10 @@ onUnmounted(() => {
 }
 .message-ai .message-content {
   background: var(--paper-card);
-  border: 1px solid var(--ink-line);
+  border: 1px solid oklch(80% 0.02 70 / 0.28);
   border-radius: 4px 14px 14px 14px;
-  box-shadow: 0 1px 0 oklch(50% 0.02 62 / 0.07), 0 8px 18px -14px oklch(35% 0.04 62 / 0.45);
+  box-shadow: 0 1px 0 oklch(60% 0.03 66 / 0.14), 0 14px 28px -16px oklch(12% 0.03 62 / 0.8);
+  color: var(--ink-on-paper);   /* 暖纸底上必须用深墨：深色主题下曾整页漏了这条（浏览器实测抓到） */
 }
 .message-ai .message-content::before {
   content: '';
@@ -609,19 +610,19 @@ onUnmounted(() => {
   border-top: 2px solid var(--wine);
   border-left: 2px solid var(--wine);
   border-radius: 4px 0 0 0;
-  opacity: 0.55;
+  opacity: 0.6;
 }
 .message-user .message-content {
-  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
-  color: oklch(98% 0.012 78);
+  background: linear-gradient(180deg, var(--wine-glow), var(--wine));
+  color: oklch(97% 0.012 80);
   border-radius: 14px 4px 14px 14px;
   box-shadow: 0 10px 22px -14px oklch(40% 0.1 25 / 0.6);
 }
 .message-user .message-content :deep(strong),
 .message-user .message-content :deep(h1),
 .message-user .message-content :deep(h2),
-.message-user .message-content :deep(h3) { color: oklch(99% 0.01 78); }
-.message-user .message-content :deep(a) { color: oklch(94% 0.06 78); }
+.message-user .message-content :deep(h3) { color: oklch(98% 0.01 80); }
+.message-user .message-content :deep(a) { color: oklch(94% 0.05 80); }
 
 /* ---------- 投票行 ---------- */
 .vote-row {
@@ -643,9 +644,9 @@ onUnmounted(() => {
   cursor: pointer;
   transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s;
 }
-.vote-btn:hover { transform: scale(1.2) rotate(-4deg); background: var(--paper-deep); }
-.vote-active-like { background: oklch(90% 0.05 150 / 0.5) !important; }
-.vote-active-dislike { background: oklch(90% 0.05 27 / 0.45) !important; }
+.vote-btn:hover { transform: scale(1.2) rotate(-4deg); background: var(--desk-raised); }
+.vote-active-like { background: oklch(44% 0.07 150 / 0.8) !important; }
+.vote-active-dislike { background: oklch(44% 0.07 27 / 0.8) !important; }
 .feedback-input {
   border: none;
   border-bottom: 1.4px solid var(--ink-line);
@@ -660,7 +661,7 @@ onUnmounted(() => {
 .feedback-input:focus { border-bottom-color: var(--wine); }
 
 /* ---------- 打字中（墨点） ---------- */
-.thinking-text { margin-right: 6px; opacity: 0.72; }
+.thinking-text { margin-right: 6px; opacity: 0.72; color: var(--ink-on-paper); }
 .typing-dots { display: inline-flex; gap: 3px; padding: 2px 4px; }
 .typing-dots .dot {
   width: 6px; height: 6px;
@@ -725,7 +726,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   padding: 12px 20px 14px;
   border-top: 1.5px solid var(--ink-line);
-  background: linear-gradient(0deg, var(--paper), oklch(99% 0.006 78));
+  background: var(--desk-raised);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -754,8 +755,8 @@ onUnmounted(() => {
 .send-btn {
   border: none;
   border-radius: 20px;
-  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
-  color: oklch(98% 0.012 78);
+  background: linear-gradient(180deg, var(--wine-glow), var(--wine));
+  color: oklch(97% 0.012 80);
   font-family: var(--font-hand);
   font-size: 15px;
   letter-spacing: 0.14em;
@@ -763,9 +764,9 @@ onUnmounted(() => {
   cursor: pointer;
   flex-shrink: 0;
   transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s, opacity 0.15s;
-  box-shadow: 0 8px 16px -10px oklch(40% 0.1 25 / 0.65);
+  box-shadow: 0 8px 18px -10px oklch(46% 0.12 28 / 0.85);
 }
-.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 20px -10px oklch(40% 0.1 25 / 0.7); }
+.send-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 22px -10px oklch(46% 0.12 28 / 0.9); }
 .send-btn:active:not(:disabled) { transform: translateY(1px) scale(0.97); }
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .input-hint {
