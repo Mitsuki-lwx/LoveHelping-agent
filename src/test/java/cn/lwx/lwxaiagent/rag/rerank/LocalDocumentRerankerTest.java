@@ -70,6 +70,40 @@ class LocalDocumentRerankerTest {
         }
     }
 
+    /**
+     * ⛔ 回归（2026-10-01）：URL **漏了 scheme** 时必须抛 {@code IllegalArgumentException}（带排障文案），
+     * 而不是 NPE —— 原实现写的是 {@code Set.of("http","https").contains(scheme)}，
+     * scheme 为 null 时 {@code ImmutableCollections$Set12.contains(null)} **抛 NPE**，
+     * 那句 "Invalid local reranker URL" 永远到不了：**用户拿到 NPE 而不是"你 URL 写错了"**。
+     */
+    @Test
+    void scheme_less_url_throws_IAE_not_NPE() {
+        // ⛔ 本质契约：**IAE 而非 NPE**（拿到排障信息，而不是一个空指针栈）。
+        //    ⚠️ 文案不能一刀切要求：`127.0.0.1:8000/...` 在 URI.create 就抛
+        //    "Illegal character in scheme name"（那也是 IAE，只是不经过我们的校验）——
+        //    按输入分别断言，才是**有区分力**的测试。
+        for (String bad : new String[]{"127.0.0.1:8000/rerank", "/v1/rerank", "example.com/rerank"}) {
+            RerankProperties pr = new RerankProperties();
+            pr.setEnabled(true);
+            pr.setMode("local");
+            pr.setUrl(bad);
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> new LocalDocumentReranker(pr, new ObjectMapper(), ""))
+                    .as("URL=" + bad)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .isNotInstanceOf(NullPointerException.class);
+        }
+        // 能走到自家校验的那种（相对路径，URI 可解析但无 scheme）→ 必须有**我们的文案**
+        RerankProperties pr = new RerankProperties();
+        pr.setEnabled(true);
+        pr.setMode("local");
+        pr.setUrl("/v1/rerank");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new LocalDocumentReranker(pr, new ObjectMapper(), ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid local reranker URL");
+    }
+
     private LocalDocumentReranker reranker() {
         return new LocalDocumentReranker(props, new ObjectMapper(), "");
     }

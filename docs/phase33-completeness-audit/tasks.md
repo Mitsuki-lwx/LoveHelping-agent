@@ -231,7 +231,7 @@ SpotBugs 接入 `mvn verify`。**先测基线再定门槛**（与覆盖率同一
 | R2 | **`/memory/message/{messageId}/feedback` 从 API 面够不着** | 需产品决策：暴露 messageId（新 API 面）还是下线该端点 |
 | R3 | **残留向量无重试任务**（PG 挂时注销只 ERROR 日志）| 需决定重试载体（补扫任务 / 人工）|
 | R4 | **Skill 豁免的"用户同意"无落地字段**（ADR-5 原文要求）| 需产品/合规口径 |
-| R5 | **覆盖率提到 docs/09 §1 原设想（行 70% / 核心 85%）** | 现状 38.8% / 48.7%；提门槛前得先补测试（**不许改门假装达标**）|
+| R5 | **覆盖率提到 docs/09 §1 原设想（行 70% / 核心 85%）** | 进行中：38.8% → **40.2%**（先补**最该测却没测**的类，不追数字；提门槛前不许改门假装达标）|
 | ~~R6~~ | ✅ **已做**（ADR-72）：`scripts/check_api_contract.py` 进 CI，首跑抓到 1 条真漂移 | — |
 | ~~R7~~ | ✅ **已做**（见下）| — |
 
@@ -275,3 +275,30 @@ Login 同理（英文 → 中文产品名）。
 ⛔ 造这个装置时我**连着制造了三个假信号**（详见 ADR-72）：正则漏掉带 `produces` 的映射（假漂移）、
 可选段按"都要在"判定（假 MISSING）、文档里引用漂移端点反被当成新声明。
 ⇒ 门活性用**临时文档**验证（假声明 → exit 1），不动真文档。
+
+
+---
+
+## R5 覆盖率（进行中）—— 先补"最该测却没测"的
+
+不追数字，按**未覆盖行最多且含真实契约**挑目标。首个目标：
+`SiliconFlowEmbeddingModel`（**0%**，122 行，却在 RAG 主路径上）。
+
+新增 `SiliconFlowEmbeddingModelTest`（8 条，用 JDK 自带 `HttpServer` 打桩，不引依赖/不需网络）：
+`dimensions()==1024`（与 `vector(1024)` 绑定）· 非法 baseUrl 构造期即抛 · `embed(null)` 不糊 NPE ·
+**空请求 usage 非 null**（ADR-71 那处修复的直接验证）· 缺 API Key 带排障指引 · 正常 1024 维取回 ·
+⛔ **上游给 512 维必须抛**（"宁可失败暴露，也不写入错维度向量污染库"）· 非 200 必须抛。
+
+### ⭐ 这批测试**当场抓到一个真 bug**（3 处同款）
+
+原实现：`Set.of("http","https").contains(url.getScheme())` —— URL **漏了 scheme** 时
+`getScheme()` 为 null → `ImmutableCollections$Set12.contains(null)` **抛 NPE**，
+那句本想给出的 `IllegalArgumentException("Invalid ... URL")` **永远到不了**。
+⇒ 用户拿到的是**空指针栈**，而不是"你 URL 写错了"。
+
+三处同款，全部修掉 + 加回归测试（断言 **IAE 而非 NPE**）：
+`SiliconFlowEmbeddingModel` · `LocalDocumentReranker` · `LangfuseTracingConfig`。
+
+📌 这正是"0% 覆盖的关键路径"该被补的理由：**契约写在注释里，但没人执行过它**。
+（`LocalDocumentRerankerTest` 里我第一版要求"必须是我的文案"—— 但 `127.0.0.1:8000/x`
+在 `URI.create` 就抛 IAE（文案不同）⇒ 按输入区分断言，才是有区分力的测试。）

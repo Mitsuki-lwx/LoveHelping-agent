@@ -80,7 +80,11 @@ public class SiliconFlowEmbeddingModel implements EmbeddingModel {
         }
         this.endpoint = URI.create(base + EMBEDDINGS_PATH);
         // 与 LocalDocumentReranker 同款校验：只允许 http/https，且不得带 userInfo（防密钥进 URL 被日志记录）
-        if (!java.util.Set.of("http", "https").contains(endpoint.getScheme())
+        // ⛔ 不能写 `Set.of("http","https").contains(scheme)` —— scheme 为 null（如 baseUrl 漏了 http://）
+        //    时 `ImmutableCollections$Set12.contains(null)` **抛 NPE**，那句"Invalid ... URL"
+        //    永远到不了：用户拿到的是 NPE 而不是排障信息。（2026-10-01 被新加的单测抓到，此前该类覆盖率 0%。）
+        String scheme = endpoint.getScheme();
+        if (scheme == null || !("http".equals(scheme) || "https".equals(scheme))
                 || endpoint.getHost() == null || endpoint.getUserInfo() != null) {
             throw new IllegalArgumentException("Invalid siliconflow base URL: " + props.getBaseUrl());
         }

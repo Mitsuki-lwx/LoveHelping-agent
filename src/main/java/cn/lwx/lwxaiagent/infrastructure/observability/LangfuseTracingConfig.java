@@ -35,7 +35,9 @@ public class LangfuseTracingConfig {
         if (p.getPublicKey() == null || p.getPublicKey().isBlank() || p.getSecretKey() == null || p.getSecretKey().isBlank())
             throw new IllegalArgumentException("Langfuse enabled but LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY missing");
         URI host = URI.create(p.getHost());
-        if (!Set.of("http", "https").contains(host.getScheme()) || host.getHost() == null
+        // ⛔ 同上：LANGFUSE_HOST 漏了 http:// 时会 NPE，而不是"Invalid Langfuse host"
+        String scheme = host.getScheme();
+        if (scheme == null || !("http".equals(scheme) || "https".equals(scheme)) || host.getHost() == null
                 || host.getUserInfo() != null || host.getQuery() != null || host.getFragment() != null)
             throw new IllegalArgumentException("Invalid Langfuse host");
         if (p.getMaxBatchSize() > p.getMaxQueueSize()) throw new IllegalArgumentException("Langfuse batch exceeds queue capacity");

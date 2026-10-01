@@ -31,7 +31,10 @@ public class LocalDocumentReranker implements DocumentReranker {
         this.props = props; this.json = json;
         this.apiKey = siliconFlowApiKey;
         endpoint = URI.create(props.getUrl());
-        if (!Set.of("http", "https").contains(endpoint.getScheme()) || endpoint.getHost() == null
+        // ⛔ 同 SiliconFlowEmbeddingModel：`Set.of(...).contains(null)` 会 NPE 吞掉"Invalid ... URL"
+        String scheme = endpoint.getScheme();
+        if (scheme == null || !("http".equals(scheme) || "https".equals(scheme))
+                || endpoint.getHost() == null
                 || endpoint.getUserInfo() != null) throw new IllegalArgumentException("Invalid local reranker URL");
         // remote 模式缺 key 的语义（2026-09-21 改，ADR-39）：
         // **不再在构造期抛出**，改到 rerank() 的调用期抛。
