@@ -69,7 +69,21 @@
 | **C6** | 手写 Langfuse OTLP 导出 + 属性白名单 | 换标准 OTel 导出 | ⛔ **不建议**：白名单是刻意的隐私边界（ADR-62 §八），换掉会丢它 |
 | **C7** | 静态检查只有 gitleaks | SpotBugs / ErrorProne / Checkstyle | 廉价增量 |
 
-## D. 建议顺序（待拍板）
+## ① E2E 收敛 ✅ 已落地（ADR-68）
+
+| 动作 | 结果 |
+|---|---|
+| 新 `scripts/e2e_assertions.py`（可移植） | A3/B/D1-D5/A4/A5(10 用例)/E；**判据强度逐条对齐原 bash 版** |
+| `run_phase22_e2e.sh` | 删 ~110 行内联 heredoc，改调模块；A6 仍走共享 `probe_l3_stream.py` |
+| `ci.yml` | E2E 步骤改跑 **`e2e_live.py` + `e2e_assertions.py` + `probe_l3_stream.py`**（与本地同一套）|
+| `scripts/e2e-smoke.sh` | **已删除**；4 处文档引用同步改 |
+| 验证 | **本地真跑**：核心 **22/22** + 附加 **17 通过 / 0 失败**（A6：被替换 0/6、内容完整 6/6、L3 拦截 0）|
+
+⛔ 途中我犯的错（第 5 次「量具自伤」）：把原版**只打印不判定**的 E 升成 `ERROR==0` 硬判据 →
+首跑 FAIL（10 条全是 Langfuse OTLP 导出失败 = **装置形态**）。已改为只判**应用层** ERROR，
+噪声单列可见。**CI 未实跑**（本地无法触发 Actions）—— 已验证 YAML 结构 + 同一套命令在本地真跑。
+
+## D. 建议顺序（① 已完成）
 
 1. **B1-1 收敛 E2E**（小、直接消除"两套门"）
 2. **A2 修 SRS §7**（小，但属"文档与代码偏离"，AGENTS.md §1 明令禁止）

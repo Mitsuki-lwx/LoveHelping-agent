@@ -35,7 +35,7 @@
 - [x] 三牌切片单测：3 牌 → 3 tier；无标记 → 空；2 牌可激活；无 reaction 关键词时整段作 content；承诺句→空
 - [x] `mvn test -Dtest=CapabilityRouterTest,ChatExecutorTierSliceTest` 10/10 绿
 
-## Task 6：E2E 冒烟 ✅（固化在 `scripts/e2e-smoke.sh` §7.9）
+## Task 6：E2E 冒烟 ✅（当轮固化在 `scripts/e2e-smoke.sh` §7.9；**该脚本 ADR-68 已删除**，见 `docs/09` §7）
 
 - [x] 带上下文话术请求（"…我该怎么回复她道歉？…"）→ 三牌齐全（E2E 实测 TIERS≥3，含"安全牌/进击牌/后撤牌"）
 - [x] 每牌附"对方可能反应/回应"（E2E 实测 reaction 字段非空）
