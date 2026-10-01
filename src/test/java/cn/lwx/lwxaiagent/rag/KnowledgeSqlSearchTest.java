@@ -48,7 +48,12 @@ class KnowledgeSqlSearchTest {
     private static void assertHasSafeFilter(String sql) {
         assertTrue(sql.contains("COALESCE(metadata->>'source'"),
                 "必须用 COALESCE 兜住 NULL（知识块没有 source 键）：" + sql);
-        assertTrue(sql.contains("NOT IN ('memory','evolution')"), "过滤名单要同时排除记忆与已学技能：" + sql);
+        // ⛔ 用**容忍空白**的正则判"名单同时排除 memory 与 evolution"，而不是 `contains` 精确字面量：
+        //    2026-10-01 ADR-69 把该片段抽成 `VectorRowMapper.KNOWLEDGE_ONLY` 时只多了一个空格，
+        //    行为完全没变，这条却红了 —— 那是**在钉格式，不是在钉语义**。
+        //    断言要守住的是"两个都要排除"这个事实，不是 SQL 的排版。
+        assertTrue(sql.matches("(?s).*NOT IN \\(\\s*'memory'\\s*,\\s*'evolution'\\s*\\).*"),
+                "过滤名单要同时排除记忆与已学技能：" + sql);
         assertFalse(sql.matches("(?s).*metadata->>'source'\\s*(<>|!=).*"),
                 "不得退化成裸比较 —— 知识块没有 source 键，NULL 参与比较会让它们被一起滤光：" + sql);
     }

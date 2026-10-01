@@ -35,17 +35,11 @@ import java.util.Map;
 public class KnowledgeSqlSearch {
 
     /**
-     * 知识检索的源过滤条件。
-     *
-     * <p>⚠️ <b>必须用 {@code COALESCE}</b>：知识块的 metadata <b>根本没有 {@code source} 这个键</b>——
-     * 实测 439 条知识块的 {@code metadata->>'source'} 全是 NULL，而 461 条用户记忆显式为 {@code 'memory'}。
-     * SQL 三值逻辑下 {@code metadata->>'source' <> 'memory'} 对知识块求值为 <b>NULL</b> → WHERE 里算 false
-     * → <b>会把知识块一起滤光，而且不报错</b>（这正是当初不敢下推的原因，前置实测后才敢）。
-     * 不要把它"简化"成裸比较。</p>
+     * ⛔ 知识检索的源过滤条件 / 行映射**都不再在本类里定义** ——
+     * 它们在 {@link VectorRowMapper}（**唯一实现**）。抽出去的理由见 ADR-69：集成测试层不启动
+     * Spring 上下文，private 方法测不到；而 {@code COALESCE} 陷阱与三参构造正是 ADR-46 那一类
+     * 静默事故的高风险面，必须有容器级测试守着。
      */
-    static final String KNOWLEDGE_ONLY =
-            "COALESCE(metadata->>'source','') NOT IN ('memory','evolution')";
-
     private final JdbcTemplate pg;
     private final EmbeddingModel embeddingModel;
     private final ObjectMapper json = new ObjectMapper();
@@ -67,7 +61,7 @@ public class KnowledgeSqlSearch {
      * 测试专用构造器：直接注入 JdbcTemplate。
      *
      * <p>存在的唯一理由：生产路径的 JdbcTemplate 是**上面自建**的（避免容器里按类型注入歧义），
-     * 单测注入不进去 —— 而 {@link #KNOWLEDGE_ONLY} 那个 COALESCE 陷阱是本轮最大的回归风险，
+     * 单测注入不进去 —— 而 {@link VectorRowMapper#KNOWLEDGE_ONLY} 那个 COALESCE 陷阱是本轮最大的回归风险，
      * 必须有一个能**捕获真正执行的 SQL** 的防线。生产构造器已标 {@code @Autowired}，Spring 不会选这个。</p>
      */
     KnowledgeSqlSearch(JdbcTemplate pg, EmbeddingModel embeddingModel) {
@@ -83,9 +77,9 @@ public class KnowledgeSqlSearch {
      */
     public List<Document> byVector(String query, int k) {
         return pg.query(
-                "SELECT id, content, metadata::text FROM vector_store WHERE " + KNOWLEDGE_ONLY
+                "SELECT " + VectorRowMapper.SELECT_COLUMNS + " FROM vector_store WHERE " + VectorRowMapper.KNOWLEDGE_ONLY
                         + " ORDER BY embedding <=> ?::vector LIMIT ?",
-                (rs, row) -> toDocument(rs), vectorLiteral(query), k);
+                (rs, row) -> VectorRowMapper.toDocument(rs, json), vectorLiteral(query), k);
     }
 
     /**
@@ -98,7 +92,7 @@ public class KnowledgeSqlSearch {
             return List.of();
         }
         StringBuilder sql = new StringBuilder("SELECT id, content, metadata::text FROM vector_store ")
-                .append("WHERE ").append(KNOWLEDGE_ONLY).append(" AND (");
+                .append("WHERE ").append(VectorRowMapper.KNOWLEDGE_ONLY).append(" AND (");
         List<Object> params = new ArrayList<>();
         for (int i = 0; i < words.size(); i++) {
             if (i > 0) sql.append(" OR ");
@@ -113,7 +107,7 @@ public class KnowledgeSqlSearch {
         }
         sql.append(") DESC, LENGTH(content) ASC LIMIT ?");
         params.add(k);
-        return pg.query(sql.toString(), (rs, row) -> toDocument(rs), params.toArray());
+        return pg.query(sql.toString(), (rs, row) -> VectorRowMapper.toDocument(rs, json), params.toArray());
     }
 
     /**
@@ -148,32 +142,4 @@ public class KnowledgeSqlSearch {
         return sb.append("]").toString();
     }
 
-    /**
-     * SQL 行 → Document（含 metadata 解析）。各通道共用，避免解析逻辑漂移。
-     *
-     * <p>⛔ <b>必须用三参构造 {@code (id, text, metadata)}</b>（2026-09-25 修复，ADR-46）。
-     * Spring AI 的 {@code Document(String, Map)} 是 <b>{@code (text, metadata)}</b> ——
-     * 写成两参会把 <b>库里的 id 当成正文</b>，同时由 {@code RandomIdGenerator} 给 Document
-     * <b>随机生成一个新 id</b>（反编译确认）。两个后果都静默：</p>
-     * <ol>
-     *   <li><b>正文丢失</b>：下游拿到的 {@code getText()} 是一个 UUID 字符串 ——
-     *       重排被喂 UUID（实测 MRR 0.82/0.76 → 0.28/0.27）、RAG 注入给模型的"知识"也是 UUID；</li>
-     *   <li><b>id 每次调用都变</b>：向量通道与关键词通道的同一条记录在 RRF 融合里
-     *       （{@code fused.put(d.getId(), ...)}）<b>永远配不上对</b>，同一块会占两个候选位。</li>
-     * </ol>
-     * <p>列 {@code content} 必须出现在 SELECT 里（两个通道的 SQL 都已包含）。</p>
-     */
-    private Document toDocument(java.sql.ResultSet rs) throws java.sql.SQLException {
-        java.util.Map<String, Object> meta = new java.util.HashMap<>();
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> parsed = json.readValue(rs.getString("metadata"), Map.class);
-            if (parsed != null) {
-                meta.putAll(parsed);
-            }
-        } catch (Exception e) {
-            log.warn("RAG metadata parse failed: {}", e.getMessage());
-        }
-        return new Document(rs.getString("id"), rs.getString("content"), meta);
-    }
 }
