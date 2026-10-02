@@ -40,8 +40,16 @@
     </div>
 
     <div class="content">
+      <!-- ⛔ 删除失败横幅必须在 v-if/v-else-if 链**之外**：我第一版把它插在 loading 与 else-if 之间，
+           直接切断了条件链（v-else-if 不再跟着 v-if）⇒ 加载态/空态全乱、列表在加载中仍然显示。
+           靠 agent 写的三条用例才发现 —— 模板条件链被插入元素破坏是**静默**的。 -->
+      <p v-if="delError" class="del-error" role="alert">{{ delError }}</p>
       <div v-if="loading" class="loading-state">加载中...</div>
 
+      <div v-else-if="loadError" class="empty-state load-error" role="alert">
+        <p>{{ loadError }}</p>
+        <button class="btn-hand" @click="load">重试</button>
+      </div>
       <div v-else-if="conversations.length === 0" class="empty-state">
         <div class="empty-icon">📝</div>
         <p>暂无 {{ activeTab === 'love' ? '恋爱专家' : '恋爱全能帮' }} 对话记录</p>
@@ -89,6 +97,14 @@ const conversations = ref([])
 const loading = ref(true)
 const activeTab = ref('love')
 const deleteTarget = ref(null)
+/** ⛔ 加载失败必须与"真的没有记录"**区分开**：此前 catch 里 conversations=[] ⇒
+ *  后端 500/断网时页面显示"暂无对话记录"，用户会以为历史被清空了（比白屏更有害，因为它像真的）。 */
+const loadError = ref('')
+/** 删除失败用**独立**提示：⛔ 我第一版复用了 loadError，而它在模板里优先于列表渲染，
+ *  结果删除失败会把整个列表顶掉（被 History 的用例抓到）。横幅与"列表加载失败"是两件事。 */
+const delError = ref('')
+/** 请求序号：切标签时旧请求迟到会覆盖新标签的数据（tab 高亮是新的、列表是旧的）。 */
+let loadSeq = 0
 
 function formatTime(t) {
   if (!t) return ''
@@ -100,15 +116,23 @@ function formatTime(t) {
 }
 
 async function load() {
+  const mySeq = ++loadSeq
   loading.value = true
+  loadError.value = ''
   try {
     const res = await listConversations(activeTab.value)
+    // ⛔ 只认**最新**那次请求的结果：快速切标签时旧响应迟到会覆盖新列表，
+    //    而 tab 高亮是新标签 ⇒ 用户看到的是一条"显示错数据"的页面（最难发现的一类）。
+    if (mySeq !== loadSeq) return
     conversations.value = Array.isArray(res.data?.data) ? res.data.data : []
   } catch (e) {
     console.error(e)
+    if (mySeq !== loadSeq) return
+    // ⛔ 不再把失败伪装成空列表（见 loadError 的说明）
     conversations.value = []
+    loadError.value = e?.response?.data?.message || '加载失败，请稍后重试'
   } finally {
-    loading.value = false
+    if (mySeq === loadSeq) loading.value = false
   }
 }
 
@@ -128,11 +152,14 @@ function confirmDelete(conv) {
 
 async function doDelete() {
   if (!deleteTarget.value) return
+  delError.value = ''
   try {
     await clearConversation(deleteTarget.value.conversation_id)
     conversations.value = conversations.value.filter(c => c.conversation_id !== deleteTarget.value.conversation_id)
   } catch (e) {
     console.error(e)
+    // ⛔ 失败必须可见：此前弹层静默关闭、记录还在，用户不知道删没删成（会反复点）
+    delError.value = e?.response?.data?.message || '删除失败，请稍后重试'
   } finally {
     deleteTarget.value = null
   }
@@ -246,6 +273,13 @@ onMounted(load)
 .loading-state, .empty-state { text-align: center; padding: 60px 0; color: var(--ink-faint); }
 .empty-icon { font-size: 40px; margin-bottom: 10px; }
 .empty-state p { font-family: var(--font-hand); font-size: 15px; }
+.load-error { color: oklch(78% 0.12 27); }
+.load-error .btn-hand { margin-top: 12px; }
+.del-error {
+  margin: 0 0 12px; padding: 8px 12px; border-radius: 8px;
+  background: oklch(32% 0.06 27); color: oklch(82% 0.1 27);
+  border: 1px solid oklch(46% 0.08 27); font-size: 13px;
+}
 .conv-list { display: flex; flex-direction: column; gap: 12px; }
 .conv-card {
   display: flex;

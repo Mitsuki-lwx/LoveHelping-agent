@@ -236,8 +236,12 @@ public class MemoryService {
      */
     public List<Map<String, Object>> listAllConversations() {
         try {
+            // ⛔ 必须带 user_id：管理端要按**用户**统计"用户数"。
+            //    此前只 SELECT conversation_id → 前端只能按会话去重 ⇒ "用户数"恒等于"总对话数"
+            //    （同一用户开多个会话会被算成多个用户）。ADR-77 修。
+            //    GROUP BY conversation_id 是安全的：V23 唯一约束保证一个会话只属于一个用户。
             String sql = """
-                SELECT conversation_id, COUNT(*) AS message_count,
+                SELECT conversation_id, MIN(user_id) AS user_id, COUNT(*) AS message_count,
                        MIN(created_at) AS created_at
                 FROM message
                 WHERE deleted = 0

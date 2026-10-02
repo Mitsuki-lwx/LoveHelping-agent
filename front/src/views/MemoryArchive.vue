@@ -12,6 +12,11 @@
       <button class="refresh-btn btn-hand" @click="load">↻ 刷新</button>
       <button class="btn-hand" @click="showAdd = !showAdd">＋ 添加一条</button>
     </div>
+    <!-- ⛔ 页面级失败提示：编辑/删除失败时"新增面板"并不在页面上，
+         把提示塞在面板里等于用户看不到（此前这些 catch 只 console.error）。
+         ⚠️ 放在这个容器**之后**：我第一版把 `</div>` 提前闭合、又补了个无名包装 div，
+         等于悄悄把"添加一条"按钮挪出了原容器 —— 靠 vite build 才发现结构被改。 -->
+    <p v-if="pageError" class="page-error" role="alert">{{ pageError }}</p>
 
     <!-- ⑤ 手动添加（2026-09-08）：告诉 AI 你的偏好/底线 -->
     <div v-if="showAdd" class="add-fact letter-card">
@@ -104,6 +109,8 @@ const addContent = ref('')
 const adding = ref(false)
 const addMsg = ref('')
 const addMsgErr = ref(false)
+/** 页面级失败提示（编辑/删除用）。⛔ 静默失败 = 用户点完"什么都没发生"，与成功无法区分。 */
+const pageError = ref('')
 
 async function submitAdd() {
   if (!addContent.value.trim()) return
@@ -153,17 +160,25 @@ async function load() {
 function startEdit(f) { editingId.value = f.id; editText.value = f.content }
 async function saveFact(f) {
   try {
+    pageError.value = ''
     await updateMemoryFact(f.id, editText.value.trim())
     editingId.value = null
     await load()
-  } catch (e) { console.error('update failed', e) }
+  } catch (e) {
+    console.error('update failed', e)
+    pageError.value = e?.response?.data?.message || '保存失败，请稍后重试'
+  }
 }
 async function delFact(f) {
   if (!confirm('删除这条记忆？')) return
   try {
+    pageError.value = ''
     await deleteMemoryFact(f.id)
     await load()
-  } catch (e) { console.error('delete failed', e) }
+  } catch (e) {
+    console.error('delete failed', e)
+    pageError.value = e?.response?.data?.message || '删除失败，请稍后重试'
+  }
 }
 onMounted(load)
 </script>
@@ -236,4 +251,9 @@ onMounted(load)
 .add-input { flex: 1; border: 1.2px solid var(--ink-line); border-radius: 8px; padding: 7px 10px; font-size: 13px; background: var(--paper-card-warm); }
 .add-msg { margin-top: 8px; font-size: 12.5px; color: var(--teal-deep, #0f6e56); }
 .add-msg.err { color: var(--wine-deep); }
+.page-error {
+  margin: 0 0 10px; padding: 8px 12px; border-radius: 8px;
+  background: oklch(32% 0.06 27); color: oklch(82% 0.1 27);
+  border: 1px solid oklch(46% 0.08 27); font-size: 13px;
+}
 </style>

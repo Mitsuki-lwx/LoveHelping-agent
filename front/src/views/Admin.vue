@@ -1,5 +1,7 @@
 <template>
   <div class="admin-page">
+    <!-- ⛔ 失败提示：此前删除失败只 console.error，弹层一关用户看不到任何反馈 -->
+    <p v-if="delError" class="admin-error" role="alert">{{ delError }}</p>
     <div class="page-header">
       <button class="back-btn" @click="$router.push('/')">← 返回</button>
       <span class="page-title">管理后台</span>
@@ -60,7 +62,7 @@
           <div v-if="detailLoading">加载中...</div>
           <div v-else-if="detailMessages.length === 0">无消息</div>
           <div v-else class="detail-msg-list">
-            <div v-for="msg in detailMessages" :key="msg.id || $index"
+            <div v-for="(msg, idx) in detailMessages" :key="msg.id || idx"
                  :class="['detail-msg', msg.messageType === 'USER' ? 'msg-user' : 'msg-ai']">
               <div class="msg-role">{{ msg.messageType === 'USER' ? '你' : 'AI' }}</div>
               <div class="msg-text">{{ truncate(msg.text, 500) }}</div>
@@ -69,7 +71,7 @@
         </div>
         <div class="modal-footer">
           <span>{{ detailMessages.length }} 条消息</span>
-          <button class="delete-btn" @click="deleteConfirmed">删除此对话</button>
+          <button class="delete-btn" @click="confirmDelete(detailConv)">删除此对话</button>
         </div>
       </div>
     </div>
@@ -98,6 +100,9 @@ const router = useRouter()
 const conversations = ref([])
 const loading = ref(true)
 const detailConv = ref(null)
+/** 操作失败的可读提示。⛔ 此前删除失败只 console.error —— 用户点完"什么都没发生"，
+ *  与"成功"在界面上无法区分（静默失败）。 */
+const delError = ref('')
 const detailMessages = ref([])
 const detailLoading = ref(false)
 const deleteTarget = ref(null)
@@ -105,7 +110,11 @@ const deleteTarget = ref(null)
 const totalMessages = computed(() =>
   conversations.value.reduce((s, c) => s + Number(c.message_count || 0), 0)
 )
-const uniqueUsers = computed(() => new Set(conversations.value.map(c => c.conversation_id)).size)
+// ⛔ 按 **user_id** 去重（不是 conversation_id）：后者等于会话数，
+//    同一用户开多个会话会被算成多个用户 —— 标签写着"用户数"却是会话数，属口径错误（ADR-77）。
+const uniqueUsers = computed(() => new Set(
+  conversations.value.map(c => c.user_id).filter(Boolean)
+).size)
 
 function formatTime(t) {
   if (!t) return ''
@@ -152,6 +161,7 @@ function confirmDelete(conv) {
 
 async function doDelete() {
   if (!deleteTarget.value) return
+  delError.value = ''
   try {
     await clearConversation(deleteTarget.value.conversation_id)
     conversations.value = conversations.value.filter(c => c.conversation_id !== deleteTarget.value.conversation_id)
@@ -160,6 +170,8 @@ async function doDelete() {
     }
   } catch (e) {
     console.error(e)
+    // ⛔ 用户必须知道"没删掉"，否则会以为删了（本仓纪律：静默失败是事故）
+    delError.value = e?.response?.data?.message || '删除失败，请稍后重试'
   } finally {
     deleteTarget.value = null
   }
@@ -268,4 +280,9 @@ onMounted(() => {
 .cancel-btn:hover { background: var(--input-bg); }
 .delete-btn { padding: 8px 20px; border: none; border-radius: 8px; background: #e74c3c; color: #fff; cursor: pointer; font-size: 13px; }
 .delete-btn:hover { background: #c0392b; }
+.admin-error {
+  margin: 0 0 12px; padding: 8px 12px; border-radius: 8px;
+  background: oklch(32% 0.06 27); color: oklch(82% 0.1 27);
+  border: 1px solid oklch(46% 0.08 27); font-size: 13px;
+}
 </style>

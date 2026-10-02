@@ -152,7 +152,7 @@ async function saveProfile() {
   profileMsg.value = ''
   try {
     const d = (await updateProfileApi({
-      nickname: form.nickname.trim() || form.nickname,
+      nickname: form.nickname.trim(),
       avatarEmoji: form.avatarEmoji,
       bio: form.bio.trim()
     })).data

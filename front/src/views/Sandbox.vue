@@ -188,6 +188,12 @@ async function loadSessions() {
   try { sessions.value = (await listSandboxSessions()).data?.data || [] } catch (e) { console.error(e) }
 }
 function openSession(id) {
+  // ⛔ 必须清空消息：messages 是**组件级** ref，而模板只要 currentSession 存在就渲染它。
+  //    此前不清空 ⇒ 切到另一个会话后头部换成新会话、正文还是上一场的对话，
+  //    再发言就把两场混进同一个数组（用户可见的数据张冠李戴）。
+  //    ⚠️ 目前没有"沙盘历史"接口，所以只能清空；将来有接口应在这里按会话拉取。
+  if (currentId.value !== id) messages.value = []
+  loading.value = false
   currentId.value = id
   showCreate.value = false
   memOpen.value = false
@@ -200,6 +206,9 @@ async function startWithPersona(p) {
   } catch (e) { alert('开场失败：' + (e.response?.data?.message || e.message)) }
 }
 async function startCustom() {
+  // ⛔ 纵深防御：当前只有按钮 :disabled 拦空特征；一旦有人删掉它（或加程序化触发/快捷键），
+  //    空人设会话就会被创建出来。校验放在函数里，UI 的 disabled 只是 UX。
+  if (!customTraits.value.trim()) return
   try {
     const res = await sandboxCreate({ customTraits: customTraits.value, relationshipStage: relationshipStage.value || undefined })
     await loadSessions()
