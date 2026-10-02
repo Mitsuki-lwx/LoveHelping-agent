@@ -190,7 +190,7 @@ onMounted(load)
   padding: 16px 22px 14px;
   flex-shrink: 0;
   border-bottom: 1.5px solid var(--ink-line);
-  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
+  background: var(--desk-raised);
 }
 .back-btn {
   font-family: var(--font-hand);

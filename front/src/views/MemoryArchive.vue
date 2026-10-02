@@ -174,7 +174,7 @@ onMounted(load)
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 22px 12px; flex-shrink: 0;
   border-bottom: 1.5px solid var(--ink-line);
-  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
+  background: var(--desk-raised);
   box-shadow: 0 8px 18px -16px oklch(35% 0.04 62 / 0.5); position: relative; z-index: 2;
 }
 .letterhead { display: flex; align-items: center; gap: 12px; }
@@ -208,8 +208,8 @@ onMounted(load)
 .mem-card { padding: 16px 18px 12px; }
 .mem-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .mem-status { font-family: var(--font-hand); font-size: 11.5px; border-radius: 10px; padding: 1px 10px; letter-spacing: 0.08em; }
-.mem-status-active { background: oklch(93% 0.05 160); color: oklch(42% 0.1 160); border: 1px solid oklch(80% 0.08 160); }
-.mem-status-cand { background: oklch(93% 0.05 70); color: oklch(48% 0.1 70); border: 1px solid oklch(82% 0.08 70); }
+.mem-status-active { background: oklch(34% 0.06 160); color: oklch(78% 0.1 160); border: 1px solid oklch(46% 0.08 160); }
+.mem-status-cand { background: oklch(34% 0.05 70); color: oklch(80% 0.09 70); border: 1px solid oklch(46% 0.07 70); }
 .mem-cand-hint { font-size: 11.5px; color: oklch(52% 0.1 70); font-family: var(--font-hand); }
 .mem-hit { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); font-family: var(--font-hand); }
 .mem-content { font-size: 15px; line-height: 1.85; color: var(--ink); cursor: text; }
@@ -224,7 +224,7 @@ onMounted(load)
 .mem-actions { margin-left: auto; display: flex; gap: 4px; }
 .mem-act { background: transparent; border: none; cursor: pointer; font-family: var(--font-hand); font-size: 12.5px; color: var(--ink-soft); padding: 3px 8px; border-radius: 8px; transition: all 0.14s; }
 .mem-act:hover { background: var(--paper-deep); color: oklch(45% 0.1 160); }
-.mem-act-del:hover { color: var(--danger); background: oklch(94% 0.05 27); }
+.mem-act-del:hover { color: var(--danger); background: oklch(32% 0.06 27); }
 
 /* ---- 手动添加（2026-09-08 产品闭环 ⑤） ---- */
 .add-fact { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--wine); }

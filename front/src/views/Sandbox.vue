@@ -296,7 +296,7 @@ async function delMemory(memId) {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 14px 22px 12px; flex-shrink: 0;
   border-bottom: 1.5px solid var(--ink-line);
-  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
+  background: var(--desk-raised);
   box-shadow: 0 8px 18px -16px oklch(35% 0.04 62 / 0.5);
   position: relative; z-index: 2;
 }
@@ -304,7 +304,7 @@ async function delMemory(memId) {
 .letterhead-stamp {
   display: inline-flex; align-items: center; justify-content: center;
   width: 42px; height: 42px; border-radius: 50%;
-  border: 2px dashed oklch(55% 0.12 60); color: oklch(45% 0.11 60);
+  border: 2px dashed var(--wine); color: var(--wine-deep);
   font-family: var(--font-hand); font-size: 20px; font-weight: 700;
   transform: rotate(-10deg); background: var(--paper-card); flex-shrink: 0;
 }
@@ -318,20 +318,24 @@ async function delMemory(memId) {
 .sb-body { flex: 1; display: flex; min-height: 0; }
 .sb-side {
   width: 230px; flex-shrink: 0; border-right: 1.5px solid var(--ink-line);
-  padding: 18px 12px; overflow-y: auto; background: oklch(99% 0.006 78 / 0.6);
+  padding: 18px 12px; overflow-y: auto; background: var(--desk-raised);
 }
 .sb-side-title { font-size: 15px; letter-spacing: 0.14em; margin: 0 6px 12px; }
 .sb-side-empty { font-family: var(--font-hand); font-size: 13px; color: var(--ink-faint); text-align: center; padding: 30px 6px; line-height: 2; }
 .sb-session-list { display: flex; flex-direction: column; gap: 8px; }
 .sb-session { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; transition: all 0.16s; }
 .sb-session:hover { background: var(--paper-deep); }
-.sb-session-active { background: var(--paper-card); border-color: var(--ink-line); box-shadow: 0 6px 14px -10px oklch(40% 0.1 60 / 0.4); }
+.sb-session-active { background: var(--paper-card); border-color: oklch(80% 0.02 70 / 0.3); box-shadow: 0 10px 22px -14px oklch(12% 0.03 62 / 0.8); }
+/* ⛔ 纸底卡片：文字/时间必须用纸上深墨（--ink-on-paper）。
+   用 --ink（深色主题的浅色正文）会变成浅字浮浅底 —— 正是布局冒烟抓到 1.39 对比度的那处。 */
+.sb-session-active .sb-session-name { color: var(--ink-on-paper); }
+.sb-session-active .sb-session-time { color: oklch(46% 0.02 62); }
 .sb-session-wax {
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-  background: radial-gradient(circle at 34% 30%, oklch(62% 0.12 60), oklch(50% 0.11 60));
-  color: oklch(99% 0.01 70); font-family: var(--font-hand); font-size: 16px;
-  box-shadow: inset 0 -2px 4px oklch(35% 0.1 60 / 0.4); transform: rotate(-6deg);
+  background: radial-gradient(circle at 34% 30%, var(--wine-glow), var(--wine));
+  color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 16px;
+  box-shadow: inset 0 -2px 4px oklch(30% 0.1 28 / 0.45); transform: rotate(-6deg);
 }
 .sb-session-meta { min-width: 0; }
 .sb-session-name { font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -344,28 +348,28 @@ async function delMemory(memId) {
 .sb-welcome-sub { font-family: var(--font-hand); font-size: 14px; color: var(--ink-soft); margin-bottom: 30px; letter-spacing: 0.04em; }
 .persona-grid { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
 .persona-card { flex: 1 1 220px; max-width: 250px; min-width: 200px; padding: 26px 20px 18px; cursor: pointer; text-align: center; transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.24s, border-color 0.24s; }
-.persona-card:hover { transform: translateY(-4px) rotate(-0.3deg); border-color: oklch(55% 0.12 60); box-shadow: 0 16px 34px -18px oklch(40% 0.1 60 / 0.5); }
+.persona-card:hover { transform: translateY(-4px) rotate(-0.3deg); border-color: var(--wine); box-shadow: 0 16px 34px -18px oklch(40% 0.1 60 / 0.5); }
 .persona-avatar {
   display: inline-flex; align-items: center; justify-content: center;
   width: 54px; height: 54px; border-radius: 50%; margin-bottom: 10px;
-  background: radial-gradient(circle at 34% 30%, oklch(62% 0.12 60), oklch(50% 0.11 60));
-  color: oklch(99% 0.01 70); font-family: var(--font-hand); font-size: 24px;
-  box-shadow: inset 0 -3px 6px oklch(35% 0.1 60 / 0.4), 0 8px 18px -8px oklch(40% 0.1 60 / 0.55); transform: rotate(-8deg);
+  background: radial-gradient(circle at 34% 30%, var(--wine-glow), var(--wine));
+  color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 24px;
+  box-shadow: inset 0 -3px 6px oklch(30% 0.1 28 / 0.45), 0 8px 18px -8px oklch(40% 0.1 60 / 0.55); transform: rotate(-8deg);
 }
 .persona-avatar-custom { background: radial-gradient(circle at 34% 30%, oklch(58% 0.1 250), oklch(44% 0.09 250)); }
 .persona-name { font-size: 19px; margin: 0 0 4px; letter-spacing: 0.1em; }
 .persona-arche { font-size: 12px; color: var(--ink-faint); letter-spacing: 0.12em; margin-bottom: 8px; }
 .persona-line { font-family: var(--font-hand); font-size: 13px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 10px; min-height: 40px; }
-.persona-go { font-family: var(--font-hand); font-size: 13px; color: oklch(48% 0.12 60); letter-spacing: 0.1em; border-bottom: 1px dashed oklch(55% 0.12 60); padding-bottom: 2px; }
+.persona-go { font-family: var(--font-hand); font-size: 13px; color: oklch(48% 0.12 60); letter-spacing: 0.1em; border-bottom: 1px dashed var(--wine); padding-bottom: 2px; }
 
 .sb-custom { max-width: 520px; margin: 44px auto; width: calc(100% - 44px); padding: 34px 34px 28px; }
 .sb-custom-title { font-size: 21px; letter-spacing: 0.12em; margin: 0 0 16px; text-align: center; }
 .sb-field-label { display: block; font-family: var(--font-hand); font-size: 13px; color: var(--ink-soft); letter-spacing: 0.1em; margin: 12px 0 6px; }
 .sb-input { width: 100%; border: none; border-bottom: 1.6px solid var(--ink-line); background: transparent; font-size: 15px; color: var(--ink); padding: 8px 2px; outline: none; transition: border-color 0.18s; }
-.sb-input:focus { border-bottom-color: oklch(55% 0.12 60); }
+.sb-input:focus { border-bottom-color: var(--wine); }
 .sb-input::placeholder { color: var(--ink-faint); font-family: var(--font-hand); }
 .sb-textarea { border: 1.4px dashed var(--ink-line); border-radius: 8px; padding: 10px 12px; resize: none; line-height: 1.7; }
-.sb-textarea:focus { border-color: oklch(55% 0.12 60); border-style: solid; }
+.sb-textarea:focus { border-color: var(--wine); border-style: solid; }
 .sb-custom-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; }
 
 .sb-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -373,9 +377,9 @@ async function delMemory(memId) {
 .sb-chat-wax {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px; border-radius: 50%; margin-right: 10px;
-  background: radial-gradient(circle at 34% 30%, oklch(62% 0.12 60), oklch(50% 0.11 60));
-  color: oklch(99% 0.01 70); font-family: var(--font-hand); font-size: 17px;
-  transform: rotate(-8deg); box-shadow: inset 0 -2px 4px oklch(35% 0.1 60 / 0.4);
+  background: radial-gradient(circle at 34% 30%, var(--wine-glow), var(--wine));
+  color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 17px;
+  transform: rotate(-8deg); box-shadow: inset 0 -2px 4px oklch(30% 0.1 28 / 0.45);
 }
 .sb-chat-name { font-size: 17px; letter-spacing: 0.08em; vertical-align: middle; }
 .sb-chat-tools { display: flex; gap: 6px; }
@@ -388,12 +392,12 @@ async function delMemory(memId) {
 .sb-msg-ai { align-self: flex-start; }
 .sb-msg-content { padding: 11px 16px; font-size: 14.5px; line-height: 1.8; word-break: break-word; }
 .sb-msg-ai .sb-msg-content { background: var(--paper-card); border: 1px solid var(--ink-line); border-radius: 4px 14px 14px 14px; }
-.sb-msg-user .sb-msg-content { background: linear-gradient(180deg, oklch(55% 0.12 60), oklch(45% 0.11 60)); color: oklch(99% 0.01 70); border-radius: 14px 4px 14px 14px; }
+.sb-msg-user .sb-msg-content { background: linear-gradient(180deg, var(--wine), var(--wine-deep)); color: oklch(97% 0.012 80); border-radius: 14px 4px 14px 14px; }
 .sb-input-bar { flex-shrink: 0; display: flex; gap: 10px; padding: 14px 24px 16px; border-top: 1.5px solid var(--ink-line); }
 .sb-chat-input { flex: 1; border: 1px solid var(--ink-line); border-radius: 22px; background: var(--paper-card); font-size: 15px; color: var(--ink); padding: 10px 18px; outline: none; transition: border-color 0.18s, box-shadow 0.18s; }
-.sb-chat-input:focus { border-color: oklch(55% 0.12 60); box-shadow: 0 0 0 3px oklch(90% 0.05 60 / 0.4); }
+.sb-chat-input:focus { border-color: var(--wine); box-shadow: 0 0 0 3px oklch(58% 0.13 28 / 0.3); }
 .sb-chat-input::placeholder { color: var(--ink-faint); font-family: var(--font-hand); }
-.send-btn { border: none; border-radius: 22px; background: linear-gradient(180deg, oklch(55% 0.12 60), oklch(45% 0.11 60)); color: oklch(99% 0.01 70); font-family: var(--font-hand); font-size: 15px; letter-spacing: 0.1em; padding: 0 1.6em; cursor: pointer; transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s; }
+.send-btn { border: none; border-radius: 22px; background: linear-gradient(180deg, var(--wine), var(--wine-deep)); color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 15px; letter-spacing: 0.1em; padding: 0 1.6em; cursor: pointer; transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s; }
 .send-btn:hover:not(:disabled) { transform: translateY(-1px); }
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -409,7 +413,7 @@ async function delMemory(memId) {
 .sb-mem-empty { font-family: var(--font-hand); font-size: 13px; color: var(--ink-faint); text-align: center; padding: 26px 6px; line-height: 1.9; }
 .sb-mem-list { flex: 1; overflow-y: auto; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .sb-mem-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.6; background: var(--paper-card-warm); border-radius: 8px; padding: 8px 10px; border: 1px solid var(--ink-line); }
-.sb-mem-type { flex-shrink: 0; font-family: var(--font-hand); font-size: 11px; color: oklch(48% 0.12 60); background: oklch(93% 0.05 60); border-radius: 8px; padding: 1px 8px; margin-top: 2px; }
+.sb-mem-type { flex-shrink: 0; font-family: var(--font-hand); font-size: 11px; color: var(--wine-glow); background: var(--wine-soft); border-radius: 8px; padding: 1px 8px; margin-top: 2px; }
 .sb-mem-text { flex: 1; word-break: break-word; color: var(--ink); }
 .sb-mem-del { background: transparent; border: none; color: var(--ink-faint); cursor: pointer; font-size: 12px; padding: 2px; }
 .sb-mem-del:hover { color: var(--danger); }

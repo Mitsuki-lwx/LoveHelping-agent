@@ -249,7 +249,7 @@ async function doDelete() {
   padding: 14px 22px 12px;
   flex-shrink: 0;
   border-bottom: 1.5px solid var(--ink-line);
-  background: linear-gradient(180deg, oklch(99% 0.008 78), var(--paper));
+  background: var(--desk-raised);
   box-shadow: 0 8px 18px -16px oklch(35% 0.04 62 / 0.5);
   position: relative;
   z-index: 2;
@@ -352,7 +352,7 @@ async function doDelete() {
 }
 .field input:focus, .field textarea:focus {
   border-color: var(--wine);
-  box-shadow: 0 0 0 3px oklch(92% 0.03 25 / 0.5);
+  box-shadow: 0 0 0 3px oklch(58% 0.13 28 / 0.3);
 }
 .field input::placeholder, .field textarea::placeholder { color: var(--ink-faint); font-family: var(--font-hand); }
 .counter { position: absolute; right: 10px; bottom: -16px; font-size: 11px; color: var(--ink-faint); }
@@ -374,7 +374,7 @@ async function doDelete() {
 
 .section-title { margin: 0 0 14px; font-size: 18px; letter-spacing: 0.12em; color: var(--ink); }
 
-.memo-note { border-left: 3px solid var(--wine); background: linear-gradient(135deg, var(--paper-card), oklch(97% 0.015 78)); }
+.memo-note { border-left: 3px solid var(--wine); background: linear-gradient(135deg, var(--paper-card), var(--paper-card-warm)); color: var(--ink-on-paper); }
 .memo-title { margin: 0 0 6px; font-size: 16px; color: var(--wine-deep); }
 .memo-body { margin: 0; font-size: 13px; color: var(--ink-soft); line-height: 1.8; }
 

@@ -53,11 +53,19 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* ⛔ 2026-10-01 修：justify-content:center + overflow-y:auto 在**内容高于容器**时会把溢出
+     平均推到上下两端，而**顶部那一截滚不回去** —— 症状正是「标题被导航栏挡住一半」，
+     且 scrollTop 恒为 0（用户无法自救）。改用 auto margin 居中：有余量时仍居中，
+     装不下时溢出**只发生在底部**、可正常滚动。卡片墙变高后从「刚好放得下」变「放不下」，
+     把这个潜伏的坑踩出来了。 */
+  justify-content: flex-start;
   gap: 34px;
   padding: 40px 20px 30px;
   text-align: center;
 }
+/* auto margin 居中：首元素顶推、末元素底推（空间不足时 margin 归 0，不裁内容） */
+.home > :first-child { margin-top: auto; }
+.home > :last-child { margin-bottom: auto; }
 
 /* ---------- 信头 ---------- */
 .home-masthead { display: flex; flex-direction: column; align-items: center; gap: 12px; }

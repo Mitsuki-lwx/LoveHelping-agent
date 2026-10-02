@@ -58,6 +58,11 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      # 覆盖率：**先只报告、不设门槛**（与后端 jacoco 同一套纪律：先测基线再定棘轮）。
+      # 基线 2026-10-02：行 25.3% / 分支 19.8%（补测前是 9.3% / 7.1%）。
+      - name: Coverage report
+        run: npm run test:coverage
+
   # ---- 集成测试层（Testcontainers，ADR-69）：真容器跑**迁移链/约束/向量栈契约** ----
   # 为什么单列：`mvn test` 的 48 个类**全是 Mockito 单测**，SQL/约束/迁移从没被真执行过
   # （ADR-46 那类"载荷契约"事故正是这层盲区）。用 failsafe 与单测分离：
@@ -215,6 +220,17 @@ jobs:
           python3 scripts/probe_l3_stream.py --base "$BASE" --repeat 2 --output outputs/l3-ci.json
 
       # 5) 失败即吐日志（省得再拉）
+      # ⛔ 布局冒烟（ADR-76）：补 **jsdom 抓不到的那一层**（真浏览器 + 真布局引擎）。
+      #    2026-10-02 用户实测报「首页大标题被菜单栏挡住一半」—— 27 条组件测试全绿，jsdom 永远抓不到
+      #    （它没有布局引擎，getBoundingClientRect 全是 0）。这道门首跑就抓到 /sandbox 正文对比度 1.39。
+      - name: Layout smoke (real browser)
+        if: steps.gate.outputs.skip != 'true'
+        working-directory: front
+        run: |
+          npm ci
+          node scripts/layout-smoke.mjs --base http://localhost:8088/api \
+            --user "layout_ci_$GITHUB_RUN_ID" --pass "Passw0rd!123"
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
