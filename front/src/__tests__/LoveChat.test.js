@@ -216,3 +216,51 @@ describe('LoveChat：XSS 与渲染', () => {
     expect(html).toContain('<strong>重点</strong>')
   })
 })
+
+describe('LoveChat：markdown 渲染的 XSS 防线（ADR-79，P0）', () => {
+  beforeEach(() => { sseHandlers.current = null; localStorage.clear() })
+
+  /** 把一段模型/用户文本喂进 AI 气泡（走的就是 v-html 渲染路径） */
+  async function render(text) {
+    const w = mountChat()
+    await send(w, '在吗')
+    sseHandlers.current.onMessage(text)
+    await w.vm.$nextTick()
+    return aiContent(w)
+  }
+
+  it('⛔ 图片 URL 里的引号不能逃出属性（真实可用的偷 token 载荷）', async () => {
+    // 实测过的载荷（ADR-79）：修复前它渲染成
+    // <img src="y" onerror="window.__pwned=localStorage['lwx_ai_token']" ...> 并**真的执行**
+    const el = await render('![x](y" onerror="window.__pwned=localStorage[\'lwx_ai_token\'])')
+    expect(el.find('img[onerror]').exists()).toBe(false)
+    expect(el.html()).not.toContain('onerror')
+  })
+
+  it('⛔ 链接 URL 里的引号同样不能逃出属性', async () => {
+    const el = await render('[点我](x" onmouseover="window.__pwned=1")')
+    expect(el.find('[onmouseover]').exists()).toBe(false)
+    expect(el.html()).not.toContain('onmouseover')
+  })
+
+  it('⛔ javascript: / data: 这类可执行 scheme 不给可点链接', async () => {
+    for (const payload of ['[点我](javascript:window.__pwned=1)', '![x](data:text/html,<script>x</script>)']) {
+      const el = await render(payload)
+      const a = el.find('a')
+      if (a.exists()) expect(a.attributes('href') || '').not.toMatch(/^(javascript|data):/i)
+      expect(el.find('img').exists()).toBe(false)
+    }
+  })
+
+  it('裸 HTML 标签仍被转义（原有防线不许退化）', async () => {
+    const el = await render('<img src=x onerror=window.__pwned=1>')
+    expect(el.find('img').exists()).toBe(false)
+    expect(el.text()).toContain('<img src=x')
+  })
+
+  it('正常图片/链接仍要能渲染（别把功能一起修没了）', async () => {
+    const el = await render('![风景](https://example.com/a.png) 和 [文档](https://example.com/doc)')
+    expect(el.find('img').attributes('src')).toBe('https://example.com/a.png')
+    expect(el.find('a').attributes('href')).toBe('https://example.com/doc')
+  })
+})

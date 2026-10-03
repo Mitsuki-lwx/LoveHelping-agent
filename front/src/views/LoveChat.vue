@@ -163,6 +163,37 @@ function newChat() {
   router.push('/love-chat')
 }
 
+/**
+ * ⛔ 属性转义（2026-10-02 修 XSS）。
+ *
+ * 原实现先把 `<>&` 转义了（裸标签被挡住），**但把 URL/alt 直接拼进 HTML 属性、没转义引号** ——
+ * 于是 `![x](y" onerror="...")` 里的 `"` **逃出属性边界**，注入了可执行 handler。
+ *
+ * 真浏览器实测（ADR-79）：载荷
+ *   `![x](y" onerror="window.__pwned=localStorage['lwx_ai_token'])`
+ * 渲染成 `<img src="y" onerror="window.__pwned=localStorage['lwx_ai_token']" ...>`
+ * → **handler 真的执行、真的读走了 localStorage 里的 JWT**。
+ * 而 msg.content 对**用户自己发的消息**也走这个渲染（历史回填时 user/ai 都渲染）⇒ 可被利用。
+ */
+function escAttr(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
+ * 只放行 http/https 与站内相对路径 —— 拦掉 `javascript:` / `data:` 这类可执行 scheme。
+ * ⛔ 只转义引号是不够的：`[点我](javascript:...)` 不需要逃出属性就能执行。
+ */
+function safeUrl(raw) {
+  const url = String(raw ?? '').trim()
+  if (/^https?:\/\//i.test(url) || url.startsWith('/') || url.startsWith('#')) return url
+  return ''
+}
+
 function renderMarkdown(text) {
   if (!text) return ''
   const escaped = text
@@ -188,21 +219,28 @@ function renderMarkdown(text) {
   html = html.replace(/(<span class="step-badge step-think">思考<\/span>\s*)(.+?)(?:\n|$)/g, '$1<span class="think-text">$2</span>')
   html = html.replace(/(<span class="step-bullet">&#8226;<\/span>\s*)(.+?)(?:\n|$)/g, '$1<span class="think-text">$2</span>')
   // Handle inline images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;max-height:400px;border-radius:8px;margin:8px 0;display:block">')
+  // ⛔ 转义后再拼（原实现直接把 $1/$2 插进属性 → 引号可逃逸 → XSS）
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt, rawUrl) => {
+    const url = safeUrl(rawUrl)
+    if (!url) return escAttr(alt)                       // 不安全 scheme：退化成纯文本
+    return `<img src="${escAttr(url)}" alt="${escAttr(alt)}" style="max-width:100%;max-height:400px;border-radius:8px;margin:8px 0;display:block">`
+  })
   // Handle markdown links - render PDF links as preview/download cards
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, url) => {
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, linkText, rawUrl) => {
+    const url = safeUrl(rawUrl)
+    if (!url) return escAttr(linkText)                  // 不安全 scheme：退化成纯文本，不给可点的链接
     if (url.includes('/pdf/') || url.toLowerCase().endsWith('.pdf')) {
       return `<div class="pdf-card">
         <div class="pdf-card-info">
-          <div class="pdf-card-name">${linkText}</div>
+          <div class="pdf-card-name">${escAttr(linkText)}</div>
           <div class="pdf-card-actions">
-            <a href="${url}" target="_blank" class="pdf-btn pdf-btn-preview" rel="noopener">预览</a>
-            <a href="${url}" download class="pdf-btn pdf-btn-download">下载</a>
+            <a href="${escAttr(url)}" target="_blank" class="pdf-btn pdf-btn-preview" rel="noopener">预览</a>
+            <a href="${escAttr(url)}" download class="pdf-btn pdf-btn-download">下载</a>
           </div>
         </div>
       </div>`
     }
-    return `<a href="${url}" target="_blank" rel="noopener" class="msg-link">${linkText}</a>`
+    return `<a href="${escAttr(url)}" target="_blank" rel="noopener" class="msg-link">${escAttr(linkText)}</a>`
   })
   return html.replace(/\n/g, '<br>')
 }
