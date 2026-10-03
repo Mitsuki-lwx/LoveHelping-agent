@@ -63,6 +63,12 @@ jobs:
       - name: Coverage report
         run: npm run test:coverage
 
+      # ⛔ 2026-10-02 补：此前 CI **从不构建前端**（只跑测试）⇒ 构建层面的问题（base 路径、
+      #    资源引用、懒加载 chunk 拆分）没有任何门；而产物是**手工构建后提交进仓库**的。
+      #    测试能覆盖大部分 import 错误，但覆盖不了 vite 构建本身。
+      - name: Build (must succeed)
+        run: npm run build
+
   # ---- 集成测试层（Testcontainers，ADR-69）：真容器跑**迁移链/约束/向量栈契约** ----
   # 为什么单列：`mvn test` 的 48 个类**全是 Mockito 单测**，SQL/约束/迁移从没被真执行过
   # （ADR-46 那类"载荷契约"事故正是这层盲区）。用 failsafe 与单测分离：

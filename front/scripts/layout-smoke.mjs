@@ -108,13 +108,19 @@ const PROBE = `(() => {
     }
   }
 
-  // 横向溢出
+  // 横向溢出 —— ⛔ 只报**非有意**的溢出：
+  //    overflow-x 为 auto/scroll 的容器（如窄屏下的顶部导航）**本就该横向滚动**，
+  //    那是设计取舍（"导航必须单行"），不是破相。
+  //    我第一版不区分这两者 ⇒ 把 .nav-left 的设计行为报成了缺陷（假信号）。
+  const pageOverflows = document.body.scrollWidth > window.innerWidth + 1;
+  out.info.bodyScrollWidth = document.body.scrollWidth;
+  out.info.innerWidth = window.innerWidth;
+  if (pageOverflows) {
+    out.issues.push('整页横向溢出：body.scrollWidth=' + document.body.scrollWidth + ' > 视口 ' + window.innerWidth);
+  }
   if (scroller) {
     out.info.scrollWidth = scroller.scrollWidth;
     out.info.clientWidth = scroller.clientWidth;
-    if (scroller.scrollWidth > scroller.clientWidth + 1) {
-      out.issues.push('横向溢出：scrollWidth=' + scroller.scrollWidth + ' > clientWidth=' + scroller.clientWidth);
-    }
 
     // 能滚到底：滚到底后最后一个可见块的 bottom 必须落在视口内
     // ⛔ 先关掉 scroll-behavior: smooth —— 平滑滚动下"设置 scrollTop 后立刻读"会拿到旧值 0，
@@ -207,7 +213,7 @@ async function main() {
   }
 
   const routes = loggedIn
-    ? [['/', '/'], ['/love-chat', '/love-chat'], ['/history', '/history'], ['/memory', '/memory'], ['/sandbox', '/sandbox'], ['/profile', '/profile']]
+    ? [['/', '/'], ['/love-chat', '/love-chat'], ['/history', '/history'], ['/memory', '/memory'], ['/sandbox', '/sandbox'], ['/profile', '/profile'], ['/nope-404', '/nope-404']]
     : [['/login', '/login']]
 
   for (const vp of VIEWPORTS) {

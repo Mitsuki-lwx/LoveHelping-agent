@@ -27,17 +27,38 @@ apiClient.interceptors.response.use(
   }
 )
 
+/**
+ * 生成会话 ID。
+ *
+ * ⛔ `crypto.randomUUID()` **只在安全上下文可用**（HTTPS 或 localhost）。
+ * 2026-10-02 实测（Chromium + host-resolver）：`http://127.0.0.1` → isSecureContext=true、
+ * randomUUID 是 function；`http://probe.test`（普通主机名 + HTTP）→ isSecureContext=**false**、
+ * randomUUID 是 **undefined**。
+ * 而本函数在组件 setup 期被求值 ⇒ 生产若走 http + 内网 IP/域名，**聊天页直接挂载失败**（不是降级）。
+ * ⇒ 必须有兜底，且优先用 randomUUID（有加密强度）。
+ */
 function generateChatId() {
-  return crypto.randomUUID()
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  // 退化路径：getRandomValues 在非安全上下文也可用（它不属于仅安全上下文 API）
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const b = crypto.getRandomValues(new Uint8Array(16))
+    return Array.from(b, x => x.toString(16).padStart(2, '0')).join('')
+  }
+  // 最后兜底：时间戳 + 随机（仅用于会话标识，不承担安全职责）
+  return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
 }
 
 /** SSE connection (for EventSource, token passed via query param) */
+/**
+ * ⛔ token **不再放 URL**（2026-10-02）：URL 里的 token 会进服务器访问日志、浏览器历史、
+ * Referer 头 —— 而前端自 2026-09-07 起已改 fetch-stream（不再是 EventSource），
+ * **完全可以在 Authorization 头里带**。后端拦截器本就「先看 header，再退回 query」，两种都收。
+ * 这里只拼路径，token 由 createSSE 放进请求头。
+ */
 function sseUrl(path) {
-  const token = getToken()
-  // Prepend /api prefix; in production Spring Boot context-path=/api, in dev vite proxy passes through
-  const fullPath = '/api' + path
-  const sep = fullPath.includes('?') ? '&' : '?'
-  return `${fullPath}${token ? sep + 'token=' + encodeURIComponent(token) : ''}`
+  return '/api' + path
 }
 
 /**
@@ -60,8 +81,12 @@ export function createSSE(url, { onMessage, onError, onComplete, onBusy, onStatu
 
   const run = async () => {
     try {
+      const token = getToken()
       const resp = await fetch(fullUrl, {
-        headers: { Accept: 'text/event-stream' },
+        headers: {
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         signal: controller.signal,
       })
       if (!resp.ok) {

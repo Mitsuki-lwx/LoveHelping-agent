@@ -1,13 +1,25 @@
 <!doctype html>
-<html lang="en">
+<!-- ⛔ 2026-10-02：lang 从 "en" 改为 zh-CN（产品全中文，屏幕阅读器/SEO 都按 lang 选语音与索引策略）；
+     title 与品牌对齐（此前是「恋爱大师 AI」，而站内品牌是「恋爱解忧所」）；
+     补 description（分享卡片/搜索摘要）与 noscript（JS 未启用时不该是一片空白）。 -->
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/api/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>恋爱大师 AI</title>
+    <meta name="description" content="恋爱解忧所：把说不出口的心事写成一封信，会有人慢慢回。情感陪伴、角色模拟排练与记忆档案。" />
+    <meta name="theme-color" content="#2a241f" />
+    <title>恋爱解忧所 · 心事，有人慢慢听</title>
   </head>
   <body>
     <div id="app"></div>
+    <!-- 全局错误兜底提示（app.config.errorHandler 会显示它） -->
+    <div id="app-fatal" style="display:none;padding:24px;text-align:center;font-family:system-ui;color:#e8e2d8"></div>
+    <noscript>
+      <div style="padding:24px;text-align:center;font-family:system-ui">
+        这个页面需要开启 JavaScript 才能使用。请启用后刷新。
+      </div>
+    </noscript>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

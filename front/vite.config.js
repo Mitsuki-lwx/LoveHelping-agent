@@ -23,6 +23,10 @@ export default defineConfig(({ command }) => ({
     }
   },
   build: {
-    outDir: '../src/main/resources/static'
+    outDir: '../src/main/resources/static',
+    // ⛔ 每次构建前清空产物目录：此前不清 ⇒ static/assets 堆到 40 个文件而 index.html 只引用 2 个，
+    //    38 个陈旧构建随 jar 一起交付（体积 + 排查干扰）。
+    //    ⚠️ 只清 assets 与 index.html（outDir 就是 static，里面没有别的源文件）。
+    emptyOutDir: true
   }
 }))

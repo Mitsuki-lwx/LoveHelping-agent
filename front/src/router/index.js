@@ -1,26 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isAuthenticated, getUser } from '../utils/auth.js'
-import Home from '../views/Home.vue'
-import Login from '../views/Login.vue'
-import LoveChat from '../views/LoveChat.vue'
-import Sandbox from '../views/Sandbox.vue'
-import MemoryArchive from '../views/MemoryArchive.vue'
-import History from '../views/History.vue'
-import Profile from '../views/Profile.vue'
-import Admin from '../views/Admin.vue'
 
 const routes = [
-  { path: '/login', name: 'Login', component: Login },
+  { path: '/login', name: 'Login', component: () => import('../views/Login.vue') },
   {
     path: '/',
     name: 'Home',
-    component: Home,
+    component: () => import('../views/Home.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/love-chat',
     name: 'LoveChat',
-    component: LoveChat,
+    component: () => import('../views/LoveChat.vue'),
     meta: { requiresAuth: true }
   },
   // 恋爱全能帮（旧 LoveManus task 通道）合并进统一聊天（后端 classify 自动路由 agent），
@@ -32,32 +24,39 @@ const routes = [
   {
     path: '/sandbox',
     name: 'Sandbox',
-    component: Sandbox,
+    component: () => import('../views/Sandbox.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/memory',
     name: 'MemoryArchive',
-    component: MemoryArchive,
+    component: () => import('../views/MemoryArchive.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/profile',
     name: 'Profile',
-    component: Profile,
+    component: () => import('../views/Profile.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/history',
     name: 'History',
-    component: History,
+    component: () => import('../views/History.vue'),
     meta: { requiresAuth: true }
   },
   {
     path: '/admin',
     name: 'Admin',
-    component: Admin,
+    component: () => import('../views/Admin.vue'),
     meta: { requiresAuth: true, requiresAdmin: true }
+  },
+  // ⛔ 404 兜底（2026-10-02）：此前未知路径**什么都不匹配** → 渲染空白页（无任何提示）。
+  //    通配必须放最后；它自身不需要鉴权（未登录也能看到"页面不存在"而不是被弹去登录）。
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('../views/NotFound.vue')
   }
 ]
 

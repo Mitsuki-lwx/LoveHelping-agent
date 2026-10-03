@@ -102,16 +102,24 @@ describe('createSSE 错误与边界路径', () => {
     expect(onMessage.mock.calls.map(c => c[0])).toEqual(['有内容'])
   })
 
-  it('token 注入：URL 带 query 时用 & 拼接，且做 URL 编码', async () => {
+  it('⛔ token 走 Authorization 头，**不进 URL**（2026-10-02 改：URL 会进访问日志/历史/Referer）', async () => {
     setToken('tok with space&sym')
     global.fetch = mockFetchOk(['data:x\n\n'])
     createSSE('/Love_app/chat/sse?prompt=a&chatId=b', { onMessage: vi.fn() })
     await drain()
 
-    const calledUrl = global.fetch.mock.calls[0][0]
+    const [calledUrl, opts] = global.fetch.mock.calls[0]
     expect(calledUrl).toContain('/api/Love_app/chat/sse?prompt=a&chatId=b')
-    expect(calledUrl).toContain('&token=')
-    expect(calledUrl).not.toContain('tok with space&sym')   // 必须编码过
+    expect(calledUrl).not.toContain('token')                 // 路径里不许再有 token
+    expect(opts.headers.Authorization).toBe('Bearer tok with space&sym')
+  })
+
+  it('无 token 时不带 Authorization 头（匿名/未登录路径不能被塞一个空 Bearer）', async () => {
+    global.fetch = mockFetchOk(['data:x\n\n'])
+    createSSE('/Love_app/chat/sse?prompt=a', { onMessage: vi.fn() })
+    await drain()
+    const [, opts] = global.fetch.mock.calls[0]
+    expect(opts.headers.Authorization).toBeUndefined()
   })
 
   it('返回的取消函数能中断（AbortError 不冒泡到 onError）', async () => {
@@ -171,5 +179,34 @@ describe('业务封装', () => {
     await getConversationMessages('a/b?c=1')
 
     expect(mod.default.get.mock.calls[0][0]).toBe('/memory/a%2Fb%3Fc%3D1')
+  })
+})
+
+describe('会话 ID 生成（⛔ 非安全上下文下 crypto.randomUUID 是 undefined）', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+  it('安全上下文：优先用 randomUUID（有加密强度）', async () => {
+    const mod = await import('../api/index.js')
+    const id = mod.generateChatId()
+    expect(typeof id).toBe('string')
+    expect(id.length).toBeGreaterThan(10)
+  })
+
+  it('⛔ 非安全上下文（randomUUID 为 undefined）→ 必须仍能生成，**不能抛**', async () => {
+    // 实测依据：http://probe.test（普通主机名 + HTTP）下 isSecureContext=false、crypto.randomUUID=undefined。
+    // 而 generateChatId 在组件 setup 期被求值 ⇒ 抛错 = 聊天页**挂载失败**（白屏），不是降级。
+    const real = globalThis.crypto
+    vi.stubGlobal('crypto', { getRandomValues: real.getRandomValues.bind(real) })   // 有 getRandomValues、无 randomUUID
+    const mod = await import('../api/index.js')
+    expect(() => mod.generateChatId()).not.toThrow()
+    expect(typeof mod.generateChatId()).toBe('string')
+    expect(mod.generateChatId()).not.toBe(mod.generateChatId())   // 两次不同（确实是随机而非常量）
+  })
+
+  it('极端兜底：连 getRandomValues 都没有时也不抛（老浏览器/受限环境）', async () => {
+    vi.stubGlobal('crypto', undefined)
+    const mod = await import('../api/index.js')
+    expect(() => mod.generateChatId()).not.toThrow()
+    expect(mod.generateChatId().startsWith('c')).toBe(true)
   })
 })
