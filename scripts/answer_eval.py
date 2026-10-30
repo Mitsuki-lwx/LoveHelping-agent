@@ -150,7 +150,7 @@ def main():
 
     user = "acceval_%d" % int(time.time())
     req = urllib.request.Request(args.base + "/auth/register",
-        data=json.dumps({"username": user, "password": "Passw0rd!123"}).encode(),
+        data=json.dumps({"username": user, "password": "Passw0rd!123", "birthYear": 1990}).encode(),
         headers={"Content-Type": "application/json"})
     token = json.loads(urllib.request.urlopen(req, timeout=30).read())["token"]
 

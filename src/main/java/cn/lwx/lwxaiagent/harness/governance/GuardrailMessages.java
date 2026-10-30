@@ -23,14 +23,12 @@ public final class GuardrailMessages {
      * 但<b>输出侧</b>被拦的场景是"助手在教唆自伤"，此时提问者可能是<b>想帮朋友的人</b> ——
      * 沿用"你现在的状态…"就是答非所问（ADR-55 缺陷 D3，实测复现）。</p>
      */
-    public static final String SELF_HARM_OUTPUT =
-            "这个话题我需要谨慎处理。如果你或你身边的人正在经历难以承受的时刻，"
-                    + "请联系专业援助：全国心理援助热线 400-161-9995，"
-                    + "北京心理危机研究与干预中心 010-82951332。你不必独自面对。";
+    public static String selfHarmOutput() {
+        return CrisisResources.selfHarmOutputText();
+    }
 
     /** 输出侧命中其它 L3（伤人 / 违法 / 操控）时的婉拒文案 */
-    public static final String OTHER_OUTPUT =
-            "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
+    public static final String OTHER_OUTPUT = CrisisResources.BLOCK_TEXT;
 
     /**
      * 输出侧命中<b>有害建议</b>（{@code harmful_advice}，V30 起由规则表管辖）时的文案。
@@ -45,7 +43,7 @@ public final class GuardrailMessages {
     /** 按 rule_id 选文案：{@code self_harm*} → 自伤类；{@code harmful_advice*} → 有害建议类；其余 → 通用婉拒 */
     public static String forRule(String ruleId) {
         if (ruleId == null) return OTHER_OUTPUT;
-        if (ruleId.startsWith("self_harm")) return SELF_HARM_OUTPUT;
+        if (ruleId.startsWith("self_harm")) return selfHarmOutput();
         if (ruleId.startsWith("harmful_advice")) return HARMFUL_ADVICE;
         return OTHER_OUTPUT;
     }

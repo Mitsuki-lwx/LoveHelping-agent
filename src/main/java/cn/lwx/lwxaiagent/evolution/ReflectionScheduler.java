@@ -131,6 +131,13 @@ public class ReflectionScheduler {
                 break;
             }
             try {
+                // ⛔ 纵深防御（V34 合规，docs/07 §5.4）：SQL 已按同意过滤候选集，
+                //    这里再确认一次"会话 → 用户 → consent"。查不到归属 = 不同意。
+                //    隐私门宁可少做，不可越界——单靠 SQL 一层，将来改了候选查询就会静默失效。
+                if (!hasEvolutionConsent(sessionId)) {
+                    log.info("Reflection skipped (no evolution consent): session={}", sessionId);
+                    continue;
+                }
                 budget.consume("reflect", 1);
                 skillReflector.reflect(sessionId, "default");
                 processed++;
@@ -139,6 +146,21 @@ public class ReflectionScheduler {
             }
         }
         budget.recordOutcome("reflect", sessions.size(), processed, System.currentTimeMillis() - start);
+    }
+
+    /**
+     * 该会话的归属用户是否已单独同意进化模块（V34 合规，docs/07 §5.4）。
+     *
+     * <p>会话归属在 {@code user_conversations.user_id}（= {@code users.username}）；
+     * 查不到归属 / 用户不存在 / consent 非 1 → {@code false}（一律跳过）。</p>
+     */
+    boolean hasEvolutionConsent(String sessionId) {
+        List<Integer> flags = jdbcTemplate.queryForList(
+                "SELECT u.evolution_consent FROM user_conversations uc "
+                        + "JOIN users u ON u.username = uc.user_id "
+                        + "WHERE uc.conversation_id = ? LIMIT 1",
+                Integer.class, sessionId);
+        return !flags.isEmpty() && flags.get(0) != null && flags.get(0) == 1;
     }
 
     /**
@@ -169,14 +191,22 @@ public class ReflectionScheduler {
      *
      * @return 满足反思条件的会话 ID 列表（{@code conversation_id}），最多 20 条
      */
-    private List<String> findReadySessions() {
+    List<String> findReadySessions() {
         // 会话总时长使用 MAX(created_at) - MIN(created_at) 计算
         // 空闲时间使用 NOW() - MAX(created_at) 计算
         // LIMIT 使用配置的批量上限（ADR-20 app.scheduler.reflect.batch-limit）
+        //
+        // ⛔ V34 合规（docs/07 §5.4）：**只处理已单独同意的用户**。
+        //    INNER JOIN user_conversations + users，并要求 users.evolution_consent = 1：
+        //    · 查不到归属的会话被 INNER JOIN 天然排除（宁可少做，不可越界）；
+        //    · 未同意的用户会话**根本不进候选集**——否则它们会一直占满 LIMIT 20 的名额，
+        //      把已同意用户的会话挤在队列外（饿死），且永远不会产生技能去重。
         String sql = """
                 SELECT m.conversation_id
                 FROM message m
-                WHERE m.deleted = 0 AND m.conversation_id NOT IN (
+                INNER JOIN user_conversations uc ON uc.conversation_id = m.conversation_id
+                INNER JOIN users u ON u.username = uc.user_id
+                WHERE m.deleted = 0 AND u.evolution_consent = 1 AND m.conversation_id NOT IN (
                     SELECT DISTINCT source_session_id
                     FROM evolution_skill
                     WHERE source_session_id IS NOT NULL

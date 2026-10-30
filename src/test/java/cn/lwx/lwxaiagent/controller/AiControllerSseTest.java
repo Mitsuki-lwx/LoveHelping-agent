@@ -190,4 +190,63 @@ class AiControllerSseTest {
         assertEquals("status", SseBridge.STATUS_EVENT);
         assertTrue(SseBridge.THINKING_STATUS.contains("thinking"));
     }
+
+    // ────────────── ADR-87：情绪刹车片是「带用户动作的阻断」，不是普通错误 ──────────────
+
+    /**
+     * 刹车片必须走**独立事件**且带机器可读的码。
+     *
+     * <p>修正前的症状（2026-10-13 实测）：4002 被当**默认 data** 发出 ⇒ 前端拿不到码，
+     * 只能把「…请携带 continueBrake=true。」当 AI 回复渲染 —— 用户既看不懂也走不下去。</p>
+     *
+     * <p>⛔ 最后那条 {@code assertFalse(body.contains("continueBrake"))} 是**回归断言**：
+     * 开发参数不许再出现在用户可见文案里。</p>
+     */
+    @Test void brakeIsTypedAsItsOwnEventWithMachineReadableCode() throws Exception {
+        ChatEntry entry = mock(ChatEntry.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new AiController(entry, mock(ChatService.class),
+                mock(AgentTaskService.class), mock(MemoryService.class)))
+                .setMessageConverters(new org.springframework.http.converter.StringHttpMessageConverter(
+                                java.nio.charset.StandardCharsets.UTF_8),
+                        new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter()).build();
+        when(entry.chat(anyString(), anyString(), anyList(), eq(false), eq(false), isNull()))
+                .thenThrow(new BizException(ChatEntry.BRAKE_CODE, "我注意到你现在情绪比较激动。可以先缓一缓，我在这儿等你。"));
+        var pending = mvc.perform(get("/Love_app/chat/sse").param("prompt", "test").param("chatId", "test")
+                .accept(MediaType.TEXT_EVENT_STREAM)).andReturn();
+        pending.getAsyncResult(5000);
+        String body = mvc.perform(asyncDispatch(pending)).andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertTrue(body.contains("event:brake"), body);
+        assertTrue(body.contains("\"code\":4002"), body);
+        assertTrue(body.contains("\"canContinue\":true"), body);
+        assertTrue(body.contains("情绪比较激动"), body);
+        // ⛔ 开发参数绝不进用户可见文案
+        assertFalse(body.contains("continueBrake"), body);
+    }
+
+    /**
+     * 其它入口阻断（如 4001 转介话术）**保持原样**：那句话本身就是 AI 该说的话，
+     * 继续作为默认 data 事件发出（前端 onmessage 显示）。
+     * 把刹车片的改法误推广到这里，会把转介文案变成 JSON 卡片 —— 那是新的伤害。
+     */
+    @Test void otherEntryBlockStillFlowsAsPlainDataText() throws Exception {
+        ChatEntry entry = mock(ChatEntry.class);
+        var mvc = MockMvcBuilders.standaloneSetup(new AiController(entry, mock(ChatService.class),
+                mock(AgentTaskService.class), mock(MemoryService.class)))
+                .setMessageConverters(new org.springframework.http.converter.StringHttpMessageConverter(
+                                java.nio.charset.StandardCharsets.UTF_8),
+                        new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter()).build();
+        when(entry.chat(anyString(), anyString(), anyList(), eq(false), eq(false), isNull()))
+                .thenThrow(new BizException(4001, "我很担心你现在的状态，这里有一些能帮到你的人。"));
+        var pending = mvc.perform(get("/Love_app/chat/sse").param("prompt", "test").param("chatId", "test")
+                .accept(MediaType.TEXT_EVENT_STREAM)).andReturn();
+        pending.getAsyncResult(5000);
+        String body = mvc.perform(asyncDispatch(pending)).andReturn().getResponse()
+                .getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        assertTrue(body.contains("我很担心你现在的状态"), body);
+        assertFalse(body.contains("event:brake"), body);
+        assertFalse(body.contains("\"code\":4001"), body);
+    }
 }

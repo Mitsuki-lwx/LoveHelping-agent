@@ -121,4 +121,46 @@ class MemoryStoreRetrieveAsContextTest {
         assertThat(ctx).as("字面量 \"null\" 不能出现在给模型的提示里").doesNotContain("关键人物");
         assertThat(ctx).as("空白预警不该渲染").doesNotContain("预警事项");
     }
+
+    @Test
+    @DisplayName("V32：partnerAlias 渲染为「你称呼对方为：」，空白时同样不渲染（空白也算没有）")
+    void profile_renders_partner_alias() {
+        RelationshipProfile p = new RelationshipProfile();
+        p.setPartnerAlias("宝宝");
+        when(profileMapper.selectById(anyString())).thenReturn(p);
+
+        assertThat(store.retrieveAsContext("u1"))
+                .as("用户设的称呼必须真的进提示词，否则接口改了模型也不会变")
+                .contains("- 你称呼对方为：宝宝");
+
+        p.setPartnerAlias("   ");
+        assertThat(store.retrieveAsContext("u1"))
+                .as("纯空白不能渲染出空标签（与 stage 同一判据）")
+                .doesNotContain("你称呼对方为");
+    }
+
+    /**
+     * ⛔ 这条是**补的缺口**（2026-10-07 实测）：上面那条测的是**单参**重载，
+     * 而**聊天链走的是双参**重载（`ChatExecutor` 调 `retrieveAsContext(userId, message)`）。
+     * 两个重载各有一份几乎一样的渲染代码 —— 加 V32 的"你称呼对方为"时只改了单参那份，
+     * 于是：字段存进库了、上面那条测试也绿了，但**真实回信里根本没有这个信息**。
+     * 所以两个重载都必须测，且判据要一致（空白 = 没有）。
+     */
+    @Test
+    @DisplayName("双参重载（聊天链真正走的那条）同样要渲染称呼与阶段")
+    void profile_renders_in_two_arg_overload_too() {
+        RelationshipProfile p = new RelationshipProfile();
+        p.setStage("恋爱中");
+        p.setPartnerAlias("小朋友");
+        when(profileMapper.selectById(anyString())).thenReturn(p);
+
+        String ctx = store.retrieveAsContext("u1", "我该怎么跟他说？");
+        assertThat(ctx).as("双参重载必须渲染称呼 —— 聊天链用的是它").contains("- 你称呼对方为：小朋友");
+        assertThat(ctx).contains("- 关系阶段：恋爱中");
+
+        p.setPartnerAlias("   ");
+        assertThat(store.retrieveAsContext("u1", "在吗"))
+                .as("双参重载的空值判据必须与单参一致（空白也算没有）")
+                .doesNotContain("你称呼对方为");
+    }
 }

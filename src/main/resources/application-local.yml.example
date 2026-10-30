@@ -43,6 +43,15 @@ app:
       password: your_pg_password
   siliconflow:
     api-key: sk-xxx                          # 硅基流动：embedding + rerank
+  # 邮件（V33 邮箱绑定/找回密码）：留空 = 未配置 → 验证码打到 WARN 日志（开发路径），
+  # 不配也能跑通全链路。要真发信就填上（QQ/163 的 password 是「授权码」，不是登录密码）。
+  # ⛔ prod profile 下未配置会**启动失败**（fail fast）。
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: your@qq.com
+    password: your_smtp_auth_code
+    from: your@qq.com
 
 search-api:
   api-key: your_search_api_key               # 搜索 API key（MCP 联网搜索）

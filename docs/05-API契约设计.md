@@ -114,6 +114,35 @@ data: {"type":"advice","tiers":[{"name":"安全牌","content":"…","reaction":"
 
 现有 `/auth/register|login|me` 保留。`/tenant/token`：**已于 Phase 1 整体删除**（ADR-13，代码中已不存在）——调试与测试统一走 `/auth/login` 获取真实身份 Token。
 
+#### 3.4.1 个人资料（V18；V31 增加 `anniversaryDate`）
+
+`GET /auth/me` 与 `PUT /auth/profile` 共用同一份资料字段（camelCase）：
+
+| 字段 | 类型 | 读（`/me`） | 写（`/profile`） | 说明 |
+|---|---|---|---|---|
+| `nickname` | string \| null | ✅ | ✅ | 昵称，≤64 字符（超长截断） |
+| `avatarEmoji` | string \| null | ✅ | ✅ | 头像 emoji，≤16 字符 |
+| `bio` | string \| null | ✅ | ✅ | 个性签名，≤200 字符 |
+| `anniversaryDate` | string \| null | ✅ | ✅ | **V31**「在一起」的纪念日，ISO `yyyy-MM-dd`（如 `2023-05-20`）；`null`=未设置 |
+| `enabled` / `createdAt` | bool / string | ✅ | — | 账号状态 / 注册时间（ISO-8601） |
+
+**`PUT /auth/profile`** —— body 各字段均可选，**非空才更新**（空串/`null`=保持原值）。全部为空返回 `"没有需要更新的字段"`。
+
+请求示例：
+
+```json
+{ "nickname": "恋恋的小树洞", "anniversaryDate": "2023-05-20" }
+```
+
+响应示例（成功 / 非法纪念日）：
+
+```json
+{ "success": true, "message": "资料已更新" }
+{ "success": false, "message": "纪念日格式不正确，应为 yyyy-MM-dd（如 2023-05-20）" }
+```
+
+**非法值行为（V31 约定）：** `anniversaryDate` 必须是合法 ISO 日期（`LocalDate.parse`，如 `2023-02-30`、`2023/05/20`、`20230520` 均非法）。非法时**显式报错且不落库**——`UserService.updateProfile` 抛 `BizException(400)`，控制器按既有 Map 契约返回 `success:false`；**不静默忽略**（静默会让用户以为已保存）。写库用 `LocalDate`，响应以 `toString()` 输出 ISO 串。
+
 ### 3.5 媒体上传 `POST /media/upload`
 
 multipart/form-data，单文件。限制：JPG/PNG/WebP、原始 ≤10MB、服务端压缩至长边 2048px（超出格式/大小返回 B1002）。响应：`{ "mediaId": "...", "width": 2048, "height": 1536 }`。上传后经 `/Love_app/chat/sse` 的 `mediaIds` 引用（≤4 张，归属校验）。
@@ -127,3 +156,25 @@ multipart/form-data，单文件。限制：JPG/PNG/WebP、原始 ≤10MB、服�
 - 字段命名 camelCase；时间 ISO-8601 带时区。
 - 破坏性变更：新版本路径（`/v2/...`），旧版本保留一个迭代后下线并公告。
 - 每个端点的错误码在本文表格中有归属段；新增错误码先改文档再改代码。
+
+
+## 附：2026-10-13 新增端点（ADR-88 合规面 + 进化闭环）
+
+| 方法 | 路径 | 鉴权 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/auth/register` | 公开 | **body 新增必填 `birthYear`**（1900..当年）；<18 ⇒ `minor_mode=1` |
+| GET | `/auth/me` | 登录 | 返回新增 `minorMode` / `birthYear` / `evolutionConsent` |
+| PUT | `/auth/evolution-consent` | 登录 | `{consent:boolean}` —— 进化模块**单独同意**（默认关，docs/07 §5.4） |
+| POST | `/complaint` | 登录 | `{category,content,contact?}`；category ∈ CONTENT/PRIVACY/ABUSE/OTHER；**24h 内 ≤5 条**（超出 `code=429`） |
+| GET | `/complaint/mine` | 登录 | 我的举报（含 `status`） |
+| GET | `/complaint/admin/list` | 管理 | `?status=&limit=` |
+| POST | `/complaint/admin/{id}/status` | 管理 | `?status=OPEN\|PROCESSING\|CLOSED` |
+| GET | `/evolution/skills` | 管理 | `?status=PENDING&limit=50`（上限 200）；**已排除 `__reflected_no_skill__` 占位行** |
+| GET | `/evolution/skills/count` | 管理 | 同口径真实条数（前端不得写死） |
+| POST | `/evolution/skills/bulk-reject` | 管理 | `?maxScore=5&limit=2000`（上限 5000）；先取 id 再分批更新 |
+
+**未成年人模式（服务端强制，`app.minor.*`）**：宵禁命中 → `code=4004`；每日超限 → `code=4005`。
+两者走**默认 data 事件**（与 4001 转介同路径，那句话本身就是给用户看的人话）。
+⛔ 与 4002（刹车片）的区别：4002 带用户动作，走独立 `event:brake`（ADR-87）。
+
+⚠️ **本 API 恒返回 HTTP 200**，业务码在响应体 `code` 字段 —— **判成功要看 `body.code`，不是 HTTP 状态**（踩过）。

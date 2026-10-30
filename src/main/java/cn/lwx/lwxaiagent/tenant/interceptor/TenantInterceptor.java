@@ -102,6 +102,13 @@ public class TenantInterceptor implements HandlerInterceptor {
     private JwtTokenProvider jwtTokenProvider;
 
     /**
+     * 令牌版本服务（V33）：校验 token 的 {@code tv} 声明是否仍是当前版本。
+     * 改密/重置密码/注销后版本 +1 → 旧 token 在这里被拒（401）。
+     */
+    @Resource
+    private cn.lwx.lwxaiagent.service.TokenVersionService tokenVersionService;
+
+    /**
      * <h3>请求前处理 —— JWT 提取、验证与上下文注入</h3>
      * <p>
      * 在 Controller 方法执行前调用。这是拦截器的核心逻辑。
@@ -169,6 +176,15 @@ public class TenantInterceptor implements HandlerInterceptor {
         try {
             // 解析 JWT 并验证签名和有效期
             Claims claims = jwtTokenProvider.parseToken(token);
+            // V33：令牌版本校验 —— 改密/重置密码/注销后旧 token 必须立刻失效
+            if (!tokenVersionValid(claims)) {
+                log.warn("Token revoked (version mismatch): user={}, tokenTv={}",
+                        claims.getSubject(), claims.get("tv"));
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json;charset=UTF-8");
+                response.getWriter().write("{\"code\":401,\"message\":\"登录状态已失效，请重新登录\"}");
+                return false;
+            }
             // 将解析出的租户信息注入 ThreadLocal 上下文
             jwtTokenProvider.injectContext(claims);
             log.debug("Tenant context set: tenant={}, user={}",
@@ -182,6 +198,28 @@ public class TenantInterceptor implements HandlerInterceptor {
             response.getWriter().write("Invalid or expired token");
             return false;  // 阻止请求进入 Controller
         }
+    }
+
+    /**
+     * 令牌版本校验（V33）：token 的 {@code tv} 必须等于该用户当前的令牌版本。
+     *
+     * <p><b>老 token（本功能上线前签发，没有 tv 声明）视为 0</b>，与库默认值一致——
+     * 不会因为上线本功能把全部在线用户踢下线；一旦该用户改密/重置/注销，版本变成 1，它们才失效。</p>
+     *
+     * <p>版本值来自 {@link cn.lwx.lwxaiagent.service.TokenVersionService}：热路径只读 Redis，
+     * 未命中才读一次库并回填缓存。</p>
+     */
+    private boolean tokenVersionValid(Claims claims) {
+        String userId = claims.getSubject();
+        if (userId == null || userId.isBlank()) {
+            return false;   // 没有 sub 的 token 无法做版本判定 → 视为无效
+        }
+        long tokenVersion = 0L;
+        Object raw = claims.get("tv");
+        if (raw instanceof Number n) {
+            tokenVersion = n.longValue();
+        }
+        return tokenVersionService.isCurrent(userId, tokenVersion);
     }
 
     /**

@@ -38,6 +38,9 @@ class MemoryFactsControllerTest {
     private MemoryStore memoryStore;
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
+    /** V33：TenantInterceptor 依赖令牌版本服务（拦截器随 SecurityConfig 载入 MVC 切片）。 */
+    @MockBean
+    private cn.lwx.lwxaiagent.service.TokenVersionService tokenVersionService;
 
     @AfterEach
     void clean() {

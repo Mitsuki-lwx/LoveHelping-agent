@@ -30,6 +30,7 @@ vi.mock('../api/index.js', () => ({
   doneActionItem: vi.fn(async () => ({})),
   removeActionItem: vi.fn(async () => ({})),
   reportSentiment: vi.fn(async () => ({})),
+  markOnboarded: vi.fn(async () => ({ data: { code: 200 } })),
 }))
 
 // typewriter 换同步：立刻写完整文本（等价于"瞬间播完"）
@@ -41,14 +42,16 @@ vi.mock('../utils/typewriter.js', () => ({
   default: () => ({ start: (t, f) => f(t), stop: () => {} }),
 }))
 
+const routerPush = vi.fn()
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: routerPush }),
   useRoute: () => ({ query: {} }),
 }))
 
 vi.mock('../utils/history.js', () => ({ saveLocalConversation: vi.fn() }))
 
 import LoveChat from '../views/LoveChat.vue'
+import { markOnboarded } from '../api/index.js'
 
 function mountChat() {
   return mount(LoveChat, { global: { stubs: { RouterLink: true } } })
@@ -262,5 +265,138 @@ describe('LoveChat：markdown 渲染的 XSS 防线（ADR-79，P0）', () => {
     const el = await render('![风景](https://example.com/a.png) 和 [文档](https://example.com/doc)')
     expect(el.find('img').attributes('src')).toBe('https://example.com/a.png')
     expect(el.find('a').attributes('href')).toBe('https://example.com/doc')
+  })
+})
+
+/**
+ * AI 生成标识 + 未成年人模式提示（2026-10-13 合规改造）。
+ *
+ * ⛔ 为什么这两条要永久守：
+ *   · 标识是《人工智能生成合成内容标识办法》第四条(一)要求的**显式标识** ——
+ *     它一旦被重构删掉，页面看起来完全正常，只有监管或用户才会发现"分不清是不是真人"；
+ *   · 未成年人提示条读的是**资料缓存**（不额外发请求），很容易在改动取数点时被顺手删掉。
+ */
+describe('LoveChat：AI 生成标识与未成年人模式', () => {
+  beforeEach(() => { sseHandlers.current = null; localStorage.clear() })
+  afterEach(() => { vi.clearAllMocks() })
+
+  it('每条 AI 回复旁都有「AI 生成」标识（常驻显式标识）', async () => {
+    const w = mountChat()
+    await send(w, '在吗')
+    sseHandlers.current.onMessage('正文')
+    await w.vm.$nextTick()
+
+    const ai = w.findAll('.message-ai').filter((m) => !m.find('.typing-dots').exists()).at(-1)
+    const tag = ai.find('.ai-tag')
+    expect(tag.exists()).toBe(true)
+    expect(tag.text()).toBe('AI 生成')
+  })
+
+  it('用户自己发的气泡不带 AI 标识（标识只能挂在 AI 内容上）', async () => {
+    const w = mountChat()
+    await send(w, '在吗')
+    expect(w.find('.message-user .ai-tag').exists()).toBe(false)
+  })
+
+  it('非未成年人：不显示未成年人模式提示条', async () => {
+    localStorage.setItem('lwx_ai_user', JSON.stringify({ username: 'u1', role: 'USER' }))
+    const w = mountChat()
+    expect(w.find('.minor-banner').exists()).toBe(false)
+  })
+
+  it('未成年人模式：提示条写明每日条数与休息时段', async () => {
+    localStorage.setItem('lwx_ai_user', JSON.stringify({ username: 'kid', role: 'USER', minorMode: true }))
+    const w = mountChat()
+
+    const banner = w.find('.minor-banner')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('未成年人模式已开启')
+    expect(banner.text()).toContain('30')
+    expect(banner.text()).toContain('22:00')
+    expect(banner.text()).toContain('6:00')
+  })
+
+  it('资料晚一步刷到（lh:user-updated）时提示条要跟着出现', async () => {
+    localStorage.setItem('lwx_ai_user', JSON.stringify({ username: 'kid', role: 'USER' }))
+    const w = mountChat()
+    expect(w.find('.minor-banner').exists()).toBe(false)
+
+    // 模拟 App.vue 的 refreshProfile() 写回缓存后广播事件
+    localStorage.setItem('lwx_ai_user', JSON.stringify({ username: 'kid', role: 'USER', minorMode: true }))
+    window.dispatchEvent(new CustomEvent('lh:user-updated'))
+    await w.vm.$nextTick()
+    expect(w.find('.minor-banner').exists()).toBe(true)
+  })
+
+  it('⛔ 产品级免责声明常驻可见（docs/07 §5.1）：不构成专业心理咨询或医疗诊断', async () => {
+    const w = mountChat()
+    const d = w.find('.ai-disclaimer')
+    expect(d.exists()).toBe(true)
+    expect(d.text()).toContain('仅供参考')
+    expect(d.text()).toContain('不构成专业心理咨询或医疗诊断')
+    // 发消息前后都在（常驻，不是一次性提示）
+    await send(w, '在吗')
+    expect(w.find('.ai-disclaimer').text()).toContain('不构成专业心理咨询或医疗诊断')
+  })
+})
+
+describe('LoveChat：首次体验引导（ADR-91）', () => {
+  beforeEach(() => {
+    sseHandlers.current = null
+    localStorage.clear()
+    routerPush.mockClear()
+  })
+  afterEach(() => { vi.clearAllMocks() })
+
+  /** 已看过 ⇒ 不再打扰（服务端记的，换设备也不会重弹）。 */
+  it('已看过（onboarded=true）→ 不显示引导卡', () => {
+    localStorage.setItem('lwx_ai_user', JSON.stringify({ username: 'u1', onboarded: true }))
+    const w = mountChat()
+    expect(w.find('.guide-card').exists()).toBe(false)
+  })
+
+  /** 未看过 ⇒ 显示，且四个入口都在（少一个就是又有一项能力沉没）。 */
+  it('未看过 → 显示引导卡，四个入口齐全', () => {
+    const w = mountChat()
+    expect(w.find('.guide-card').exists()).toBe(true)
+    const names = w.findAll('.guide-row-name').map(n => n.text())
+    expect(names).toEqual(['直接说心事', '想要具体话术', '想先练一练', '想回头看'])
+  })
+
+  /** 收起：卡片消失 + 落库（失败也不打扰用户）。 */
+  it('点「知道了」→ 收起并标记已看过', async () => {
+    const w = mountChat()
+    await w.find('.guide-close').trigger('click')
+    expect(w.find('.guide-card').exists()).toBe(false)
+    expect(markOnboarded).toHaveBeenCalledTimes(1)
+  })
+
+  /** 头部按钮可重开 —— 引导不是"一次性弹窗"，是随时查得到的说明书。 */
+  it('头部「能做什么」可以重开引导', async () => {
+    const w = mountChat()
+    await w.find('.guide-close').trigger('click')
+    expect(w.find('.guide-card').exists()).toBe(false)
+    await w.find('.guide-open-btn').trigger('click')
+    expect(w.find('.guide-card').exists()).toBe(true)
+  })
+
+  /** 「想要具体话术」必须**真的预填一句能触发三牌的话**（只写说明等于没引导）。 */
+  it('「想要具体话术」→ 预填能触发话术三牌的样例', async () => {
+    const w = mountChat()
+    await w.findAll('.guide-row').at(1).trigger('click')
+    expect(w.find('.chat-input').element.value).toContain('怎么回复')
+    expect(w.find('.guide-card').exists()).toBe(false)
+  })
+
+  /** 两个跳转入口要真的跳（各自的目标页面）。 */
+  it('「想先练一练」→ /sandbox；「想回头看」→ /history', async () => {
+    const w1 = mountChat()
+    await w1.findAll('.guide-row').at(2).trigger('click')
+    expect(routerPush).toHaveBeenCalledWith('/sandbox')
+
+    routerPush.mockClear()
+    const w2 = mountChat()
+    await w2.findAll('.guide-row').at(3).trigger('click')
+    expect(routerPush).toHaveBeenCalledWith('/history')
   })
 })

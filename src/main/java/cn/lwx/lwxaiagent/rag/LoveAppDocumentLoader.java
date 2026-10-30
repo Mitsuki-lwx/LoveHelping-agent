@@ -76,7 +76,18 @@ public class LoveAppDocumentLoader {
      *
      * @param resourcePatternResolver Spring 资源模式解析器，由 Spring 容器自动注入
      */
-    public LoveAppDocumentLoader(ResourcePatternResolver resourcePatternResolver) {
+    /**
+     * 运营目录（可选，ADR-89）：把 .md 放这里就能加/改语料，**不用重新构建 jar**。
+     *
+     * <p>⛔ 此前语料只能从 {@code classpath:document/*.md} 读 ⇒ 内容在 jar 里，
+     * 运营改一句话要"改代码 → 重新构建 → 重新部署"。一个靠知识库吃饭的产品，
+     * 内容却只能靠发版更新 —— 这是运营面的硬缺口。</p>
+     */
+    private final String docsDir;
+
+    public LoveAppDocumentLoader(ResourcePatternResolver resourcePatternResolver,
+                                 @org.springframework.beans.factory.annotation.Value("${app.rag.docs-dir:}") String docsDir) {
+        this.docsDir = docsDir;
         this.resourcePatternResolver = resourcePatternResolver;
     }
 
@@ -119,8 +130,21 @@ public class LoveAppDocumentLoader {
     public List<Document> loadMarkdowns(){
         List< Document> allDocuments = new ArrayList<>();
         try {
-            // 扫描 classpath 下 document 目录中所有 .md 文件
-            Resource[] resources = resourcePatternResolver.getResources("classpath:document/*.md");
+            // 来源①：classpath 下 document 目录（随包发布的默认语料）
+            List<Resource> resources = new ArrayList<>(List.of(
+                    resourcePatternResolver.getResources("classpath:document/*.md")));
+            // 来源②：运营目录（可选）—— 运维把 .md 丢进去即可，不必重新构建
+            // ⛔ 同名文件以运营目录为准（后扫到的覆盖先扫到的），见下方 mergeByFile。
+            if (docsDir != null && !docsDir.isBlank()) {
+                try {
+                    Resource[] extra = resourcePatternResolver.getResources(
+                            "file:" + docsDir.replace("\\", "/").replaceAll("/$", "") + "/*.md");
+                    log.info("运营目录 {} 载入 {} 个 Markdown 文件（app.rag.docs-dir）", docsDir, extra.length);
+                    resources.addAll(List.of(extra));
+                } catch (IOException e) {
+                    log.warn("运营目录读取失败（忽略，不影响 classpath 语料）：{} - {}", docsDir, e.getMessage());
+                }
+            }
             for (Resource resource : resources) {
                 String fileName = resource.getFilename();
                 // 构建 Markdown 文档阅读器的配置

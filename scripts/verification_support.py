@@ -40,7 +40,7 @@ def json_request(base, path, payload=None, token=None, headers=None, method=None
 def register(base):
     user = "verify_" + uuid.uuid4().hex[:16]
     password = secrets.token_urlsafe(24)
-    status, registration = json_request(base, "/auth/register", {"username": user, "password": password})
+    status, registration = json_request(base, "/auth/register", {"username": user, "password": password, "birthYear": 1990})  # V34：注册必填出生年份（合规）
     if status != 200 or not registration.get("success"):
         raise RuntimeError("Synthetic user registration failed")
     status, login = json_request(base, "/auth/login", {"username": user, "password": password})

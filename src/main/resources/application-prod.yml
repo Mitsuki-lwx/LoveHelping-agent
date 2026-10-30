@@ -5,6 +5,15 @@
 # 密钥清单见仓库根 .env.example / docs/10-部署发布.md。
 # ============================================================
 
+# ⛔ 反向代理（ADR-78 决策 ②）：生产由 Nginx/Caddy 终结 TLS（docs/10 §「前置反向代理」），
+#    应用自己只看到 HTTP ⇒ 必须让 Spring 认 X-Forwarded-Proto / -Host / -For，
+#    否则：① 审计日志里的客户端 IP 全变成代理的 IP（AuditAspect 用 getRemoteAddr）
+#          ② 将来若加 Secure cookie 或生成绝对 URL 跳转，协议会错成 http://
+#    framework 模式 = 用 ForwardedHeaderFilter 处理（与 Tomcat 自带的 remoteip valve 二选一，
+#    这里选 framework 是因为它不依赖容器，换 Tomcat/Undertow 都一致）。
+server:
+  forward-headers-strategy: framework
+
 spring:
   ai:
     # 主链路 LLM（ADR-51：主端点切 DeepSeek 官方，模型只用 deepseek-flash）。
@@ -40,17 +49,18 @@ app:
     #   ⚠️ 与全局 spring.ai.openai.* 的区别：这里才是**主链**的来源
     #   （VisionChatClient 仍读 spring.ai.openai.*，那是已知的绕网关路径，见 P3 待办）。
     providers:
-      - name: primary
-        base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
-        api-key: ${OPENAI_API_KEY:}              # 必填：DeepSeek 官方 key（sk-...）
-        model: ${OPENAI_MODEL:deepseek-flash}
+      # ADR-93（2026-10-30）：主链 = cline.bot 网关。DeepSeek 官方 key 实测失效（401），已停用。
+      - name: cline
+        base-url: ${CLINE_BASE_URL:https://api.cline.bot/api}
+        api-key: ${CLINE_API_KEY:}               # 必填：cline.bot key（sk_...）
+        model: ${CLINE_MODEL:cline-pass/deepseek-v4.1-flash}   # ⛔ 必须带 cline-pass/ 前缀（订阅内 cost=0）
+        response-envelope: data                  # 该网关非流式响应带 {data:...} 信封
       # 启用方式：把 enabled 去掉/置 true，并注入对应 key。加供应商不再需要写 Java。
-      # - name: cline
-      #   enabled: false
-      #   base-url: ${CLINE_BASE_URL:https://api.cline.bot/api}
-      #   api-key: ${CLINE_API_KEY:}
-      #   model: ${CLINE_MODEL:deepseek/deepseek-v4.1-flash}
-      #   response-envelope: data                  # 该网关非流式响应带 {data:...} 信封
+      - name: deepseek-official
+        enabled: false
+        base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+        api-key: ${OPENAI_API_KEY:}
+        model: ${OPENAI_MODEL:deepseek-flash}
     # ADR-52：运行时总闸；false 时整条链一级都不走（应急用）。
     #   ⚠️ 代价：当前默认单 provider 无兜底，主链故障时用户直接拿 5000。
     degrade-enabled: ${LLM_DEGRADE_ENABLED:true}

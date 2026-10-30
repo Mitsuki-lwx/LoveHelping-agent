@@ -19,37 +19,207 @@
 
 /* ---------- 色板（OKLCH，深夜书房） ---------- */
 :root {
-  /* 木桌面（页面底）—— 深棕，非纯黑 */
-  --desk: oklch(24% 0.018 62);
-  --desk-deep: oklch(20% 0.02 62);          /* 更暗（页脚/沉底区） */
-  --desk-raised: oklch(27% 0.02 62);        /* 抬升面（导航/输入区） */
-  /* 信纸（卡片/气泡）—— 深色页里的暖纸白，压暗一档 */
-  --paper-card: oklch(93% 0.012 80);        /* AI 回信：桌上的纸 */
-  --paper-card-warm: oklch(90% 0.018 80);
-  /* 过渡期语义别名：旧视图把 --paper 当「页面底」用 → 映射到深木桌面 */
+  /* ================= 主题色 token（4 套）=================
+     ⛔ 三条**实测得出**的约束，改配色前必须先读：
+     1. `--paper-card` 在四套主题里**都是浅色** ⇒ 纸面上的 `--ink-on-paper*` 行为一致，
+        不需要按主题改；`.letter-card` 的纸面墨色重映射在深色主题下是必需的，在浅色主题下无害。
+     2. `--ink*` 是"**背景**上的文字"：浅色主题必须翻成深墨，深色主题是暖白。
+     3. 强调色**当背景**用（`--accent*`）与**当文字**用（`--accent-text`）方向相反：
+        浅色主题下当文字要**深**、深色主题下要**浅**。混用必然有一边对比度 < 3。
+        徽章同理，必须成对取 `--chip-bg/--chip-fg`，不能拿 wash + glow 拼。
+     切换方式：`<html data-theme="心动|思念|疗愈|深夜">`；默认（无属性）= 心动。 */
+
+  --desk: oklch(96.5% 0.016 70);
+  --desk-deep: oklch(93.5% 0.02 62);
+  --desk-raised: oklch(99% 0.008 78);
+  --paper-card: oklch(99.4% 0.005 85);
+  --paper-card-warm: oklch(97.4% 0.014 72);
   --paper: var(--desk);
   --paper-deep: var(--desk-raised);
-  /* 墨（正文/标题） */
-  --ink: oklch(88% 0.012 80);               /* 深底上的主文字（暖白） */
-  --ink-soft: oklch(72% 0.016 70);          /* 次级 */
-  --ink-faint: oklch(58% 0.014 70);         /* 弱（时间/占位/提示） */
-  --ink-line: oklch(38% 0.02 66);           /* 墨线/边框（深底） */
-  /* 纸上的墨（信纸卡片内部的深字） */
-  --ink-on-paper: oklch(32% 0.03 62);
-  /* 酒红（唯一强调：灯光 / 印章 / 寄出的信） */
-  --wine: oklch(58% 0.13 28);
-  --wine-deep: oklch(46% 0.12 28);
-  --wine-glow: oklch(66% 0.13 30);          /* 深底上的提亮 wine（对比达标用） */
-  --wine-soft: oklch(33% 0.05 28);          /* 深底上的晕染 */
-  /* 语义 */
-  --danger: oklch(64% 0.17 27);
-  --ok: oklch(70% 0.13 152);
+  --ink: oklch(28% 0.03 25);
+  --ink-soft: oklch(44% 0.025 25);
+  --ink-faint: oklch(55% 0.02 25);
+  --ink-line: oklch(84% 0.022 45);
+  --ink-on-paper: oklch(28% 0.03 20);
+  --ink-on-paper-soft: oklch(45% 0.025 20);
+  --ink-on-paper-faint: oklch(53% 0.02 20);
+  --accent: oklch(56% 0.16 12);
+  --accent-deep: oklch(46% 0.17 10);
+  --accent-glow: oklch(70% 0.14 15);
+  --accent-wash: oklch(95% 0.03 10);
+  --accent-text: oklch(44% 0.165 10);
+  --chip-bg: oklch(94.5% 0.034 10);
+  --chip-fg: oklch(44% 0.16 10);
+  --danger: oklch(56% 0.18 25);
+  --ok: oklch(50% 0.11 155);
+  --bg-glow: oklch(99% 0.02 60 / 0.95);
+  --bg-weave: oklch(93% 0.02 70 / 0.5);
+  --bg-vignette: oklch(72% 0.06 40 / 0.22);
+  --sh-1: 0 1px 0 oklch(100% 0 0 / 0.9), 0 2px 6px -2px oklch(60% 0.05 40 / 0.16);
+  --sh-2: 0 1px 0 oklch(100% 0 0 / 0.9), 0 12px 26px -12px oklch(55% 0.06 30 / 0.2);
+  --sh-3: 0 1px 0 oklch(100% 0 0 / 0.95), 0 28px 54px -22px oklch(50% 0.07 30 / 0.26);
+  --ring-warm: 0 0 0 1px oklch(56% 0.16 12 / 0.3);
+  /* ---------- 材质（2026-10-02 设计升级）----------
+     ⛔ 之前全站是"纯色底 + 纯色矩形卡"，零材质 ⇒ 看着平。
+     纸纹用 SVG turbulence 做 data-URI（不是手绘插画），只挂在**固定、pointer-events-none** 的
+     覆盖层上（skill §6.E：grain 不能挂在滚动容器上，否则移动端持续重绘）。 */
+  --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+
+  /* ---------- 圆角刻度（SHAPE LOCK，taste-skill §4.4 强制）----------
+     规则：全局只用下面这几档；新组件一律取 token，**不写裸数值**。
+       --r-ctl   控件：输入框 / 小按钮 / 标签 / 徽章
+       --r-card  卡片 / 面板 / 弹层
+       --r-pill  胶囊：主按钮 / 输入胶囊 / 筛选 tab
+       --r-seal  圆形：蜡封 / 头像 / 圆点
+     例外只有两条，且都是**刻意的隐喻**（成文，非随手）：
+       --r-paper      手裁信纸：四角不等，模拟裁纸的毛边（信件隐喻）
+       --r-bubble-ai / --r-bubble-user  气泡"折角"：一角收小，像信纸折起
+     ⚠️ 之所以要成文：之前全仓半径散成 4/6/8/10/12/16/20/22/26px 九个值，
+        同一个页面里输入框 8px、聊天输入 26px、按钮 20px —— 看着"没设计过"。 */
+  --r-ctl: 8px;
+  --r-card: 12px;
+  --r-pill: 999px;
+  --r-seal: 50%;
+  --r-chip: 4px;     /* 行内小元素：代码片段 chip、信纸上的字迹线（4px≈微圆） */
+
+  /* ---------- 图标刻度（唯一家族：@phosphor-icons/vue）----------
+     taste-skill §3.C：一个项目只用一套图标家族，且统一笔画粗细。
+     规格：weight="bold"（14~16px 下笔画才够实）；颜色一律 currentColor（自动跟随文字色）。
+     ⛔ §9.E 禁手搓 SVG 图标：缺语义就换最接近的 Phosphor 图标，绝不自己画 path。
+     ⛔ 全站**不再用 emoji 当图标**（§3.D）：emoji 的彩色字形会破坏这套单色暖调，
+        且各平台渲染不一致。唯一的例外见下方「有意保留」。 */
+  --icon-xs: 13px;   /* 内联在正文里的标记 */
+  --icon-sm: 15px;   /* 默认：按钮 / 标签里的图标 */
+  --icon-md: 18px;   /* 独立图标按钮（关闭等） */
+  --icon-lg: 22px;   /* 区块标题 */
+  --icon-xl: 30px;   /* 空态大图标 */
+  --r-paper: 14px 10px 13px 9px;
+  --r-bubble-ai: 4px 14px 14px 14px;
+  --r-bubble-user: 14px 4px 14px 14px;
+  /* 阴影/ring 不在这里定义 —— 它们**按主题不同**（浅色主题要淡影），由主题块给出。
+     此处若再写一遍会盖掉默认主题的值（CSS 后者胜）。 */
   /* 字体 */
   --font-hand: 'Kaiti SC', 'KaiTi', 'STKaiti', 'DFKai-SB', '楷体', Georgia, 'Times New Roman', serif;
   --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Segoe UI', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
 }
+[data-theme="思念"] {
+  --desk: oklch(95.5% 0.022 300);
+  --desk-deep: oklch(92.5% 0.026 300);
+  --desk-raised: oklch(98.5% 0.012 305);
+  --paper-card: oklch(99.2% 0.006 310);
+  --paper-card-warm: oklch(97.2% 0.018 305);
+  --paper: var(--desk);
+  --paper-deep: var(--desk-raised);
+  --ink: oklch(29% 0.04 300);
+  --ink-soft: oklch(45% 0.035 300);
+  --ink-faint: oklch(56% 0.03 300);
+  --ink-line: oklch(84% 0.028 300);
+  --ink-on-paper: oklch(29% 0.04 300);
+  --ink-on-paper-soft: oklch(46% 0.03 300);
+  --ink-on-paper-faint: oklch(54% 0.025 300);
+  --accent: oklch(55% 0.15 300);
+  --accent-deep: oklch(45% 0.16 300);
+  --accent-glow: oklch(70% 0.12 305);
+  --accent-wash: oklch(94% 0.032 300);
+  --accent-text: oklch(44% 0.155 300);
+  --chip-bg: oklch(93.5% 0.038 300);
+  --chip-fg: oklch(43% 0.15 300);
+  --danger: oklch(56% 0.18 25);
+  --ok: oklch(50% 0.11 160);
+  --bg-glow: oklch(98.5% 0.03 320 / 0.95);
+  --bg-weave: oklch(92% 0.026 300 / 0.5);
+  --bg-vignette: oklch(70% 0.07 300 / 0.2);
+  --sh-1: 0 1px 0 oklch(100% 0 0 / 0.9), 0 2px 6px -2px oklch(62% 0.05 300 / 0.16);
+  --sh-2: 0 1px 0 oklch(100% 0 0 / 0.9), 0 12px 26px -12px oklch(58% 0.06 300 / 0.2);
+  --sh-3: 0 1px 0 oklch(100% 0 0 / 0.95), 0 28px 54px -22px oklch(52% 0.07 300 / 0.26);
+  --ring-warm: 0 0 0 1px oklch(55% 0.15 300 / 0.3);
+}
 
-html, body {
+[data-theme="疗愈"] {
+  --desk: oklch(96% 0.02 150);
+  --desk-deep: oklch(93% 0.024 150);
+  --desk-raised: oklch(98.8% 0.01 145);
+  --paper-card: oklch(99.3% 0.006 140);
+  --paper-card-warm: oklch(97.4% 0.016 145);
+  --paper: var(--desk);
+  --paper-deep: var(--desk-raised);
+  --ink: oklch(28% 0.03 160);
+  --ink-soft: oklch(44% 0.025 160);
+  --ink-faint: oklch(55% 0.02 160);
+  --ink-line: oklch(84% 0.024 155);
+  --ink-on-paper: oklch(28% 0.03 160);
+  --ink-on-paper-soft: oklch(45% 0.025 160);
+  --ink-on-paper-faint: oklch(53% 0.02 160);
+  --accent: oklch(54% 0.10 165);
+  --accent-deep: oklch(44% 0.10 165);
+  --accent-glow: oklch(68% 0.09 165);
+  --accent-wash: oklch(94% 0.028 165);
+  --accent-text: oklch(43% 0.10 165);
+  --chip-bg: oklch(93.5% 0.032 165);
+  --chip-fg: oklch(42% 0.10 165);
+  --danger: oklch(56% 0.18 25);
+  --ok: oklch(50% 0.11 160);
+  --bg-glow: oklch(98.5% 0.025 140 / 0.95);
+  --bg-weave: oklch(92.5% 0.022 150 / 0.5);
+  --bg-vignette: oklch(70% 0.05 150 / 0.2);
+  --sh-1: 0 1px 0 oklch(100% 0 0 / 0.9), 0 2px 6px -2px oklch(60% 0.04 155 / 0.16);
+  --sh-2: 0 1px 0 oklch(100% 0 0 / 0.9), 0 12px 26px -12px oklch(56% 0.05 155 / 0.2);
+  --sh-3: 0 1px 0 oklch(100% 0 0 / 0.95), 0 28px 54px -22px oklch(50% 0.06 155 / 0.26);
+  --ring-warm: 0 0 0 1px oklch(54% 0.10 165 / 0.3);
+}
+
+[data-theme="深夜"] {
+  --desk: oklch(24% 0.018 62);
+  --desk-deep: oklch(20% 0.02 62);
+  --desk-raised: oklch(27% 0.02 62);
+  --paper-card: oklch(93% 0.012 80);
+  --paper-card-warm: oklch(90% 0.018 80);
+  --paper: var(--desk);
+  --paper-deep: var(--desk-raised);
+  --ink: oklch(88% 0.012 80);
+  --ink-soft: oklch(72% 0.016 70);
+  --ink-faint: oklch(58% 0.014 70);
+  --ink-line: oklch(38% 0.02 66);
+  --ink-on-paper: oklch(32% 0.03 62);
+  --ink-on-paper-soft: oklch(46% 0.02 62);
+  --ink-on-paper-faint: oklch(52% 0.02 62);
+  --accent: oklch(58% 0.13 28);
+  --accent-deep: oklch(46% 0.12 28);
+  --accent-glow: oklch(66% 0.13 30);
+  --accent-wash: oklch(33% 0.05 28);
+  --accent-text: oklch(68% 0.13 30);
+  --chip-bg: oklch(33% 0.05 28);
+  --chip-fg: oklch(78% 0.10 28);
+  --danger: oklch(64% 0.17 27);
+  --ok: oklch(70% 0.13 152);
+  --bg-glow: oklch(44% 0.07 58 / 0.6);
+  --bg-weave: oklch(26% 0.02 62 / 0.45);
+  --bg-vignette: oklch(14% 0.03 62 / 0.55);
+  --sh-1: 0 1px 0 oklch(62% 0.03 66 / 0.18), 0 2px 6px -2px oklch(12% 0.03 62 / 0.5);
+  --sh-2: 0 1px 0 oklch(62% 0.03 66 / 0.2), 0 12px 26px -12px oklch(12% 0.03 62 / 0.75);
+  --sh-3: 0 1px 0 oklch(64% 0.03 66 / 0.24), 0 28px 54px -22px oklch(10% 0.03 62 / 0.9);
+  --ring-warm: 0 0 0 1px oklch(58% 0.13 28 / 0.35);
+}
+
+
+html,
+body { user-select: none; -webkit-user-select: none; caret-color: transparent; }
+input, textarea, [contenteditable="true"], .mem-edit { caret-color: auto; }
+input, textarea, [contenteditable="true"], code, pre,
+.chat-messages, .message-content,
+.conv-card, .mem-content, .mem-hint, .mem-edit, .action-row, .action-dock-title,
+.ta-reply, .ta-insight, .sb-msg-content, .persona-line,
+.home-sub, .letterhead-sub, .entry-desc, .empty-letter-body, .nf-body, .letter-body {
+  user-select: text; -webkit-user-select: text;
+}
+
+/* ---------- 光标纪律（2026-10-06 用户实测反馈）----------
+   现象：点首页大标题会出现**闪烁的竖线光标**（不可编辑却像输入框）。
+   根因：非编辑元素默认可选中 → 点一下浏览器就落一个插入点（caret-color 还是浅墨，很显眼）。
+   规则：**界面外壳一律不可选**（标题/导航/按钮/卡片/蜡封/徽章/标签），
+         **内容一律可选中**（聊天正文 / 存档条目 / 记忆条目 / 输入框 —— 用户要能复制 AI 的话）。
+   ⛔ 漏掉外壳 → 又出现"点一下就闪一根竖线"；漏掉内容 → 用户复制不了 AI 的回复。 */
+body {
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -59,12 +229,28 @@ body {
   font-family: var(--font-body);
   background: var(--desk);
   color: var(--ink);
-  /* 桌面木纹：极轻竖丝 + 顶部一盏暖灯光晕（酒红色温，非 AI 紫） */
+  /* 桌面：一盏暖灯（顶部光池）+ 木丝 + 四角暗角（暗角把视线收进中央，是"有摄影感"的关键） */
   background-image:
-    radial-gradient(ellipse 90% 50% at 50% -12%, oklch(40% 0.06 55 / 0.55), transparent 62%),
-    repeating-linear-gradient(90deg, oklch(26% 0.02 62 / 0.5) 0 2px, transparent 2px 7px);
+    radial-gradient(ellipse 78% 46% at 50% -14%, var(--bg-glow), transparent 64%),
+    repeating-linear-gradient(90deg, var(--bg-weave) 0 2px, transparent 2px 8px),
+    radial-gradient(ellipse 120% 120% at 50% 50%, transparent 42%, var(--bg-vignette) 100%);
+  background-attachment: fixed;
   line-height: 1.6;
 }
+
+/* ---------- 纸纹覆盖层（固定 + 不吃事件；skill §6.E）----------
+   ⛔ 放在 body::after 而不是卡片上：卡片上挂纹理会让每个卡片各自重绘。 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background-image: var(--paper-noise);
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+}
+@media (prefers-reduced-motion: reduce) { body::after { opacity: 0.03; } }
 
 #app {
   height: 100vh;
@@ -77,29 +263,14 @@ body {
   flex-direction: column;
 }
 
-::selection { background: var(--wine-soft); color: var(--ink); }
+::selection { background: var(--accent-wash); color: var(--ink); }
 
 /* 对比度兜底：深底上禁用「弱得看不清」 */
 :focus-visible {
-  outline: 2px solid var(--wine-glow);
+  outline: 2px solid var(--accent-glow);
   outline-offset: 2px;
 }
 
-/* ---------- 旧变量兼容映射（App 导航/其余视图过渡期仍引用旧名） ---------- */
-:root {
-  --bg-primary: var(--desk);
-  --bg-secondary: var(--desk-raised);
-  --bg-chat: var(--desk);
-  --bg-user-msg: var(--wine);
-  --bg-ai-msg: var(--paper-card);
-  --text-primary: var(--ink);
-  --text-secondary: var(--ink-soft);
-  --text-white: var(--ink);
-  --accent: var(--wine-glow);
-  --accent-hover: var(--wine);
-  --border-color: var(--ink-line);
-  --input-bg: var(--desk-raised);
-}
 
 /* ---------- 手写（楷体）标题 ---------- */
 .hand {
@@ -132,9 +303,10 @@ body {
   justify-content: center;
   width: 2.6em;
   height: 2.6em;
-  border-radius: 50%;
-  border: 2px dashed var(--wine-glow);
-  color: var(--wine-glow);
+  border-radius: var(--r-seal);
+  /* 印章：虚线框 + 字都浮在**桌面**上 → 必须用 --accent-text（浅色主题下 glow 会看不见） */
+  border: 2px dashed var(--accent-text);
+  color: var(--accent-text);
   transform: rotate(-10deg);
   background: transparent;
   font-size: 0.9em;
@@ -143,14 +315,31 @@ body {
 
 /* ---------- 信纸卡片（深桌上的一张暖纸） ---------- */
 .letter-card {
-  background: var(--paper-card);
-  border: 1px solid oklch(80% 0.02 70 / 0.28);
-  border-radius: 12px;
-  box-shadow:
-    0 1px 0 oklch(60% 0.03 66 / 0.14),
-    0 18px 38px -18px oklch(12% 0.03 62 / 0.85);
+  /* ⛔ 显式 background-color：渐变/纸纹都是 background-image，若只写 image，
+     backgroundColor 就是**透明** —— ① 渐变加载失败时卡片会变透明
+     ② 对比度检查（读 backgroundColor）会一路走到深木桌面，算出**假**的对比度（实测踩到）。 */
+  background-color: var(--paper-card);
+  background-image:
+    var(--paper-noise),
+    linear-gradient(168deg, oklch(96% 0.012 80), var(--paper-card) 42%, var(--paper-card-warm));
+  background-blend-mode: overlay, normal;
+  border: 1px solid oklch(80% 0.02 70 / 0.3);
+  border-radius: var(--r-card);
+  box-shadow: var(--sh-2), inset 0 1px 0 oklch(99% 0.01 80 / 0.85);
   position: relative;
   color: var(--ink-on-paper);
+  /* 纸的厚度：右/下各多一条 1px 亮边，模拟叠纸的侧壁 */
+  background-clip: padding-box;
+}
+/* 纸边的高光：让卡片有"实体"而不是"贴纸" */
+.letter-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, oklch(100% 0 0 / 0.5), transparent 18%);
+  opacity: 0.7;
 }
 /* 信纸卡片内部的文字永远用深墨（它是"纸"） */
 .letter-card .hand { color: var(--ink-on-paper); }
@@ -164,7 +353,65 @@ body {
   border-style: solid;
   border-width: 0 18px 18px 0;
   border-color: transparent var(--paper-card-warm) transparent transparent;
-  border-radius: 0 12px 0 0;
+  border-radius: 0 var(--r-card) 0 0;
+}
+
+/* ---------- 可交互卡的"抬升"（悬停物理：位移 + 阴影升级 + 暖色描边） ---------- */
+.lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.3s;
+  will-change: transform;
+}
+.lift:hover {
+  transform: translateY(-6px) rotate(-0.35deg);
+  box-shadow: var(--sh-3), var(--ring-warm), inset 0 1px 0 oklch(100% 0 0 / 0.9);
+}
+.lift:active { transform: translateY(-1px) scale(0.995); }
+
+/* ---------- ⛔ 纸卡里的按钮（2026-10-02 修"深底深字"）----------
+   我前面定了两条规则，它们**撞车**了：
+     · `.letter-card button { color: inherit }` → 纸卡内文字用深墨（--ink-on-paper）
+     · `.btn-hand { background: var(--desk-raised) }` → 按钮底色是深木
+   结果：纸卡里的按钮 = **深字浮深底，对比度≈1.05，几乎不可见**（浏览器实测抓到的）。
+   修法：纸卡内的按钮改用"纸面按钮"——浅底 + 深墨。
+   ⚠️ .btn-hand.primary（酒红实心）不受影响，它本来就是浅字浮深底。 */
+.letter-card .btn-hand:not(.primary) {
+  background: var(--paper-card-warm);
+  /* 边框要够实：74% 时按钮看着像 disabled（实测截图确认），62% 才有"可点"的暗示 */
+  border-color: oklch(62% 0.032 62);
+  color: var(--ink-on-paper);
+  box-shadow: 0 1px 0 oklch(60% 0.03 66 / 0.12);
+}
+.letter-card .btn-hand:not(.primary):hover {
+  background: oklch(99% 0.008 80);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+
+/* ---------- ⛔ 纸面墨色重映射（2026-10-02）----------
+   修的是**根因**，不是逐个补丁。
+   `--ink / --ink-soft / --ink-faint` 是给**深色桌面**定的浅色墨（0.88 / 0.72 / 0.58）。
+   一旦被用在**浅纸**容器里，就是"浅字浮浅底" —— 浏览器全 DOM 普查实测：
+     · 会话标题、昵称、`.section-title`  = **1.16**（几乎看不见）
+     · `.persona-line`、`.empty-letter-body`、label = 2.02（很淡）
+   凡"画纸面"的容器，一律**在容器上**把 token 重映射成纸面墨色：
+   后代自动继承正确颜色，**将来新写的组件也不会再犯**。
+   ⚠️ 深色元素（wine 实心按钮/用户气泡/蜡封）自带 `color`，不受影响；
+      若要在纸面上放深底元素，必须**显式**给它的文字色（见 `.letter-card .btn-hand`）。 */
+.letter-card,
+.conv-card,
+.ta-view-btn,
+.sb-chat-input,          /* 自己画纸底 */
+.message-ai .message-content {
+  --ink: var(--ink-on-paper);
+  --ink-soft: var(--ink-on-paper-soft);
+  --ink-faint: var(--ink-on-paper-faint);
+  /* ⛔ 纸面上的**强调色文字**也必须重映射（2026-10-06 实测踩到）：
+     `--accent-text` 是"强调色当文字**浮在页面背景上**"用的 —— 浅色主题要深、深色主题要浅。
+     可纸面在四套主题里**都是浅的**，于是深色主题那一版放到纸上就是"浅字浮浅底"（实测 2.47）。
+     纸面上要的是 `--accent-deep`（四套主题下都够深）。这与 --ink* 的重映射是同一条纪律。 */
+  --accent-text: var(--accent-deep);
 }
 
 /* ---------- 手写按钮（墨描边 + 按压微沉） ---------- */
@@ -175,25 +422,27 @@ body {
   color: var(--ink);
   background: var(--desk-raised);
   border: 1.5px solid var(--ink-line);
-  border-radius: 12px;
+  border-radius: var(--r-card);
   padding: 0.55em 1.5em;
   cursor: pointer;
   transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.16s, border-color 0.16s, background 0.16s, color 0.16s;
 }
 .btn-hand:hover {
-  border-color: var(--wine-glow);
-  color: var(--wine-glow);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
   transform: translateY(-1px) rotate(-0.4deg);
   box-shadow: 0 8px 18px -10px oklch(40% 0.12 28 / 0.7);
 }
 .btn-hand:active { transform: translateY(1px) scale(0.98); }
 .btn-hand.primary {
-  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
-  border-color: var(--wine-deep);
+  background-color: var(--accent);
+  background-image: linear-gradient(180deg, var(--accent), var(--accent-deep));
+  border-color: var(--accent-deep);
   color: oklch(97% 0.012 80);
 }
 .btn-hand.primary:hover {
-  background: linear-gradient(180deg, var(--wine-glow), var(--wine));
+  background-color: var(--accent);
+  background-image: linear-gradient(180deg, var(--accent-glow), var(--accent));
   color: oklch(97% 0.012 80);
 }
 
@@ -211,7 +460,7 @@ body {
   transition: border-color 0.18s;
 }
 .input-letter::placeholder { color: var(--ink-faint); }
-.input-letter:focus { border-bottom-color: var(--wine-glow); }
+.input-letter:focus { border-bottom-color: var(--accent); }
 
 /* ---------- 进场动效（纸落感）+ reduced-motion 全量兜底 ---------- */
 @keyframes letter-in {
@@ -250,13 +499,13 @@ body {
 .chat-messages code {
   background: oklch(85% 0.015 70 / 0.85);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--r-chip);
   font-size: 13px;
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
 .chat-messages pre {
   background: oklch(85% 0.015 70 / 0.85);
-  border-radius: 8px;
+  border-radius: var(--r-ctl);
   padding: 10px 12px;
   overflow-x: auto;
   margin: 8px 0;
@@ -269,5 +518,67 @@ body {
   margin: 8px 0;
   font-family: var(--font-hand);
 }
-.chat-messages a { color: var(--wine-deep); text-decoration: underline dotted; }
-.chat-messages img { max-width: 100%; border-radius: 8px; }
+.chat-messages a { color: var(--accent-deep); text-decoration: underline dotted; }
+.chat-messages img { max-width: 100%; border-radius: var(--r-ctl); }
+
+/* ---------- 图标与真实图片的工具类 ---------- */
+
+/* 行内图标与文字基线对齐（Phosphor 渲染成 <svg>，直接内联会偏） */
+.ico { display: inline-flex; align-items: center; vertical-align: -0.14em; flex-shrink: 0; }
+
+/* ⛔ 有意保留的 emoji（不是漏改）：
+   1. LoveChat 里 💭 / ✨ —— 那是**模型输出的协议标记**（用 replace 解析出来的），
+      不是 UI 图标；换成图标会让解析逻辑和模型输出脱钩。
+   2. Profile 的头像 emoji 集合 —— 那是**用户内容**（存在库里的 avatarEmoji），
+      不是界面装饰，换成图标会改数据模型。 */
+
+/* ---------- 真实图片（picsum 占位摄影，taste-skill §4.8）----------
+   占位地址：https://picsum.photos/seed/<描述性种子>/<w>/<h>?grayscale
+   ① 本设计是暖调单色，随机照片直接放会撞色 ⇒ 统一**灰度 + 暖调覆盖**，
+      让任何素材都落进这套色系（不是加滤镜玩效果，是让素材与设计系统一致）。
+   ② **必须有兜底**：离线 / CI 下图片挂了不能开天窗 ⇒ .photo 自带暖纸底 + 蜡封字形，
+      图片 onerror 时把它隐藏，露出兜底层。
+   用法：
+     <div class="photo"><img :src="..." alt="" loading="lazy" decoding="async"
+          @error="$event.target.style.display = 'none'"><span class="photo-fallback">信</span></div> */
+.photo { position: relative; overflow: hidden; background: var(--paper-card-warm); }
+/* ⛔ 层次必须显式写死：兜底层是绝对定位且在 <img> **之后**，不写 z-index 就会**盖在图片上面**
+   —— 实测踩到：5 张图全部加载成功（naturalWidth=900/800），页面却还是显示兜底字形。
+   正确的三层：兜底(0) < 图片(1) < 暖调覆盖(2)。 */
+/* ⛔ 2026-10-06 用户实测反馈："首页那几张图片还是黑白" —— 灰度是我自己加的，撤掉。
+   照片保持**彩色**，只压一层很淡的暖调把色系统一（不是滤镜玩效果，是让素材进得来）。 */
+.photo > img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: cover; filter: saturate(1.04) contrast(1.02) brightness(1.02); }
+.photo::after {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  /* 覆盖层压太暗会让随机照片发闷发脏（实测：聊天空态那张像一块污渍）——
+     提亮 + 减淡，让素材读成"柔和的暖调照片"，而不是一团暗块。 */
+  background: linear-gradient(165deg, oklch(70% 0.09 35 / 0.10), oklch(52% 0.05 45 / 0.14));
+  mix-blend-mode: multiply;
+}
+.photo-fallback {
+  position: absolute; inset: 0; z-index: 0; display: grid; place-items: center;
+  font-family: var(--font-hand); font-size: 30px; color: oklch(52% 0.06 40);
+  background: var(--paper-card-warm);
+}
+
+/* ---------- 蜡封（全站**一处**定义）----------
+   ⛔ 之前首页把 .seal 写在 Home.vue 的 scoped 样式里，改版时删掉了 → 蜡封退化成裸文字
+     （实测截图：相片角上只剩一个暗红"恋"字，没有印章）。
+     蜡封是这套设计的核心符号（信/演/忆/档/恋），必须**一处定义、多处复用**。 */
+.wax-seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-seal);
+  background-color: var(--accent);
+  background-image: radial-gradient(circle at 34% 30%, var(--accent-glow), var(--accent-deep));
+  color: oklch(97% 0.012 80);
+  font-family: var(--font-hand);
+  font-weight: 700;
+  box-shadow:
+    inset 0 -3px 6px oklch(28% 0.1 25 / 0.45),
+    inset 0 2px 4px oklch(80% 0.08 30 / 0.28),
+    0 8px 18px -8px oklch(46% 0.12 28 / 0.7);
+  transform: rotate(-6deg);
+  flex-shrink: 0;
+}

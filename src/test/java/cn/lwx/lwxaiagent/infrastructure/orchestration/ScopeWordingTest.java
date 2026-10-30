@@ -90,6 +90,20 @@ class ScopeWordingTest {
     }
 
     @Test
+    @DisplayName("V34 免责声明（docs/07 §5.1）：TAIL 里必须含「不构成专业心理咨询或医疗诊断」")
+    void systemPromptCarriesMedicalDisclaimer() {
+        // 免责声明放在 TAIL → 所有 scope 措辞版本（strict/bounded/adjacent/anchored）都带上，
+        // 不会出现"某个对照臂漏了免责声明"这种合规缺口。
+        assertTrue(ChatExecutor.SYSTEM_PROMPT_TAIL.contains("不构成专业心理咨询或医疗诊断"),
+                "系统提示词必须含免责声明（docs/07 §5.1 的服务端一半）");
+        for (String w : new String[]{ScopeWording.STRICT, ScopeWording.BOUNDED_HELP,
+                ScopeWording.ADJACENT_HELP, ScopeWording.ANCHORED_HELP}) {
+            assertTrue(ScopeWording.activeSystemPrompt(w).contains("不构成专业心理咨询或医疗诊断"),
+                    w + " 缺免责声明");
+        }
+    }
+
+    @Test
     @DisplayName("非法取值 → 启动失败（不静默回退，否则对照臂会「以为切了其实没切」）")
     void illegalWordingFailsFast() {
         assertThrows(IllegalStateException.class, () -> new ScopeWording("strict-ish"));

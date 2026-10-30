@@ -1,13 +1,18 @@
 package cn.lwx.lwxaiagent.tenant;
 
+import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.entity.User;
 import cn.lwx.lwxaiagent.mapper.UserMapper;
+import cn.lwx.lwxaiagent.service.TokenVersionService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 
 /**
  * <h1>用户服务 —— 注册与登录认证</h1>
@@ -75,6 +80,12 @@ public class UserService {
     private JwtTokenProvider jwtTokenProvider;
 
     /**
+     * 令牌版本服务（V33）：改密/重置密码后 {@code bump} 一次，旧 token 立即失效。
+     */
+    @Resource
+    private TokenVersionService tokenVersionService;
+
+    /**
      * <h3>构造函数 - 依赖注入</h3>
      *
      * @param userMapper MyBatis-Plus 用户 Mapper，用于数据库操作
@@ -117,10 +128,18 @@ public class UserService {
      *                 若为 {@code null} 或空字符串，自动使用默认值 "default"
      * @param role     用户角色，如 {@code "USER"} 或 {@code "ADMIN"}。
      *                 若为 {@code null} 或空字符串，自动使用默认值 "USER"
+     * @param birthYear 出生年份（V34 合规，必填）：{@code 1900..当前年}；
+     *                  未满 18 岁自动置 {@code minor_mode=1}（服务端强制宵禁/每日上限）。
+     *                  缺失或越界抛 {@link BizException}(400)
      * @return 签名的 JWT 字符串，客户端可在后续请求中使用此 Token 进行身份认证
      * @throws RuntimeException 当用户名已存在时抛出
      */
-    public String register(String username, String password, String tenantId, String role) {
+    public String register(String username, String password, String tenantId, String role, Integer birthYear) {
+        // V34 合规：出生年份必填且范围合法。先校验（客户端错误），再谈唯一性。
+        int currentYear = java.time.Year.now(java.time.ZoneId.of("Asia/Shanghai")).getValue();
+        if (birthYear == null || birthYear < 1900 || birthYear > currentYear) {
+            throw new BizException(400, "出生年份无效");
+        }
         if (userMapper.selectCount(
                 new LambdaQueryWrapper<User>().eq(User::getUsername, username)) > 0) {
             throw new RuntimeException("用户名已存在");
@@ -130,9 +149,17 @@ public class UserService {
         // 杜绝注册自封 ADMIN 越权。管理员账号只经受控路径创建（flyway seed / 内部工具）。
         role = "USER";
 
-        userMapper.insert(new User(username, passwordEncoder.encode(password), tenantId, role));
-        log.info("User registered: username={}, tenant={}", username, tenantId);
-        return jwtTokenProvider.generateToken(username, tenantId, role);
+        User user = new User(username, passwordEncoder.encode(password), tenantId, role);
+        user.setBirthYear(birthYear);
+        user.setMinorMode(isMinor(birthYear, currentYear));
+        userMapper.insert(user);
+        log.info("User registered: username={}, tenant={}, minorMode={}", username, tenantId, user.getMinorMode());
+        return jwtTokenProvider.generateToken(username, tenantId, role, 0L);   // 新用户版本恒为 0
+    }
+
+    /** 出生年份 → 是否未成年人（未满 18 岁）。 */
+    static boolean isMinor(int birthYear, int currentYear) {
+        return currentYear - birthYear < 18;
     }
 
     /**
@@ -180,7 +207,8 @@ public class UserService {
         }
 
         log.info("User logged in: username={}, tenant={}", username, user.getTenantId());
-        return jwtTokenProvider.generateToken(user.getUsername(), user.getTenantId(), user.getRole());
+        return jwtTokenProvider.generateToken(user.getUsername(), user.getTenantId(), user.getRole(),
+                user.getTokenVersion() == null ? 0L : user.getTokenVersion());
     }
 
     /**
@@ -193,12 +221,32 @@ public class UserService {
     }
 
     /**
-     * <h3>更新个人资料（V18）</h3>
-     * <p>仅更新传入的非空字段：昵称/头像 emoji/签名。全部为空时直接返回（无写入）。</p>
+     * <h3>更新个人资料（V18，V31 增加纪念日）</h3>
+     * <p>仅更新传入的非空字段：昵称/头像 emoji/签名/纪念日。全部为空时直接返回（无写入）。</p>
      *
+     * <p><b>纪念日（{@code anniversaryDate}）：</b>ISO {@code yyyy-MM-dd} 字符串。
+     * 空串或 {@code null} 视为「不修改」；<b>非法日期直接抛 {@link BizException}（400）</b>，
+     * 绝不静默忽略——否则用户会以为已经保存成功。</p>
+     *
+     * @param username        用户名
+     * @param nickname        昵称（可空=不修改）
+     * @param avatarEmoji     头像 emoji（可空=不修改）
+     * @param bio             个性签名（可空=不修改）
+     * @param anniversaryDate 纪念日，ISO {@code yyyy-MM-dd}（可空/空串=不修改）
      * @return true=有更新；false=无可更新字段
+     * @throws BizException 纪念日格式非法时（code=400）
      */
-    public boolean updateProfile(String username, String nickname, String avatarEmoji, String bio) {
+    public boolean updateProfile(String username, String nickname, String avatarEmoji, String bio,
+                                 String anniversaryDate) {
+        // 纪念日先解析：格式非法立即报错（在落库前失败，避免写坏数据/误导用户）
+        LocalDate parsedAnniversary = null;
+        if (anniversaryDate != null && !anniversaryDate.isBlank()) {
+            try {
+                parsedAnniversary = LocalDate.parse(anniversaryDate.trim());
+            } catch (DateTimeParseException e) {
+                throw new BizException(400, "纪念日格式不正确，应为 yyyy-MM-dd（如 2023-05-20）");
+            }
+        }
         User user = userMapper.selectOne(
                 new LambdaQueryWrapper<User>().eq(User::getUsername, username));
         if (user == null) {
@@ -220,6 +268,10 @@ public class UserService {
             user.setBio(v.length() > 200 ? v.substring(0, 200) : v);
             changed = true;
         }
+        if (parsedAnniversary != null) {
+            user.setAnniversaryDate(parsedAnniversary);
+            changed = true;
+        }
         if (changed) {
             userMapper.updateById(user);
         }
@@ -227,8 +279,9 @@ public class UserService {
     }
 
     /**
-     * <h3>修改密码（V18）</h3>
-     * <p>校验旧密码（BCrypt matches）→ 新密码长度 ≥ 8 且不同于旧密码 → 更新为 BCrypt 密文。</p>
+     * <h3>修改密码（V18；V33 起旧 token 立即失效）</h3>
+     * <p>校验旧密码（BCrypt matches）→ 新密码长度 ≥ 8 且不同于旧密码 → 更新为 BCrypt 密文
+     * → <b>令牌版本 +1</b>（改密后所有已签发 token 立刻 401，防止被盗 token 继续用满 24 小时）。</p>
      */
     public void changePassword(String username, String oldPassword, String newPassword) {
         User user = userMapper.selectOne(
@@ -247,6 +300,142 @@ public class UserService {
         }
         user.setPassword(passwordEncoder.encode(newPassword));
         userMapper.updateById(user);
+        tokenVersionService.bump(username);   // V33：撤销旧 token
         log.info("User changed password: username={}", username);
+    }
+
+    /**
+     * <h3>按用户名取用户（V33）</h3>
+     * <p>不存在返回 {@code null}（调用方自行决定是报错还是静默——找回密码走静默）。</p>
+     */
+    public User findByUsername(String username) {
+        return userMapper.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+    }
+
+    /**
+     * <h3>邮箱是否已被其他账号占用（V33）</h3>
+     * <p>数据库有唯一索引兜底，这里做前置检查是为了给出可读提示（而非 409 数据冲突）。</p>
+     *
+     * @param email          已归一化（小写/去空白）的邮箱
+     * @param exceptUsername 允许占用该邮箱的账号（通常是当前用户自己）
+     */
+    public boolean emailTaken(String email, String exceptUsername) {
+        Long count = userMapper.selectCount(new LambdaQueryWrapper<User>()
+                .eq(User::getEmail, email)
+                .ne(User::getUsername, exceptUsername));
+        return count != null && count > 0;
+    }
+
+    /**
+     * <h3>绑定邮箱（V33）</h3>
+     * <p>写入 {@code email} 与 {@code email_verified_at}（调用方必须已校验验证码——
+     * 本方法不做验证码校验，只落库）。</p>
+     *
+     * @return 归一化后的邮箱
+     */
+    public String bindEmail(String username, String email) {
+        User user = findByUsername(username);
+        if (user == null) {
+            throw new BizException(400, "用户不存在");
+        }
+        user.setEmail(email);
+        user.setEmailVerifiedAt(java.time.LocalDateTime.now());
+        userMapper.updateById(user);
+        log.info("User bound email: username={}, email={}", username, maskEmail(email));
+        return email;
+    }
+
+    /**
+     * <h3>重置密码（V33 忘记密码）</h3>
+     * <p>与 {@link #changePassword} 的区别：<b>不需要旧密码</b>（调用方已用邮箱验证码证明身份）。
+     * 同样做长度校验并 <b>令牌版本 +1</b>，让所有旧 token（包括攻击者手里那个）立即失效。</p>
+     */
+    public void resetPassword(String username, String newPassword) {
+        User user = findByUsername(username);
+        if (user == null) {
+            throw new BizException(400, "用户不存在");
+        }
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new BizException(400, "新密码长度至少 8 位");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw new BizException(400, "新密码不能与当前密码相同");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userMapper.updateById(user);
+        tokenVersionService.bump(username);   // V33：撤销旧 token（找回的安全底线）
+        log.info("User password reset: username={}", username);
+    }
+
+    /**
+     * <h3>更新进化模块单独同意（V34 合规，docs/07 §5.4）</h3>
+     * <p>写 {@code users.evolution_consent}。这是<b>隐私开关</b>：只有同意后，
+     * {@code ReflectionScheduler} 才会把该用户的会话提炼成技能沉淀进知识库。</p>
+     *
+     * @param username 用户名
+     * @param consent  true=同意，false=撤回同意
+     * @return 落库后的值
+     * @throws BizException 用户不存在时（400）
+     */
+    public boolean updateEvolutionConsent(String username, boolean consent) {
+        User user = findByUsername(username);
+        if (user == null) {
+            throw new BizException(400, "用户不存在");
+        }
+        user.setEvolutionConsent(consent);
+        userMapper.updateById(user);
+        log.info("User evolution consent updated: username={}, consent={}", username, consent);
+        return consent;
+    }
+
+    /**
+     * 标记「首次体验引导已看过」（V36，ADR-91）。幂等。
+     *
+     * <p>⛔ 只有"置为已看过"一个方向：没有 un-onboard 接口 —— 用户想看回来点页面上的
+     * 「能做什么」按钮即可（纯前端开关），不需要服务端状态回退。</p>
+     */
+    public void markOnboarded(String username) {
+        User user = findByUsername(username);
+        if (user == null) {
+            throw new BizException(400, "用户不存在");
+        }
+        if (Boolean.TRUE.equals(user.getOnboarded())) {
+            return;   // 幂等：已经是了就不写库
+        }
+        user.setOnboarded(true);
+        userMapper.updateById(user);
+        log.info("User onboarded flag set: username={}", username);
+    }
+
+    /**
+     * 设置回访邮件的同意状态（V37，ADR-92）。幂等。
+     *
+     * <p>⛔ 只改同意位，不发信、不验证邮箱 —— 资格判定在 {@code ReengageService} 里统一做。</p>
+     */
+    public void updateReengageConsent(String username, boolean consent) {
+        User user = findByUsername(username);
+        if (user == null) {
+            throw new BizException(400, "用户不存在");
+        }
+        if (Boolean.valueOf(consent).equals(user.getReengageConsent())) {
+            return;   // 幂等：没变就不写库
+        }
+        user.setReengageConsent(consent);
+        userMapper.updateById(user);
+        log.info("User reengage consent updated: username={}, consent={}", username, consent);
+    }
+
+    /** 退订（回到同意位 = false）。失败方向安全：只可能少发，不可能多发。 */
+    public void unsubscribeReengage(String username) {
+        updateReengageConsent(username, false);
+    }
+
+    /** 日志里不打完整邮箱（PII 最小化）。 */
+    private static String maskEmail(String email) {
+        if (email == null || email.isBlank()) return "";
+        int at = email.indexOf('@');
+        if (at <= 0) return "***";
+        return email.charAt(0) + "***" + email.substring(at);
     }
 }

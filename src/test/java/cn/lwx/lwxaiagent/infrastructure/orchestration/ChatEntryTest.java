@@ -65,8 +65,12 @@ class ChatEntryTest {
     }
 
     private ChatEntry newEntry(JevSelfHarmSignal jevSignal) {
+        return newEntry(jevSignal, mock(cn.lwx.lwxaiagent.service.MinorModeGuard.class));
+    }
+
+    private ChatEntry newEntry(JevSelfHarmSignal jevSignal, cn.lwx.lwxaiagent.service.MinorModeGuard minorGuard) {
         return new ChatEntry(guards, jevSignal, new GuardrailEventRecorder(eventMapper), rate,
-                new CapabilityRouter(), graph, streams, online, meters, Tracer.NOOP, memory, false, 23, 6, 80);
+                new CapabilityRouter(), graph, streams, online, meters, Tracer.NOOP, memory, minorGuard, false, 23, 6, 80);
     }
 
     /** 本地 Jev 桩：固定返回某个自伤概率。 */
@@ -176,6 +180,45 @@ class ChatEntryTest {
         verifyNoInteractions(graph, rate); assertEquals(0, online.inFlight());
     }
 
+    // ==================== 沙盘带图：mediaIds 必须进图状态（ADR-11） ====================
+
+    private Flux<String> sandboxFlux(Long sandboxId, List<Long> mediaIds) {
+        return entry.sandbox("看看这张", sandboxId, "user-a", mediaIds);
+    }
+
+    @Test void sandboxPutsMediaIdsIntoGraphState() {
+        when(graph.runAsync(anyMap(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(Map.of(GraphStateKeys.OUTPUT, "ok")));
+        assertEquals(List.of("ok"), sandboxFlux(42L, List.of(7L, 8L)).collectList().block());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(graph).runAsync(captor.capture(), eq("42"));
+        assertEquals(List.of(7L, 8L), captor.getValue().get(GraphStateKeys.MEDIA_IDS));
+        assertEquals(42L, captor.getValue().get(GraphStateKeys.SANDBOX_ID));
+        assertEquals(Boolean.FALSE, captor.getValue().get(GraphStateKeys.ADVICE));
+    }
+
+    /** 回归守卫：不带图时状态形状与改造前一致——不得多出 mediaIds 键。 */
+    @Test void sandboxWithoutMediaIdsKeepsStateShapeUnchanged() {
+        when(graph.runAsync(anyMap(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(Map.of(GraphStateKeys.OUTPUT, "ok")));
+        sandboxFlux(42L, List.of()).blockLast();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(graph).runAsync(captor.capture(), eq("42"));
+        assertFalse(captor.getValue().containsKey(GraphStateKeys.MEDIA_IDS), "无图时不得写入 mediaIds");
+        assertEquals(42L, captor.getValue().get(GraphStateKeys.SANDBOX_ID));
+    }
+
+    /** 与 chat(...) 同规则：>4 张或非正编号在入口就拒，绝不把脏 id 交给图。 */
+    @Test void sandboxRejectsInvalidMediaIdsBeforeRunningGraph() {
+        assertThrows(BizException.class, () -> sandboxFlux(42L, List.of(1L, 2L, 3L, 4L, 5L)).blockLast());
+        assertThrows(BizException.class, () -> sandboxFlux(42L, List.of(0L)).blockLast());
+        verifyNoInteractions(graph);
+    }
+
     // ==================== 第二信号三态语义（docs/phase7-jev-shadow） ====================
 
     private static final String SELF_HARM_TEXT = "我真的撑不下去了，感觉活着好累";
@@ -278,5 +321,35 @@ class ChatEntryTest {
         doReturn(new GuardrailRuleService.Verdict(1, "vague")).when(guards).check(anyString());
         assertDoesNotThrow(() -> entry.chat("你好", "dict-3", List.of(), false, false, null));
         verify(eventMapper, never()).insert(any(GuardrailEvent.class));
+    }
+
+    // ==================== 未成年人模式（V34 合规）接线 ====================
+
+    /** 每次 chat 都必须把当前用户交给未成年人守卫——少了这一步，合规形同虚设。 */
+    @Test void minorModeGuardIsEnforcedForCurrentUser() {
+        cn.lwx.lwxaiagent.service.MinorModeGuard minor =
+                mock(cn.lwx.lwxaiagent.service.MinorModeGuard.class);
+        ChatEntry e = newEntry(signal(JevProperties.Mode.OFF, null), minor);
+        // ⛔ **不要 blockLast()**：本断言的是"守卫被调用"这一**同步**事实
+        //   （`chat()` 里 guardrailCheck 在图执行之前就调用了 enforce）。
+        //   实测踩过：带上 blockLast() 会把整条链路跑完，撞上 8s 聊天 deadline ——
+        //   单独跑 6.4s 能过、全类跑就超时，变成**时间敏感的假红**。
+        e.chat("你好", "minor-1", List.of(), false, null);
+
+        verify(minor).enforce("user-a");
+    }
+
+    /** 守卫抛 4004/4005 时必须在进入编排图之前阻断（不烧模型、不占配额）。 */
+    @Test void minorModeBlockStopsBeforeGraph() {
+        cn.lwx.lwxaiagent.service.MinorModeGuard minor =
+                mock(cn.lwx.lwxaiagent.service.MinorModeGuard.class);
+        doThrow(new BizException(cn.lwx.lwxaiagent.service.MinorModeGuard.CURFEW_CODE, "该休息了"))
+                .when(minor).enforce(anyString());
+        ChatEntry e = newEntry(signal(JevProperties.Mode.OFF, null), minor);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> e.chat("你好", "minor-2", List.of(), false, null));
+        assertEquals(cn.lwx.lwxaiagent.service.MinorModeGuard.CURFEW_CODE, ex.getCode());
+        verifyNoInteractions(graph, rate);
     }
 }

@@ -42,7 +42,7 @@ def register(base, seq=0):
     req = urllib.request.Request(
         base + "/auth/register",
         data=json.dumps({"username": "load_%d_%d" % (int(time.time() * 1000), seq),
-                         "password": "Passw0rd!123"}).encode(),
+                         "password": "Passw0rd!123", "birthYear": 1990}).encode(),
         headers={"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=30).read())["token"]
 

@@ -156,6 +156,17 @@ management:
 
 # ======================== 应用自定义配置 ========================
 app:
+  # ======================== 邮件（V33 邮箱绑定 / 找回密码）========================
+  # 全部走环境变量，仓库里不落明文凭据。四个必填项任一为空 = 未配置：
+  #   · 非 prod → 降级为日志输出（LoggingMailSender，验证码打 WARN 日志，本机可跑通全链路）
+  #   · prod     → MailConfig 直接抛异常拒绝启动（fail fast，绝不"发不出去还告诉用户已发送"）
+  mail:
+    host: ${MAIL_HOST:}          # 如 smtp.qq.com / smtp.163.com
+    port: ${MAIL_PORT:465}       # 465=隐式 SSL；587=STARTTLS
+    username: ${MAIL_USERNAME:}  # SMTP 登录名（通常是邮箱地址）
+    password: ${MAIL_PASSWORD:}  # SMTP 授权码（QQ/163 用授权码，不是登录密码）
+    from: ${MAIL_FROM:}          # 发件人地址（From 头）
+
   # 在线并发闸门（性能工程，2026-09-07 定案；2026-09-15 实测复核，Phase 6 / ADR-29）。
   # 修正：旧注释称"厂商 ≥40 零 429（无硬限流）"与实测不符——那是**经过本应用**测得的结果，
   # 而应用的闸门恰好是 24，把真实并发压住了。直连上游阶梯探测（绕过应用）实测：
@@ -252,20 +263,25 @@ app:
     #     response-envelope 可选，响应信封字段名（如 data）→ 自动拆 {"data":{...}}（仅非流式）
     #     connect-timeout-ms 可选，覆盖 app.llm.connect-timeout-ms
     #
-    #   当前形态：单 provider（DeepSeek 官方），**无降级级** → 主链故障时用户直接拿 5000。
+    #   当前形态（ADR-93，2026-10-30）：单 provider（cline.bot 网关），**无降级级** → 主链故障时用户直接拿 5000。
     #   ⚠️ 单 provider 无兜底的故障注入仍未做（ADR-51 H2 / ADR-52 遗留）。
+    #   ⛔ 2026-10-30 实测：DeepSeek 官方 key 已失效（401 "invalid api key"）→ 主链由它切到 cline 网关。
     providers:
-      - name: primary
+      # cline.bot 网关（OpenAI 兼容）。base-url 不含 /v1；非流式响应带 {data:...} 信封。
+      #   ⛔ 模型名必须带 `cline-pass/` 前缀：`deepseek/...` 走按量计费（余额不足即 402
+      #      insufficient_credits），`cline-pass/...` 在订阅内、cost=0（2026-10-07 实测）。
+      - name: cline
+        base-url: ${CLINE_BASE_URL:https://api.cline.bot/api}
+        api-key: ${CLINE_API_KEY:}
+        model: ${CLINE_MODEL:cline-pass/deepseek-v4.1-flash}
+        response-envelope: data
+      # 原主链（DeepSeek 官方）：**保留记录但停用**（ADR-58 的 enabled 语义）。
+      #   恢复 = 换有效 key，然后去掉这条的 enabled、并注释掉上面 cline 段（顺序即链路顺序）。
+      - name: deepseek-official
+        enabled: false
         base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
         api-key: ${OPENAI_API_KEY:}
         model: ${OPENAI_MODEL:deepseek-flash}
-      # 示例（未启用）：cline.bot 网关。base-url 不含 /v1；其非流式响应带 {data:...} 信封。
-      # - name: cline
-      #   enabled: false
-      #   base-url: ${CLINE_BASE_URL:https://api.cline.bot/api}
-      #   api-key: ${CLINE_API_KEY:}
-      #   model: ${CLINE_MODEL:deepseek/deepseek-v4.1-flash}
-      #   response-envelope: data
     # ADR-62/F1：是否让 Spring AI 再产生一条 `chat <model>` span。
     #   默认 false —— 那条 span 在流式路径上**自成一条 trace**，与业务 trace 1:1 双计
     #   （冒烟窗口实测 12 业务 ↔ 11 孤儿），而它带的 model/usage 我们的 `llm.attempt` 全都有。
@@ -304,7 +320,7 @@ app:
     #   "The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed mimo-v2.5"
     # 实测 deepseek-flash 支持图像输入（input_modalities=[text,image]），
     # 用 32x32 纯红 PNG 以 image_url→data URL(base64) 发送，正确答出"红色"。
-    vision-model: ${APP_LLM_VISION_MODEL:deepseek-flash}
+    vision-model: ${APP_LLM_VISION_MODEL:}   # 留空 = 用主链 provider 的模型（要求多模态）
 
   # RAG 查询改写开关（ADR-15）：开启时检索前用 LLM 改写用户查询（每轮多一次 LLM 调用）。
   # 2026-09-04 评测实锤：改写劣化严重（"冷战筑墙怎么办"被压成"吵架"、关键实体丢失、
@@ -312,6 +328,11 @@ app:
   # 2026-09-20：补环境变量覆盖（QUERY_REWRITE_ENABLED），使"开/关"是运行时决策而非改源码，
   # 便于对照实验；默认值不变（仍 false）。
   rag:
+    # 知识库运营目录（ADR-89）：把 .md 放这里即可增/改/删语料，**不用重新构建 jar**。
+    # 不配 = 只用随包发布的 classpath:document/*.md。
+    # ⚠️ 源文件删除后，残留向量会在下次启动的增量同步里清掉（只清理带 filename 的行，
+    #    碰不到用户记忆与技能 —— 它们不带 filename）。
+    docs-dir: ${RAG_DOCS_DIR:}
     # Phase 8（ADR-36）：embedding 提供方。siliconflow（默认）= 硅基流动 Qwen3-Embedding-0.6B；
     # dashscope = 回滚到旧通道。切换只改此值 + 重启，需同步重建向量（两模型向量空间不通用）。
     embedding:
@@ -435,11 +456,31 @@ app:
   encryption:
     enabled: true
 
+  # 危机干预热线清单（ADR-89，合规）。
+  # ⛔ 单一事实源：输入侧转介、输出侧自伤替换、沙盘护栏、通用婉拒**全部**从这里取。
+  #    此前有 4 份副本且已漂移（两份只有一条热线）⇒ 改一次号码要动 4~7 个地方，漏一处
+  #    就有用户在最危险的时刻拿到不完整信息。改这里（或设 APP_CRISIS_HOTLINES）即可。
+  #    留空 = 用 CrisisResources 里的内置默认值（宁可退回默认，也不能让文案里没有热线）。
+  crisis:
+    hotlines: ${APP_CRISIS_HOTLINES:}
+
   # 情绪刹车片（FR-CORE-02，Phase 4）
   emotion-brake:
     enabled: true
     start-hour: 23
     end-hour: 6
+
+  # 未成年人模式（V34，2026-10-13）—— **合规要求**（未成年人网络保护），不是体验开关。
+  # 服务端强制：注册时按出生年份判定 users.minor_mode，命中后在 ChatEntry 入口
+  # （与情绪刹车片同层）拦截宵禁时段与每日条数。⛔ 不得只由前端实现——前端可绕过。
+  # 宵禁为**跨零点区间** [start, end)：22 点到次日 6 点；end 不含（06:00 起放行）。
+  # 每日计数键 minor:daily:{userId}:{yyyyMMdd}，过期到次日零点。
+  # ⛔ 文案改动注意：给用户看的必须是人话，不得出现任何开发参数（参考 4002 教训）。
+  minor:
+    enabled: true                 # 总开关（应急回退用；关闭即恢复接入前行为）
+    daily-message-limit: 30       # 每日消息条数上限（未成年人）
+    curfew-start-hour: 22         # 宵禁起（含）
+    curfew-end-hour: 6            # 宵禁止（不含）
 
   # 后台调度预算（ADR-20）：后台任务不得与在线请求争抢 LLM 配额。
   # 2026-09-01 实测：后台调度 20 分钟产生 95 次 LLM/embedding 调用（在线仅 1 次），
@@ -473,6 +514,37 @@ app:
       enabled: true
       fixed-delay-ms: 1800000       # 原硬编码 30 分钟
       batch-limit: 10               # 原 BATCH_LIMIT 常量
+
+  # 运营分析层（PM 的眼睛）：GET /admin/analytics/overview 的数据口径。
+  # ⚠️ exclude-username-prefixes 为什么必须存在：库里绝大多数账号是 E2E/压测脚本造的
+  # 合成账号（verify_* / load_* / soak_* / probe_* …），不过滤的话 DAU/注册/留存全是垃圾数字。
+  # username 命中任一前缀即从"人的口径"中排除；被排除的用户数由接口的
+  # excludedTestUsers 字段如实上报——⛔ 只许如实上报，不许静默过滤。
+  # 逗号分隔，可用环境变量覆盖（新造的合成账号前缀加在这里即可，不用改代码）。
+  analytics:
+    exclude-username-prefixes: ${ANALYTICS_EXCLUDE_PREFIXES:verify_,load_,soak_,aev_,acceval_,probe_,pc_,rd_,lim_,agg_,l3in_,smoke_,ui_,kid_,qq_,brk_,min_,c_,sent_,mu_,adr31_,uiprobe_,dbg,e2e_,obs,adv,media_,mem2_,noise,tier,soakprobe,lfacc_,lf,memv,msgtest,spatest,tracerag,tracedbg,fakechk,rejchk,llmfail,gt_eval,rawprobe,burst,scroll,secb,secu,sense,canary,burst_,testuser,user1}
+
+  # 回访邮件（V37，ADR-92）—— **主动触达**，门槛比验证码高得多。
+  # ⛔ enabled 默认 **false**：部署不等于"开始给用户发信"。开启是产品决定（模板/频率/话术过审之后），
+  #    不该藏在"代码上线"里。默认关 ⇒ 上线后一封都不会发。
+  # 资格（全部满足）：显式同意 + 邮箱已验证 + 非未成年人 + 沉默 ≥ silence-days + 距上次 ≥ min-interval-days。
+  reengage:
+    enabled: ${REENGAGE_ENABLED:false}
+    silence-days: 7            # 沉默多少天才触达（最后一条消息距今；从未聊过则用注册时间）
+    min-interval-days: 14      # 同一用户两次触达的最小间隔
+    daily-limit: 20            # 每次调度最多发多少封（有界）
+    subject: "还在这里，等你把话说完"
+    # 正文模板：只支持 {username} / {unsubscribeUrl} 两个占位符，
+    # ⛔ **不许引用任何聊天内容** —— 触达邮件不该成为新的隐私泄露面。
+    body: ""
+    # 退订链接签名密钥；未配置时回退 jwt.secret。两者都空 ⇒ **不发**（签不出链接 = 用户退不掉）。
+    # ⛔ 回退必须写在**这里**（yml 的嵌套占位符），不能只写在 @Value 的默认值里：
+    #    `${app.reengage.token-secret:${jwt.secret:}}` 只在属性**不存在**时才取默认值，
+    #    而本行一旦写成 `${REENGAGE_TOKEN_SECRET:}` 就等于把该属性**定义成空串** ⇒ 不会回退。
+    #    2026-10-29 实测：日志报"未配置 token-secret"，据此**一封都没发**（fail-closed 是对的，但行为不符预期）。
+    token-secret: ${REENGAGE_TOKEN_SECRET:${jwt.secret:}}
+    # 调度 cron（默认每天 10:30 —— 白天发，不在深夜打扰）。运维/验证可临时改成 "*/30 * * * * *"。
+    cron: ${REENGAGE_CRON:0 30 10 * * *}
 
   # 灰度发布（08 §3）：固定百分位桶，userId hashCode % 100 映射
   # 环境变量 CANARY_PERCENTAGE 覆盖，0=不灰度，100=全量新版本

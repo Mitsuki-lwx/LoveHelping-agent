@@ -18,7 +18,7 @@ import java.util.List;
 @Component
 public class KnowledgeBaseIncrementalSync {
 
-    public record SyncResult(int added, int replaced, int skipped) {
+    public record SyncResult(int added, int replaced, int skipped, int deleted) {
     }
 
     /** 对当前文档集执行增量同步；返回 新增/重建/跳过 计数 */
@@ -47,8 +47,56 @@ public class KnowledgeBaseIncrementalSync {
                 replaced++;
             }
         }
-        log.info("KnowledgeBase incremental sync: added={} replaced={} skipped={}", added, replaced, skipped);
-        return new SyncResult(added, replaced, skipped);
+        // ⛔ 2026-10-13（ADR-89）补：**源文件被删除时清理残留向量**。
+        //    此前只处理"新增/变更/未变"三种情形，删掉的文档向量会永久留在库里 ——
+        //    docs/09 里那句"删文档必须手动清 target/classes/document/ 再 reindex"
+        //    就是这个缺口的手工兜底（靠人记住，必然会忘）。
+        int deleted = purgeStale(pgJdbcTemplate, documents);
+        log.info("KnowledgeBase incremental sync: added={} replaced={} skipped={} deleted={}",
+                added, replaced, skipped, deleted);
+        return new SyncResult(added, replaced, skipped, deleted);
+    }
+
+    /**
+     * 清掉"库里还有、当前文档集里已经没有"的知识文档（按 {@code filename} 比对）。
+     *
+     * <p>⛔ <b>作用域是安全的</b>：只删 {@code metadata->>'filename' IS NOT NULL} 的行。
+     * 用户记忆（{@code source=memory}）与进化技能（{@code source=evolution}）都<b>不带 filename</b>
+     * —— 已实测确认（2026-10-13：库里 1130 行，带 filename 的 439 行全部是知识库，
+     * 691 行记忆一个都没有）。所以这个删除**碰不到**用户数据。</p>
+     */
+    private int purgeStale(JdbcTemplate pgJdbcTemplate, List<Document> documents) {
+        java.util.Set<String> current = new java.util.HashSet<>();
+        for (Document d : documents) {
+            Object f = d.getMetadata().get("filename");
+            if (f != null) current.add(String.valueOf(f));
+        }
+        if (current.isEmpty()) {
+            // 一份文档都没加载到（如运营目录配错）→ **不删**。宁可有陈旧数据，也不能清空知识库。
+            log.warn("本次未加载到任何知识文档，跳过陈旧清理（避免误清空）");
+            return 0;
+        }
+        List<String> dbFiles;
+        try {
+            dbFiles = pgJdbcTemplate.queryForList(
+                    "SELECT DISTINCT metadata->>'filename' FROM vector_store "
+                            + "WHERE metadata->>'filename' IS NOT NULL", String.class);
+        } catch (Exception e) {
+            log.warn("陈旧文档比对失败，跳过清理：{}", e.getMessage());
+            return 0;
+        }
+        int deleted = 0;
+        for (String f : dbFiles) {
+            if (current.contains(f)) continue;
+            try {
+                deleted += pgJdbcTemplate.update(
+                        "DELETE FROM vector_store WHERE metadata->>'filename' = ?", f);
+                log.info("陈旧知识文档已清理：{}", f);
+            } catch (Exception e) {
+                log.warn("清理陈旧文档失败 {}：{}", f, e.getMessage());
+            }
+        }
+        return deleted;
     }
 
     private String queryHash(JdbcTemplate pgJdbcTemplate, String file) {

@@ -37,6 +37,9 @@ public class DeleteService {
      */
     private final JdbcTemplate pgJdbc;
 
+    /** 令牌版本服务（V33）：注销账号后 bump，旧 token 立即失效。 */
+    private final TokenVersionService tokenVersionService;
+
     public DeleteService(UserMapper userMapper, UserMemoryMapper userMemoryMapper,
                          ConversationSummaryMapper conversationSummaryMapper,
                          EvolutionSkillMapper evolutionSkillMapper,
@@ -46,7 +49,8 @@ public class DeleteService {
                          SandboxSessionMapper sandboxSessionMapper,
                          SandboxMemoryMapper sandboxMemoryMapper,
                          InsightRecordMapper insightRecordMapper,
-                         PgvectorProperties pgvectorProperties) {
+                         PgvectorProperties pgvectorProperties,
+                         TokenVersionService tokenVersionService) {
         this.userMapper = userMapper;
         this.userMemoryMapper = userMemoryMapper;
         this.conversationSummaryMapper = conversationSummaryMapper;
@@ -58,6 +62,7 @@ public class DeleteService {
         this.sandboxSessionMapper = sandboxSessionMapper;
         this.sandboxMemoryMapper = sandboxMemoryMapper;
         this.insightRecordMapper = insightRecordMapper;
+        this.tokenVersionService = tokenVersionService;
         this.pgJdbc = new JdbcTemplate(DataSourceBuilder.create()
                 .url(pgvectorProperties.getUrl())
                 .username(pgvectorProperties.getUsername())
@@ -131,6 +136,9 @@ public class DeleteService {
 
         // 8. 禁用用户账号
         userMapper.update(null, new UpdateWrapper<User>().eq("username", userId).set("enabled", false));
+
+        // 9. V33：令牌版本 +1 —— 注销后旧 token 立即失效（否则被禁用的账号还能用旧 token 跑满 24h）
+        tokenVersionService.bump(userId);
 
         log.info("User {} data deleted successfully", userId);
     }

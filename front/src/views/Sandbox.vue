@@ -1,7 +1,7 @@
 <template>
   <div class="sandbox-page">
     <div class="sb-header">
-      <button class="back-btn" @click="goHome">←</button>
+      <button class="back-btn" @click="goHome"><PhArrowLeft :size="18" weight="bold" aria-hidden="true" /></button>
       <div class="letterhead">
         <span class="letterhead-stamp anim-stamp">演</span>
         <div class="letterhead-titles">
@@ -9,7 +9,7 @@
           <span class="letterhead-sub">— 把想说的话，先和"TA"练一遍 —</span>
         </div>
       </div>
-      <button class="new-chat-btn btn-hand" @click="openCreate">✎ 新模拟</button>
+      <button class="new-chat-btn btn-hand" @click="openCreate"><PhPencilSimple :size="15" weight="bold" class="ico" aria-hidden="true" /> 新模拟</button>
     </div>
 
     <div class="sb-body">
@@ -34,7 +34,7 @@
       <main class="sb-main">
         <div v-if="!currentId && showCreate === false" class="sb-welcome">
           <div class="sb-welcome-head">
-            <span class="sb-welcome-emoji">🎭</span>
+            <span class="sb-welcome-emoji"><PhMaskHappy :size="30" weight="bold" aria-hidden="true" /></span>
             <p class="hand sb-welcome-title">这一场，你想遇见谁？</p>
             <p class="sb-welcome-sub">预置人设一键开场；也可以自定义一个"TA"的性格，重演心里那场对话。</p>
           </div>
@@ -44,13 +44,13 @@
               <h3 class="hand persona-name">{{ p.name }}</h3>
               <p class="persona-arche">{{ p.archetype || '相处练习' }}</p>
               <p v-if="personaLine(p)" class="persona-line">“{{ personaLine(p) }}”</p>
-              <span class="persona-go">开场 →</span>
+              <span class="persona-go">开场 <PhArrowRight :size="15" weight="bold" class="ico" aria-hidden="true" /></span>
             </div>
             <div class="persona-card persona-custom letter-card anim-letter-in" @click="openCreate">
-              <span class="persona-avatar persona-avatar-custom">✎</span>
+              <span class="persona-avatar persona-avatar-custom"><PhPencilSimple :size="22" weight="bold" aria-hidden="true" /></span>
               <h3 class="hand persona-name">自定义 TA</h3>
               <p class="persona-arche">写下性格，我来扮演</p>
-              <span class="persona-go">自定义 →</span>
+              <span class="persona-go">自定义 <PhArrowRight :size="15" weight="bold" class="ico" aria-hidden="true" /></span>
             </div>
           </div>
         </div>
@@ -75,15 +75,18 @@
               <span class="hand sb-chat-name">{{ currentSession.personaName }}</span>
             </div>
             <div class="sb-chat-tools">
-              <button class="sb-tool" @click="resetSession">⟲ 重来</button>
-              <button class="sb-tool" :disabled="reviewing" @click="runReview">{{ reviewing ? '复盘中…' : '📋 复盘' }}</button>
-              <button class="sb-tool" @click="toggleMemories">📒 记忆</button>
-              <button class="sb-tool danger" @click="removeSession">🗑 删除</button>
+              <button class="sb-tool" @click="resetSession"><PhArrowCounterClockwise :size="15" weight="bold" class="ico" aria-hidden="true" /> 重来</button>
+              <button class="sb-tool" :disabled="reviewing" @click="runReview"><PhClipboardText :size="15" weight="bold" class="ico" aria-hidden="true" /> {{ reviewing ? '复盘中…' : '复盘' }}</button>
+              <button class="sb-tool" @click="toggleMemories"><PhNotebook :size="15" weight="bold" class="ico" aria-hidden="true" /> 记忆</button>
+              <button class="sb-tool danger" @click="removeSession"><PhTrash :size="15" weight="bold" class="ico" aria-hidden="true" /> 删除</button>
             </div>
           </div>
 
           <div class="sb-messages" ref="msgRef">
             <div v-for="(m, idx) in messages" :key="idx" :class="['sb-msg anim-letter-in', m.role === 'user' ? 'sb-msg-user' : 'sb-msg-ai']">
+              <div v-if="m.images && m.images.length" class="message-images">
+                <img v-for="im in m.images" :key="im.id" :src="im.previewUrl || mediaUrl(im.id)" alt="我发的图片" />
+              </div>
               <div class="sb-msg-content">{{ m.text }}</div>
             </div>
             <div v-if="loading" class="sb-msg sb-msg-ai">
@@ -92,9 +95,11 @@
           </div>
 
           <div class="sb-input-bar">
+            <!-- 发图：与解忧信箱共用同一个组件（校验口径/上传接口/失败提示必须一致） -->
+            <ChatImagePicker v-model="pendingImages" :disabled="loading" />
             <input v-model="inputText" class="sb-chat-input" placeholder="跟 TA 说点什么……"
               @keydown.enter="send" :disabled="loading" />
-            <button class="send-btn" @click="send" :disabled="loading || !inputText.trim()">说</button>
+            <button class="send-btn" @click="send" :disabled="loading || (!inputText.trim() && !pendingImages.length)">说</button>
           </div>
         </div>
       </main>
@@ -103,26 +108,26 @@
       <!-- ③ 演练复盘卡（2026-09-08） -->
       <div v-if="reviewResult" class="sb-review letter-card anim-letter-in">
         <div class="sb-review-head">
-          <span class="sb-review-title">📋 演练复盘</span>
-          <button class="sb-tool" @click="reviewResult = null">✕</button>
+          <span class="sb-review-title"><PhClipboardText :size="15" weight="bold" class="ico" aria-hidden="true" /> 演练复盘</span>
+          <button class="sb-tool" @click="reviewResult = null"><PhX :size="18" weight="bold" aria-hidden="true" /></button>
         </div>
         <p class="sb-review-summary">{{ reviewResult.summary }}</p>
-        <p v-if="reviewResult.good" class="sb-review-line good">✅ {{ reviewResult.good }}</p>
-        <p v-if="reviewResult.risk" class="sb-review-line risk">⚠️ {{ reviewResult.risk }}</p>
-        <p v-if="reviewResult.better" class="sb-review-line better">💬 试试这么说：{{ reviewResult.better }}</p>
+        <p v-if="reviewResult.good" class="sb-review-line good"><PhCheckCircle :size="15" weight="bold" class="ico" aria-hidden="true" /> {{ reviewResult.good }}</p>
+        <p v-if="reviewResult.risk" class="sb-review-line risk"><PhWarning :size="15" weight="bold" class="ico" aria-hidden="true" /> {{ reviewResult.risk }}</p>
+        <p v-if="reviewResult.better" class="sb-review-line better"><PhChatCircleText :size="15" weight="bold" class="ico" aria-hidden="true" /> 试试这么说：{{ reviewResult.better }}</p>
         <p class="sb-review-note">复盘基于这场演练的对话——练完看一眼，下次开口更有底。</p>
       </div>
     <div v-if="memOpen && currentSession" class="sb-mem-drawer letter-card anim-letter-in">
       <div class="sb-mem-head">
         <span class="hand">TA 记住了什么</span>
-        <button class="sb-tool" @click="memOpen = false">✕</button>
+        <button class="sb-tool" @click="memOpen = false"><PhX :size="18" weight="bold" aria-hidden="true" /></button>
       </div>
       <div v-if="!memories.length" class="sb-mem-empty">还没有记忆。聊完让他记下重要的事，下次他会记得。</div>
       <ul class="sb-mem-list">
         <li v-for="m in memories" :key="m.id" class="sb-mem-item">
           <span class="sb-mem-type">{{ typeName(m.type) }}</span>
           <span class="sb-mem-text">{{ m.factText }}</span>
-          <button class="sb-mem-del" @click="delMemory(m.id)" title="删除">✕</button>
+          <button class="sb-mem-del" @click="delMemory(m.id)" title="删除"><PhX :size="18" weight="bold" aria-hidden="true" /></button>
         </li>
       </ul>
       <div class="sb-mem-add">
@@ -142,10 +147,12 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { PhArrowCounterClockwise, PhArrowLeft, PhArrowRight, PhChatCircleText, PhCheckCircle, PhClipboardText, PhMaskHappy, PhNotebook, PhPencilSimple, PhTrash, PhWarning, PhX } from '@phosphor-icons/vue'
 import {
   listSandboxPersonas, listSandboxSessions, sandboxCreate,
   sandboxReset, sandboxDelete, createSandboxChatSSE,
-  listSandboxMemories, addSandboxMemory, deleteSandboxMemory, sandboxReview } from '../api/index.js'
+  listSandboxMemories, addSandboxMemory, deleteSandboxMemory, sandboxReview, mediaUrl } from '../api/index.js'
+import ChatImagePicker from '../components/ChatImagePicker.vue'
 
 const router = useRouter()
 const personas = ref([])
@@ -157,6 +164,8 @@ const customTraits = ref('')
 const relationshipStage = ref('')
 const messages = ref([])
 const inputText = ref('')
+/** 待发送的图片（已上传，只存 id + 本地预览） */
+const pendingImages = ref([])
 const loading = ref(false)
 const memOpen = ref(false)
 const memories = ref([])
@@ -263,9 +272,12 @@ async function removeSession() {
 async function scrollDown() { await nextTick(); if (msgRef.value) msgRef.value.scrollTop = msgRef.value.scrollHeight }
 function send() {
   const text = inputText.value.trim()
-  if (!text || !currentId.value) return
-  messages.value.push({ role: 'user', text })
+  const images = pendingImages.value.slice()
+  // ⛔ 允许"只发图不写字"（后端视觉节点只需要图片 + 可选文本）
+  if ((!text && !images.length) || !currentId.value) return
+  messages.value.push({ role: 'user', text, images })
   inputText.value = ''
+  pendingImages.value = []
   loading.value = true
   scrollDown()
   cancelSSE = createSandboxChatSSE(currentId.value, text, {
@@ -273,7 +285,7 @@ function send() {
     onError() { messages.value.push({ role: 'ai', text: '这场的信号断了，稍后再试。' }); loading.value = false },
     onComplete() { loading.value = false; scrollDown() },
     onBusy(body) { messages.value.push({ role: 'ai', text: (body && body.message) || '这场暂时进不去，稍后再试。' }); loading.value = false }
-  })
+  }, images.map((i) => i.id))          // ⛔ 第 4 个参数：逗号分隔的 mediaIds
 }
 async function toggleMemories() {
   memOpen.value = !memOpen.value
@@ -312,15 +324,15 @@ async function delMemory(memId) {
 .letterhead { display: flex; align-items: center; gap: 12px; }
 .letterhead-stamp {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px; border-radius: 50%;
-  border: 2px dashed var(--wine); color: var(--wine-deep);
+  width: 42px; height: 42px; border-radius: var(--r-seal);
+  border: 2px dashed var(--accent); color: var(--accent-deep);
   font-family: var(--font-hand); font-size: 20px; font-weight: 700;
   transform: rotate(-10deg); background: var(--paper-card); flex-shrink: 0;
 }
 .letterhead-titles { display: flex; flex-direction: column; line-height: 1.15; }
 .letterhead-title { font-size: 22px; margin: 0; letter-spacing: 0.14em; }
 .letterhead-sub { font-family: var(--font-hand); font-size: 11px; color: var(--ink-faint); letter-spacing: 0.2em; margin-top: 2px; }
-.back-btn { font-family: var(--font-hand); font-size: 20px; color: var(--ink-soft); background: transparent; border: none; cursor: pointer; padding: 6px 10px; border-radius: 50%; }
+.back-btn { font-family: var(--font-hand); font-size: 20px; color: var(--ink-soft); background: transparent; border: none; cursor: pointer; padding: 6px 10px; border-radius: var(--r-seal); }
 .back-btn:hover { background: var(--paper-deep); transform: translateX(-2px); }
 .new-chat-btn { font-size: 13.5px; }
 
@@ -332,7 +344,7 @@ async function delMemory(memId) {
 .sb-side-title { font-size: 15px; letter-spacing: 0.14em; margin: 0 6px 12px; }
 .sb-side-empty { font-family: var(--font-hand); font-size: 13px; color: var(--ink-faint); text-align: center; padding: 30px 6px; line-height: 2; }
 .sb-session-list { display: flex; flex-direction: column; gap: 8px; }
-.sb-session { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; transition: all 0.16s; }
+.sb-session { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--r-ctl); border: 1px solid transparent; cursor: pointer; transition: all 0.16s; }
 .sb-session:hover { background: var(--paper-deep); }
 .sb-session-active { background: var(--paper-card); border-color: oklch(80% 0.02 70 / 0.3); box-shadow: 0 10px 22px -14px oklch(12% 0.03 62 / 0.8); }
 /* ⛔ 纸底卡片：文字/时间必须用纸上深墨（--ink-on-paper）。
@@ -341,8 +353,9 @@ async function delMemory(memId) {
 .sb-session-active .sb-session-time { color: oklch(46% 0.02 62); }
 .sb-session-wax {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
-  background: radial-gradient(circle at 34% 30%, var(--wine-glow), var(--wine));
+  width: 34px; height: 34px; border-radius: var(--r-seal); flex-shrink: 0;
+  background-color: var(--accent);
+  background-image: radial-gradient(circle at 34% 30%, var(--accent-glow), var(--accent));
   color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 16px;
   box-shadow: inset 0 -2px 4px oklch(30% 0.1 28 / 0.45); transform: rotate(-6deg);
 }
@@ -357,42 +370,46 @@ async function delMemory(memId) {
 .sb-welcome-sub { font-family: var(--font-hand); font-size: 14px; color: var(--ink-soft); margin-bottom: 30px; letter-spacing: 0.04em; }
 .persona-grid { display: flex; flex-wrap: wrap; gap: 18px; justify-content: center; }
 .persona-card { flex: 1 1 220px; max-width: 250px; min-width: 200px; padding: 26px 20px 18px; cursor: pointer; text-align: center; transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.24s, border-color 0.24s; }
-.persona-card:hover { transform: translateY(-4px) rotate(-0.3deg); border-color: var(--wine); box-shadow: 0 16px 34px -18px oklch(40% 0.1 60 / 0.5); }
+.persona-card:hover { transform: translateY(-4px) rotate(-0.3deg); border-color: var(--accent); box-shadow: 0 16px 34px -18px oklch(40% 0.1 60 / 0.5); }
 .persona-avatar {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 54px; height: 54px; border-radius: 50%; margin-bottom: 10px;
-  background: radial-gradient(circle at 34% 30%, var(--wine-glow), var(--wine));
+  width: 54px; height: 54px; border-radius: var(--r-seal); margin-bottom: 10px;
+  background-color: var(--accent);
+  background-image: radial-gradient(circle at 34% 30%, var(--accent-glow), var(--accent));
   color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 24px;
   box-shadow: inset 0 -3px 6px oklch(30% 0.1 28 / 0.45), 0 8px 18px -8px oklch(40% 0.1 60 / 0.55); transform: rotate(-8deg);
 }
-.persona-avatar-custom { background: radial-gradient(circle at 34% 30%, oklch(58% 0.1 250), oklch(44% 0.09 250)); }
+/* 自定义人设头像：原来用**蓝色**(250)，一页第二个强调色。
+   改用**暖墨中性**（与纸/桌同族）—— 区分"自定义 vs 预置"靠**色系**（墨 vs 酒红），不靠新增色相。 */
+.persona-avatar-custom { background-color: oklch(38% 0.02 62); background-image: radial-gradient(circle at 34% 30%, oklch(46% 0.022 62), oklch(31% 0.018 62)); }
 .persona-name { font-size: 19px; margin: 0 0 4px; letter-spacing: 0.1em; }
 .persona-arche { font-size: 12px; color: var(--ink-faint); letter-spacing: 0.12em; margin-bottom: 8px; }
 .persona-line { font-family: var(--font-hand); font-size: 13px; color: var(--ink-soft); line-height: 1.6; margin-bottom: 10px; min-height: 40px; }
-.persona-go { font-family: var(--font-hand); font-size: 13px; color: oklch(48% 0.12 60); letter-spacing: 0.1em; border-bottom: 1px dashed var(--wine); padding-bottom: 2px; }
+.persona-go { font-family: var(--font-hand); font-size: 13px; color: oklch(48% 0.12 60); letter-spacing: 0.1em; border-bottom: 1px dashed var(--accent); padding-bottom: 2px; }
 
 .sb-custom { max-width: 520px; margin: 44px auto; width: calc(100% - 44px); padding: 34px 34px 28px; }
 .sb-custom-title { font-size: 21px; letter-spacing: 0.12em; margin: 0 0 16px; text-align: center; }
 .sb-field-label { display: block; font-family: var(--font-hand); font-size: 13px; color: var(--ink-soft); letter-spacing: 0.1em; margin: 12px 0 6px; }
 .sb-input { width: 100%; border: none; border-bottom: 1.6px solid var(--ink-line); background: transparent; font-size: 15px; color: var(--ink); padding: 8px 2px; outline: none; transition: border-color 0.18s; }
-.sb-input:focus { border-bottom-color: var(--wine); }
+.sb-input:focus { border-bottom-color: var(--accent); }
 .sb-input::placeholder { color: var(--ink-faint); font-family: var(--font-hand); }
-.sb-textarea { border: 1.4px dashed var(--ink-line); border-radius: 8px; padding: 10px 12px; resize: none; line-height: 1.7; }
-.sb-textarea:focus { border-color: var(--wine); border-style: solid; }
+.sb-textarea { border: 1.4px dashed var(--ink-line); border-radius: var(--r-ctl); padding: 10px 12px; resize: none; line-height: 1.7; }
+.sb-textarea:focus { border-color: var(--accent); border-style: solid; }
 .sb-custom-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 22px; }
 
 .sb-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .sb-chat-top { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px 12px; border-bottom: 1px dashed var(--ink-line); flex-shrink: 0; }
 .sb-chat-wax {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: 50%; margin-right: 10px;
-  background: radial-gradient(circle at 34% 30%, var(--wine-glow), var(--wine));
+  width: 36px; height: 36px; border-radius: var(--r-seal); margin-right: 10px;
+  background-color: var(--accent);
+  background-image: radial-gradient(circle at 34% 30%, var(--accent-glow), var(--accent));
   color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 17px;
   transform: rotate(-8deg); box-shadow: inset 0 -2px 4px oklch(30% 0.1 28 / 0.45);
 }
 .sb-chat-name { font-size: 17px; letter-spacing: 0.08em; vertical-align: middle; }
 .sb-chat-tools { display: flex; gap: 6px; }
-.sb-tool { font-family: var(--font-hand); font-size: 12.5px; letter-spacing: 0.05em; color: var(--ink-soft); background: transparent; border: 1px solid transparent; padding: 5px 10px; border-radius: 12px 10px 11px 9px; cursor: pointer; transition: all 0.15s; }
+.sb-tool { font-family: var(--font-hand); font-size: 12.5px; letter-spacing: 0.05em; color: var(--ink-soft); background: transparent; border: 1px solid transparent; padding: 5px 10px; border-radius: var(--r-paper); cursor: pointer; transition: all 0.15s; }
 .sb-tool:hover { border-color: var(--ink-line); background: var(--paper-card); color: var(--ink); }
 .sb-tool.danger:hover { border-color: var(--danger); color: var(--danger); }
 .sb-messages { flex: 1; overflow-y: auto; padding: 22px clamp(16px, 4vw, 44px); display: flex; flex-direction: column; gap: 12px; }
@@ -400,18 +417,19 @@ async function delMemory(memId) {
 .sb-msg-user { align-self: flex-end; }
 .sb-msg-ai { align-self: flex-start; }
 .sb-msg-content { padding: 11px 16px; font-size: 14.5px; line-height: 1.8; word-break: break-word; }
-.sb-msg-ai .sb-msg-content { background: var(--paper-card); border: 1px solid var(--ink-line); border-radius: 4px 14px 14px 14px; }
-.sb-msg-user .sb-msg-content { background: linear-gradient(180deg, var(--wine), var(--wine-deep)); color: oklch(97% 0.012 80); border-radius: 14px 4px 14px 14px; }
+.sb-msg-ai .sb-msg-content { background: var(--paper-card); border: 1px solid var(--ink-line); border-radius: var(--r-bubble-ai); }
+.sb-msg-user .sb-msg-content { background-color: var(--accent); background-image: linear-gradient(180deg, var(--accent), var(--accent-deep)); color: oklch(97% 0.012 80); border-radius: var(--r-bubble-user); }
 .sb-input-bar { flex-shrink: 0; display: flex; gap: 10px; padding: 14px 24px 16px; border-top: 1.5px solid var(--ink-line); }
-.sb-chat-input { flex: 1; border: 1px solid var(--ink-line); border-radius: 22px; background: var(--paper-card); font-size: 15px; color: var(--ink); padding: 10px 18px; outline: none; transition: border-color 0.18s, box-shadow 0.18s; }
-.sb-chat-input:focus { border-color: var(--wine); box-shadow: 0 0 0 3px oklch(58% 0.13 28 / 0.3); }
+/* 自己画纸底 -> 由 style.css 的重映射列表覆盖墨色 token */
+.sb-chat-input { flex: 1; border: 1px solid oklch(74% 0.024 62); border-radius: var(--r-pill); background: var(--paper-card); font-size: 15px; color: var(--ink); padding: 10px 18px; outline: none; transition: border-color 0.18s, box-shadow 0.18s; }
+.sb-chat-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px oklch(58% 0.13 28 / 0.3); }
 .sb-chat-input::placeholder { color: var(--ink-faint); font-family: var(--font-hand); }
-.send-btn { border: none; border-radius: 22px; background: linear-gradient(180deg, var(--wine), var(--wine-deep)); color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 15px; letter-spacing: 0.1em; padding: 0 1.6em; cursor: pointer; transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s; }
+.send-btn { border: none; border-radius: var(--r-pill); background-color: var(--accent); background-image: linear-gradient(180deg, var(--accent), var(--accent-deep)); color: oklch(97% 0.012 80); font-family: var(--font-hand); font-size: 15px; letter-spacing: 0.1em; padding: 0 1.6em; cursor: pointer; transition: transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s; }
 .send-btn:hover:not(:disabled) { transform: translateY(-1px); }
 .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .typing-dots { display: inline-flex; gap: 3px; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: oklch(50% 0.12 60); display: inline-block; animation: dot-b 1.1s ease-in-out infinite; }
+.dot { width: 6px; height: 6px; border-radius: var(--r-seal); background: oklch(50% 0.12 60); display: inline-block; animation: dot-b 1.1s ease-in-out infinite; }
 .dot:nth-child(2) { animation-delay: 0.16s; }
 .dot:nth-child(3) { animation-delay: 0.32s; }
 @keyframes dot-b { 0%,60%,100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
@@ -421,8 +439,8 @@ async function delMemory(memId) {
 .sb-mem-head .hand { font-size: 17px; letter-spacing: 0.1em; }
 .sb-mem-empty { font-family: var(--font-hand); font-size: 13px; color: var(--ink-faint); text-align: center; padding: 26px 6px; line-height: 1.9; }
 .sb-mem-list { flex: 1; overflow-y: auto; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-.sb-mem-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.6; background: var(--paper-card-warm); border-radius: 8px; padding: 8px 10px; border: 1px solid var(--ink-line); }
-.sb-mem-type { flex-shrink: 0; font-family: var(--font-hand); font-size: 11px; color: var(--wine-glow); background: var(--wine-soft); border-radius: 8px; padding: 1px 8px; margin-top: 2px; }
+.sb-mem-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.6; background: var(--paper-card-warm); border-radius: var(--r-ctl); padding: 8px 10px; border: 1px solid var(--ink-line); }
+.sb-mem-type { flex-shrink: 0; font-family: var(--font-hand); font-size: 11px; color: var(--chip-fg); background: var(--chip-bg); border-radius: var(--r-ctl); padding: 1px 8px; margin-top: 2px; }
 .sb-mem-text { flex: 1; word-break: break-word; color: var(--ink); }
 .sb-mem-del { background: transparent; border: none; color: var(--ink-faint); cursor: pointer; font-size: 12px; padding: 2px; }
 .sb-mem-del:hover { color: var(--danger); }
@@ -432,13 +450,20 @@ async function delMemory(memId) {
 .sb-mem-go { font-size: 13px; padding: 0.5em 1em; flex-shrink: 0; }
 
 /* ---- 演练复盘（2026-09-08 产品闭环 ③） ---- */
-.sb-review { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--wine); }
+.sb-review { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--accent); }
 .sb-review-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .sb-review-title { font-family: var(--font-hand); font-size: 14px; color: var(--ink); }
 .sb-review-summary { font-size: 13.5px; color: var(--ink); line-height: 1.6; margin: 4px 0 8px; }
-.sb-review-line { font-size: 13px; line-height: 1.6; margin: 6px 0; padding: 6px 10px; border-radius: 8px; }
+.sb-review-line { font-size: 13px; line-height: 1.6; margin: 6px 0; padding: 6px 10px; border-radius: var(--r-ctl); }
 .sb-review-line.good { background: rgba(99,153,34,0.1); }
 .sb-review-line.risk { background: rgba(163,45,45,0.08); }
 .sb-review-line.better { background: var(--paper-deep); }
 .sb-review-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 8px; }
+/* ---------- 沙盘发图 ---------- */
+.sb-input-bar { flex-wrap: wrap; }
+.message-images { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.message-images img {
+  width: 120px; height: 120px; object-fit: cover;
+  border-radius: var(--r-ctl); box-shadow: var(--sh-1); display: block;
+}
 </style>

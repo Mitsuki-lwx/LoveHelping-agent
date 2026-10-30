@@ -55,7 +55,7 @@ class StreamSinkGuardrailTest {
         assertFalse(all.contains("伤害自己"), "违规文本不得送达用户：" + all);
         assertFalse(all.contains("后面还有"), "拦截后的 chunk 必须全部丢弃：" + all);
         assertTrue(all.contains("先说几句安慰的话"), "命中之前的正常文本应保留：" + all);
-        assertTrue(all.endsWith(GuardrailMessages.SELF_HARM_OUTPUT), "应推替换文案：" + all);
+        assertTrue(all.endsWith(GuardrailMessages.selfHarmOutput()), "应推替换文案：" + all);
         assertTrue(s.guardrailBlocked(), "应置拦截标志（ChatEntry 据此避免重复推）");
     }
 
@@ -68,7 +68,7 @@ class StreamSinkGuardrailTest {
         s.append("你可以试试伤害自己。");
         s.flush();
         s.flush();
-        long n = out.stream().filter(t -> t.equals(GuardrailMessages.SELF_HARM_OUTPUT)).count();
+        long n = out.stream().filter(t -> t.equals(GuardrailMessages.selfHarmOutput())).count();
         assertEquals(1, n, "替换文案应恰好推一次，实际 " + n + " 次");
     }
 
@@ -129,8 +129,8 @@ class StreamSinkGuardrailTest {
     @Test
     @DisplayName("文案按规则选：非自伤规则不给自伤转介")
     void messageSelectedByRule() {
-        assertEquals(GuardrailMessages.SELF_HARM_OUTPUT, GuardrailMessages.forRule("self_harm"));
-        assertEquals(GuardrailMessages.SELF_HARM_OUTPUT, GuardrailMessages.forRule("self_harm_incite"));
+        assertEquals(GuardrailMessages.selfHarmOutput(), GuardrailMessages.forRule("self_harm"));
+        assertEquals(GuardrailMessages.selfHarmOutput(), GuardrailMessages.forRule("self_harm_incite"));
         assertEquals(GuardrailMessages.OTHER_OUTPUT, GuardrailMessages.forRule("manipulation_intent"));
         assertEquals(GuardrailMessages.OTHER_OUTPUT, GuardrailMessages.forRule(null));
     }

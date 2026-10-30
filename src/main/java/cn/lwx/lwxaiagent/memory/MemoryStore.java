@@ -145,26 +145,8 @@ public class MemoryStore {
             sb.append("</memory_summaries>\n");
         }
 
-        // 关系档案（阶段 2/3，诊断/沙盘数据就绪后自动填充）
-        RelationshipProfile profile = profileMapper.selectById(userId);
-        if (profile != null) {
-            sb.append("<memory_profile>\n");
-            if (profile.getStage() != null && !profile.getStage().isBlank()) {
-                sb.append("- 关系阶段：").append(profile.getStage()).append("\n");
-            }
-            // ⛔ 与上面 stage 保持一致：**空白也算没有**。原实现只挡 null 与字面量 "null"，
-            //    于是纯空白的值会渲染出 `- 关键人物：   ` 这样一行空标签塞进模型提示词
-            //    （2026-10-01 补测时发现三处判据不一致）。
-            if (profile.getKeyPeople() != null && !"null".equals(profile.getKeyPeople())
-                    && !profile.getKeyPeople().isBlank()) {
-                sb.append("- 关键人物：").append(profile.getKeyPeople()).append("\n");
-            }
-            if (profile.getAlerts() != null && !"null".equals(profile.getAlerts())
-                    && !profile.getAlerts().isBlank()) {
-                sb.append("- 预警事项：").append(profile.getAlerts()).append("\n");
-            }
-            sb.append("</memory_profile>\n");
-        }
+        // 关系档案（阶段 2/3）：**两处调用同一个方法** —— 见 appendRelationshipProfile 的注释
+        appendRelationshipProfile(sb, userId);
 
         if (sb.length() == 0) {
             return "";
@@ -230,21 +212,8 @@ public class MemoryStore {
             sb.append("</memory_summaries>\n");
         }
 
-        // 关系档案（阶段 2/3，诊断/沙盘数据就绪后自动填充）
-        RelationshipProfile profile2 = profileMapper.selectById(userId);
-        if (profile2 != null) {
-            sb.append("<memory_profile>\n");
-            if (profile2.getStage() != null && !profile2.getStage().isBlank()) {
-                sb.append("- 关系阶段：").append(profile2.getStage()).append("\n");
-            }
-            if (profile2.getKeyPeople() != null && !"null".equals(profile2.getKeyPeople())) {
-                sb.append("- 关键人物：").append(profile2.getKeyPeople()).append("\n");
-            }
-            if (profile2.getAlerts() != null && !"null".equals(profile2.getAlerts())) {
-                sb.append("- 预警事项：").append(profile2.getAlerts()).append("\n");
-            }
-            sb.append("</memory_profile>\n");
-        }
+        // 关系档案（阶段 2/3）：**两处调用同一个方法** —— 见 appendRelationshipProfile 的注释
+        appendRelationshipProfile(sb, userId);
 
         if (sb.length() == 0) {
             return "";
@@ -254,6 +223,45 @@ public class MemoryStore {
     }
 
     // ==================== 用户可编辑（纠错闭环） ====================
+
+    /**
+     * 把关系档案拼进记忆上下文。
+     *
+     * ⛔ 2026-10-07 缺陷复盘：这个类里有**两个** {@code retrieveAsContext} 重载（单参 / 双参），
+     *    各有一份**几乎一样**的档案渲染代码。给 V32 加"你称呼对方为"时只改了单参那份，
+     *    而**聊天链走的是双参那份**（{@code ChatExecutor} 调 {@code retrieveAsContext(userId, message)}）
+     *    ⇒ 字段存进了库、单测也绿（测的是单参那份），但**真实回信里根本没有这个信息**。
+     *    更隐蔽的是：双参那份连"空白也算没有"的判据都是旧的（只挡 null 与字面量 "null"）。
+     *    **两份实现 = 必然漂移**，所以抽成这一个方法，两处共用。
+     */
+    private void appendRelationshipProfile(StringBuilder sb, String userId) {
+        RelationshipProfile profile = profileMapper.selectById(userId);
+        if (profile == null) {
+            return;
+        }
+        sb.append("<memory_profile>\n");
+        if (profile.getStage() != null && !profile.getStage().isBlank()) {
+            sb.append("- 关系阶段：").append(profile.getStage()).append("\n");
+        }
+        // 用户怎么称呼对方（V32）：回信里称呼一致，靠的就是这一行
+        if (profile.getPartnerAlias() != null && !profile.getPartnerAlias().isBlank()) {
+            sb.append("- 你称呼对方为：").append(profile.getPartnerAlias()).append("\n");
+        }
+        // ⛔ **空白也算没有**：原实现只挡 null 与字面量 "null"，纯空白会渲染出
+        //    `- 关键人物：   ` 这样一行空标签塞进提示词（2026-10-01 补测发现三处判据不一致）。
+        if (notBlankJson(profile.getKeyPeople())) {
+            sb.append("- 关键人物：").append(profile.getKeyPeople()).append("\n");
+        }
+        if (notBlankJson(profile.getAlerts())) {
+            sb.append("- 预警事项：").append(profile.getAlerts()).append("\n");
+        }
+        sb.append("</memory_profile>\n");
+    }
+
+    /** JSON 列的空值判据：null / 字面量 "null" / 纯空白 都算没有（三处渲染统一用它） */
+    private static boolean notBlankJson(String v) {
+        return v != null && !"null".equals(v) && !v.isBlank();
+    }
 
     public List<UserMemory> listFacts(String userId) {
         return memoryMapper.selectList(new LambdaQueryWrapper<UserMemory>()

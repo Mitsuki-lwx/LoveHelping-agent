@@ -7,6 +7,11 @@ import cn.lwx.lwxaiagent.entity.MessageMedia;
 import cn.lwx.lwxaiagent.mapper.MessageMediaMapper;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.CacheControl;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -19,6 +24,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Set;
 import java.util.UUID;
@@ -98,6 +104,55 @@ public class MediaController {
             log.warn("Media upload failed: {}", e.getMessage());
             throw new BizException(500, "上传失败，请稍后重试");
         }
+    }
+
+    /**
+     * 读取图片字节流（聊天历史回显，ADR-11）。
+     * <p>
+     * 归属：只能读自己的图片——{@code message_media.user_id} 必须等于当前登录用户，
+     * 跨用户一律 403（越权面，docs/07 §3）。找不到（id 不存在 / 文件已丢）返回 404，不抛 500。
+     * Content-Type 按 {@code mediaType} 给出；图片不可变，故允许长缓存，但必须 {@code private}
+     * （避免共享代理把 A 的图片缓存给 B）。
+     * </p>
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<byte[]> get(@PathVariable Long id) {
+        String userId = requireUserId();
+        MessageMedia media = mediaMapper.selectById(id);
+        if (media == null) {
+            throw new BizException(404, "图片不存在");
+        }
+        if (!userId.equals(media.getUserId())) {
+            log.warn("Media read denied: id={} owner={} requester={}", id, media.getUserId(), userId);
+            throw new BizException(403, "无权访问这张图片");
+        }
+        byte[] bytes;
+        try {
+            Path root = Paths.get(FileConstant.FILE_SAVE_DIR, "uploads").normalize();
+            Path target = Paths.get(FileConstant.FILE_SAVE_DIR, "uploads", media.getObjectKey()).normalize();
+            if (!target.startsWith(root) || !Files.isRegularFile(target)) {
+                throw new BizException(404, "图片文件不存在");
+            }
+            bytes = Files.readAllBytes(target);
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Media read failed: id={} err={}", id, e.getMessage());
+            throw new BizException(404, "图片文件不存在");
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaTypeOf(media.getMediaType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable())
+                .body(bytes);
+    }
+
+    /** JPG/PNG/WEBP → 正确的 Content-Type（未知类型按 JPEG 兜底）。 */
+    private MediaType mediaTypeOf(String mediaType) {
+        return switch (mediaType == null ? "" : mediaType.toUpperCase()) {
+            case "PNG" -> MediaType.IMAGE_PNG;
+            case "WEBP" -> MediaType.parseMediaType("image/webp");
+            default -> MediaType.IMAGE_JPEG;
+        };
     }
 
     private String requireUserId() {

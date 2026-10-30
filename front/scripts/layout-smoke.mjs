@@ -73,6 +73,14 @@ async function launchBrowser() {
     '\n   → 本机可用 BROWSER_PATH 指定，如 BROWSER_PATH="C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"')
 }
 
+/**
+ * ⛔ 四套心情主题都要跑（2026-10-06）：主题是**换配色**，而配色最容易犯的错就是
+ * "浅字浮浅底" —— 在深色主题里合法的一对颜色，换到浅色主题就会低于 3。
+ * 只测默认主题 = 另外三套没人守（这正是加主题时最该担心的事）。
+ * 主题靠 `<html data-theme>` 切换，直接在页面里设属性即可，不用重开浏览器。
+ */
+const THEMES = ['心动', '思念', '疗愈', '深夜']
+
 const VIEWPORTS = [
   { name: 'desktop', width: 1365, height: 768 },
   { name: 'narrow', width: 900, height: 620 },
@@ -147,39 +155,99 @@ const PROBE = `(() => {
     scroller.style.scrollBehavior = prevBehavior
   }
 
-  // 对比度：正文颜色 vs 其最近的不透明背景（只查"明显看不清"的极端情况）
-  const textEl = document.querySelector('p, .message-content, .entry-desc, .home-sub');
-  if (textEl) {
-    // ⛔ 必须用 canvas 归一化：本设计系统全用 oklch(...)，
-    //    而正则抠数字只认 rgb/rgba —— 那样对比度检查**永远算不出来（n/a）= 死检查**。
-    //    恒真的判据与没有判据一样，只是更骗人。
+  // ---------- 对比度：全 DOM 文本节点普查 ----------
+  // ⛔ 采样面 = 探针的盲区（2026-10-02 连撞三次）。原版只采样 p/button/输入框，
+  //    于是"纸卡里浅字浮浅底"这一整族**全部漏过**：会话标题 1.16、昵称 1.16、
+  //    .section-title 1.16、快捷按钮 1.05、聊天输入框 1.16 —— 全是**用户第一眼就会看到**的东西。
+  //    现在遍历**所有文本节点**（覆盖 button > span 这类嵌套）。
+  // ⛔ 颜色转换必须 clearRect：透明色 fillRect **不覆盖** canvas，会读到上一次的残留颜色，
+  //    于是"背景色"其实是前一个元素的文字色 ⇒ 满屏假阳性（实测踩到，差点照着假数字去改页面）。
+  // ⛔ 本设计系统全用 oklch(...)，正则抠数字只认 rgb/rgba ⇒ 必须用 canvas 归一化，
+  //    否则对比度**永远算不出来（n/a）= 死检查**。恒真的判据比没有判据更骗人。
+  {
     const cv = document.createElement('canvas'); cv.width = cv.height = 1;
     const cx = cv.getContext('2d');
     const toRgb = cssColor => {
       cx.clearRect(0, 0, 1, 1);
-      cx.fillStyle = '#000';
-      cx.fillStyle = cssColor;                // 浏览器负责解析 oklch/lab/...
+      cx.fillStyle = cssColor;
       cx.fillRect(0, 0, 1, 1);
       const d = cx.getImageData(0, 0, 1, 1).data;
       return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
     };
-    let el = textEl, bgRgb = null, bgRaw = null;
-    while (el && !bgRgb) {
-      const c = getComputedStyle(el).backgroundColor;
-      const parsed = toRgb(c);
-      if (parsed.a > 0.5) { bgRgb = parsed; bgRaw = c; }
-      el = el.parentElement;
-    }
-    if (bgRgb) {
-      const lum = c => { const { r, g, b } = c; const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b) };
-      const fgRaw = getComputedStyle(textEl).color;
-      const L1 = lum(toRgb(fgRaw)), L2 = lum(bgRgb);
+    const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b) };
+    // 往上找"真正被画出来的表面"：不透明底色。只有渐变/图而**无显式底色** -> 判据失效（不算通过）。
+    const paintedBg = el => {
+      let n = el;
+      while (n && n !== document.documentElement) {
+        const cs = getComputedStyle(n);
+        const bg = toRgb(cs.backgroundColor);
+        if (bg.a > 0.5) return { bg, raw: cs.backgroundColor, opaque: true };
+        if (cs.backgroundImage && cs.backgroundImage !== 'none') return { opaque: false, raw: cs.backgroundImage.slice(0, 36) };
+        n = n.parentElement;
+      }
+      return { bg: { r: 38, g: 29, b: 23 }, raw: 'html', opaque: true };
+    };
+    const bad = [], skipped = [];
+    let checked = 0;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const txt = node.textContent.trim();
+      if (txt.length < 2) continue;
+      const el = node.parentElement;
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (!rect.height || rect.width < 2) continue;
+      const cs = getComputedStyle(el);
+      if (cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;
+      const surface = paintedBg(el);
+      if (!surface.opaque) { skipped.push(txt.slice(0, 12) + ' @' + surface.raw); continue; }
+      const fgRaw = cs.color;
+      const L1 = lum(toRgb(fgRaw)), L2 = lum(surface.bg);
       const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
-      out.info.contrast = ratio.toFixed(2);
-      out.info.fg = fgRaw; out.info.bg = bgRaw;
-      if (ratio < 3) out.issues.push('正文对比度过低：' + ratio.toFixed(2) + '（fg=' + fgRaw + ' bg=' + bgRaw + '）');
-    } else {
-      out.issues.push('对比度判据失效：拿不到背景色（这是装置坏了，不是页面没问题）');
+      checked++;
+      if (ratio < 3) bad.push({ ratio: +ratio.toFixed(2), text: txt.slice(0, 14), cls: el.className.toString().slice(0, 26), fg: fgRaw, bg: surface.raw });
+    }
+    out.info.contrastChecked = checked;
+    out.info.contrastWorst = bad.length ? Math.min(...bad.map(b => b.ratio)) : (checked ? 'ok' : 'n/a');
+    if (bad.length) {
+      out.issues.push('有 ' + bad.length + ' 处文字对比度 < 3（最低 ' + Math.min(...bad.map(b => b.ratio)) + '）：'
+        + bad.slice(0, 5).map(b => b.ratio + ' "' + b.text + '" <' + b.cls + '> fg=' + b.fg + ' bg=' + b.bg).join(' ; '));
+    }
+    if (skipped.length) {
+      // 渐变/图做底但**没写显式 background-color** ⇒ 对比度算不出来。
+      // 这是**判据失效**，不是"页面没问题"；修法是给容器补显式底色（顺带让渐变失败时不会变透明）。
+      out.issues.push('有 ' + skipped.length + ' 处文字的背景是渐变/图且无显式 background-color（判据失效）：' + skipped.slice(0, 3).join(' ; '));
+    }
+  }
+  // ---------- 内容可达性：超出视口的内容必须**用户能滚到** ----------
+  // ⛔ 盲区教训（2026-10-07 用户实测"主页不能滚动"）：原来只做**程序化** scrollTop ——
+  //    而 overflow:hidden 的元素**照样能被程序滚动**，于是"内容被裁掉且滚轮滚不动"
+  //    这种缺陷完全测不出来（我自己的探针与冒烟当时都"通过"）。
+  //    判据改成问对的问题：**最后一块内容能不能靠滚动看到**。
+  {
+    const vis = [...document.querySelectorAll('body *')].filter(el => {
+      const r = el.getBoundingClientRect();
+      if (r.height < 2 || r.width < 2) return false;
+      const cs = getComputedStyle(el);
+      return cs.visibility !== 'hidden' && Number(cs.opacity) !== 0;
+    });
+    const last = vis.sort((a, b) => b.getBoundingClientRect().bottom - a.getBoundingClientRect().bottom)[0];
+    if (last) {
+      const r = last.getBoundingClientRect();
+      if (r.bottom > window.innerHeight + 2) {
+        let el = last, scrollable = false;
+        while (el && el !== document.documentElement) {
+          const cs = getComputedStyle(el);
+          if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 4) { scrollable = true; break; }
+          el = el.parentElement;
+        }
+        if (!scrollable) {
+          out.issues.push('内容超出视口但**没有任何可滚容器**（滚轮滚不动，内容被裁掉）：'
+            + '最后元素 <' + (last.className || last.tagName).toString().slice(0, 24) + '> bottom='
+            + Math.round(r.bottom) + ' > vh=' + window.innerHeight);
+        }
+      }
     }
   }
   return out;
@@ -221,9 +289,15 @@ async function main() {
     for (const [label, path] of routes) {
       await page.goto(`${BASE}${path}`, { waitUntil: 'domcontentloaded' })
       await page.waitForTimeout(900)
+      for (const theme of THEMES) {
+      // 换主题只改一个属性；等一帧让 CSS 变量生效再量
+      await page.evaluate(t => document.documentElement.setAttribute('data-theme', t), theme)
+      await page.waitForTimeout(150)
       const r = await page.evaluate(PROBE)
-      record(vp.name, label, r.issues.length === 0,
-        r.issues.length ? r.issues.join(' | ') : `ok（对比度 ${r.info.contrast ?? 'n/a'}，无横向溢出）`)
+      const where = `${label}·${theme}`
+      record(vp.name, where, r.issues.length === 0,
+        r.issues.length ? r.issues.join(' | ') : `ok（对比度 ${r.info.contrastWorst ?? 'n/a'} / 查了 ${r.info.contrastChecked ?? 0} 段文字，无横向溢出）`)
+      }
     }
   }
 

@@ -9,20 +9,28 @@ import cn.lwx.lwxaiagent.tenant.JwtTokenProvider;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -43,6 +51,9 @@ class SandboxControllerTest {
     private SandboxService sandboxService;
     @MockBean
     private JwtTokenProvider jwtTokenProvider;
+    /** V33：TenantInterceptor 依赖令牌版本服务（拦截器随 SecurityConfig 载入 MVC 切片）。 */
+    @MockBean
+    private cn.lwx.lwxaiagent.service.TokenVersionService tokenVersionService;
     @MockBean
     private cn.lwx.lwxaiagent.infrastructure.orchestration.ChatEntry chatEntry;
     @MockBean
@@ -161,5 +172,74 @@ class SandboxControllerTest {
         mockMvc.perform(delete("/sandbox/42"))
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value("ok"));
+    }
+
+    // ================= 沙盘带图（mediaIds 逗号分隔，ADR-11） =================
+
+    @Test
+    void chat_withMediaIds_forwardsParsedIdsToEntry() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+        when(guardrailRuleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(0, null));
+        when(sandboxService.getSession(eq(42L), eq("u1"))).thenReturn(null);
+        when(chatEntry.sandbox(anyString(), anyLong(), anyString(), anyList())).thenReturn(Flux.just("回复"));
+
+        var pending = mockMvc.perform(get("/sandbox/chat")
+                        .param("sandboxId", "42")
+                        .param("message", "看看这张照片")
+                        .param("mediaIds", "7, 8"))
+                .andReturn();
+        pending.getAsyncResult(5000);
+        var body = mockMvc.perform(asyncDispatch(pending)).andReturn()
+                .getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("回复"), body);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> captor = ArgumentCaptor.forClass(List.class);
+        verify(chatEntry).sandbox(eq("看看这张照片"), eq(42L), eq("u1"), captor.capture());
+        org.junit.jupiter.api.Assertions.assertEquals(List.of(7L, 8L), captor.getValue());
+    }
+
+    /** 回归守卫：不带 mediaIds 时行为与改造前完全一致（空列表进 entry，会话/护栏照旧）。 */
+    @Test
+    void chat_withoutMediaIds_forwardsEmptyList() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+        when(guardrailRuleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(0, null));
+        when(sandboxService.getSession(eq(42L), eq("u1"))).thenReturn(null);
+        when(chatEntry.sandbox(anyString(), anyLong(), anyString(), anyList())).thenReturn(Flux.just("普通回复"));
+
+        // ⛔ 本测试**只做接线断言**，不走 MockMvc 的 async 派发。
+        //
+        //   2026-10-14 实测：带上 `getAsyncResult + asyncDispatch` 时，这个用例在 8 轮全量里红了 2 次，
+        //   两种症状（`Failed to send [...]`、`ConcurrentModificationException` in
+        //   `MockHttpServletResponse` 的 header map）都落在 **MockMvc 自己的异步机制**里 ——
+        //   那是**测试装置产物**（真 Tomcat 没有这个 map），不是产品缺陷。
+        //   而"SSE 正文确实转发给了客户端"这条，主链路的 `AiControllerSseTest` 已覆盖
+        //   （它用 standaloneSetup + 显式转换器，走的是稳定的那条路）。
+        //   ⇒ 这里保留本测试**独有**的价值：空 mediaIds 透传、会话归属校验、护栏调用。
+        mockMvc.perform(get("/sandbox/chat")
+                .param("sandboxId", "42")
+                .param("message", "在吗"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Long>> captor = ArgumentCaptor.forClass(List.class);
+        verify(chatEntry).sandbox(eq("在吗"), eq(42L), eq("u1"), captor.capture());
+        org.junit.jupiter.api.Assertions.assertTrue(captor.getValue().isEmpty());
+        verify(sandboxService).getSession(eq(42L), eq("u1"));
+    }
+
+    /** 安全回归：L3 输入护栏在入口同步阻断——带图也不得绕过（编排图根本不该被调用）。 */
+    @Test
+    void chat_l3Guardrail_stillBlocksBeforeEntryEvenWithMediaIds() throws Exception {
+        TenantContext.set("default", "u1", "USER");
+        when(guardrailRuleService.check(anyString())).thenReturn(new GuardrailRuleService.Verdict(3, "self_harm"));
+
+        mockMvc.perform(get("/sandbox/chat")
+                        .param("sandboxId", "42")
+                        .param("message", "我真的撑不下去了")
+                        .param("mediaIds", "7"))
+                .andExpect(jsonPath("$.code").value(4001))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("400-161-9995")));
+
+        verifyNoInteractions(chatEntry);
     }
 }

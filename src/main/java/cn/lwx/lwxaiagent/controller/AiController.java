@@ -148,7 +148,16 @@ public class AiController {
         try {
             result = chatEntry.chat(prompt, chatId, ids, false, continueBrake, null);
         } catch (BizException e) {
-            // 同 chatSse：入口阻断话术作为默认 data 事件发出（不设 event 名，触发前端 onmessage）
+            // 情绪刹车片（4002）：**带用户动作的阻断** → 发独立 brake 事件（JSON 载荷），
+            // 前端据此渲染「继续发送」按钮。⛔ 不能当正文发：那样前端拿不到码，
+            // 只能把开发参数当回复展示（2026-10-13 修正前就是这个症状）。
+            if (e.getCode() == ChatEntry.BRAKE_CODE) {
+                return Flux.just(org.springframework.http.codec.ServerSentEvent
+                        .<String>builder(SseBridge.brakePayload(ChatEntry.BRAKE_CODE, e.getMessage(), true))
+                        .event(SseBridge.BRAKE_EVENT).build());
+            }
+            // 其余入口阻断（如 4001 转介文案）：那句话**本身就是 AI 该说的话** →
+            // 继续作为默认 data 事件发出（不设 event 名，触发前端 onmessage）。
             return Flux.just(org.springframework.http.codec.ServerSentEvent
                     .<String>builder(e.getMessage()).build());
         }

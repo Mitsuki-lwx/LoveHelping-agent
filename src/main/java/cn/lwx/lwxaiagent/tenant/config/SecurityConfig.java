@@ -112,8 +112,16 @@ public class SecurityConfig implements WebMvcConfigurer {
      */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // ⛔ 这是**白名单式的显式前缀**：不在列表里的路径**拿不到身份**（TenantContext 为空 →
+        //    控制器统一返回"未登录"）。2026-10-07 实测踩到：新增 /profile/relationship 时忘了同步这里，
+        //    前端保存关系档案直接"未登录"。**加新的一级路径前缀，必须同时加进下面两处。**
+        //    （失败方向是安全的：没被拦截 = 没身份 = 拒绝，不会越权放行。）
+    //    ⛔ 2026-10-14 又踩了一次：新增 `/admin/analytics/**` 时忘了加 `/admin/**` ⇒
+    //       带 ADMIN 角色的浏览器请求一律 403（curl 带 X-Admin-Key 却能过，所以不易发现）。
+    //       顺带暴露：`AdminController` 的**角色鉴权此前从未生效过**（`/admin` 不在白名单），
+    //       一直只能靠 X-Admin-Key。现已一并修好。
         registry.addInterceptor(tenantInterceptor)
-                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/sandbox/**", "/action-items/**", "/sentiment/**", "/insight/**", "/auth/me", "/auth/account", "/auth/profile", "/auth/password")
+                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/sandbox/**", "/action-items/**", "/sentiment/**", "/insight/**", "/profile/**", "/complaint", "/complaint/**", "/admin/**", "/auth/me", "/auth/account", "/auth/profile", "/auth/password", "/auth/evolution-consent", "/auth/onboarded", "/auth/reengage-consent", "/auth/email/**")
                 .excludePathPatterns(
                         "/swagger-ui/**",
                         "/v3/api-docs/**",
@@ -122,7 +130,7 @@ public class SecurityConfig implements WebMvcConfigurer {
                         "/auth/register"
                 );
         registry.addInterceptor(canaryInterceptor)
-                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/sandbox/**", "/action-items/**", "/sentiment/**", "/insight/**", "/auth/me", "/auth/account", "/auth/profile", "/auth/password")
+                .addPathPatterns("/Love_app/**", "/memory/**", "/evolution/**", "/media/**", "/sandbox/**", "/action-items/**", "/sentiment/**", "/insight/**", "/profile/**", "/complaint", "/complaint/**", "/admin/**", "/auth/me", "/auth/account", "/auth/profile", "/auth/password", "/auth/evolution-consent", "/auth/onboarded", "/auth/reengage-consent", "/auth/email/**")
                 .excludePathPatterns("/swagger-ui/**", "/v3/api-docs/**", "/actuator/**", "/auth/login", "/auth/register");
         log.info("TenantInterceptor + CanaryInterceptor registered");
     }

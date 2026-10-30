@@ -1,6 +1,7 @@
 package cn.lwx.lwxaiagent.infrastructure.orchestration;
 
 import cn.lwx.lwxaiagent.common.BizException;
+import cn.lwx.lwxaiagent.harness.governance.CrisisResources;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailEventRecorder;
 import cn.lwx.lwxaiagent.harness.governance.GuardrailRuleService;
 import cn.lwx.lwxaiagent.harness.governance.JevSelfHarmSignal;
@@ -9,6 +10,7 @@ import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphRunner;
 import cn.lwx.lwxaiagent.infrastructure.orchestration.graph.GraphStateKeys;
 import cn.lwx.lwxaiagent.infrastructure.scheduler.OnlineLoadTracker;
 import cn.lwx.lwxaiagent.memory.MemoryService;
+import cn.lwx.lwxaiagent.service.MinorModeGuard;
 import cn.lwx.lwxaiagent.service.RateLimiter;
 import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -32,12 +34,6 @@ import java.util.function.BiConsumer;
 @Component
 public class ChatEntry {
 
-    /** L3 自伤转介文案（与 GuardrailAdvisor 同源措辞，含援助热线）。 */
-    private static final String REFERRAL_TEXT =
-            "我注意到你现在可能非常难受。如果你正在经历难以承受的时刻，请联系专业援助：全国心理援助热线 400-161-9995。你不需要独自面对。";
-    /** L3 通用阻断文案。 */
-    private static final String BLOCK_TEXT =
-            "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
     private final GuardrailRuleService guardrails;
     private final JevSelfHarmSignal jevSignal;
     private final GuardrailEventRecorder recorder;
@@ -49,6 +45,7 @@ public class ChatEntry {
     private final MeterRegistry meters;
     private final Tracer tracer;
     private final MemoryService memory;
+    private final MinorModeGuard minorGuard;
     private final boolean brakeEnabled;
     private final int brakeStart, brakeEnd;
     private final long timeoutMs;
@@ -56,7 +53,7 @@ public class ChatEntry {
     public ChatEntry(GuardrailRuleService guardrails, JevSelfHarmSignal jevSignal,
                      GuardrailEventRecorder recorder, RateLimiter rateLimiter, CapabilityRouter router,
                      GraphRunner graphRunner, StreamRegistry streams, OnlineLoadTracker online,
-                     MeterRegistry meters, Tracer tracer, MemoryService memory,
+                     MeterRegistry meters, Tracer tracer, MemoryService memory, MinorModeGuard minorGuard,
                      @Value("${app.emotion-brake.enabled:true}") boolean brakeEnabled,
                      @Value("${app.emotion-brake.start-hour:23}") int brakeStart,
                      @Value("${app.emotion-brake.end-hour:6}") int brakeEnd,
@@ -64,7 +61,7 @@ public class ChatEntry {
         this.guardrails = guardrails; this.jevSignal = jevSignal; this.recorder = recorder;
         this.rateLimiter = rateLimiter; this.router = router;
         this.graphRunner = graphRunner; this.streams = streams; this.online = online;
-        this.meters = meters; this.tracer = tracer; this.memory = memory;
+        this.meters = meters; this.tracer = tracer; this.memory = memory; this.minorGuard = minorGuard;
         this.brakeEnabled = brakeEnabled; this.brakeStart = brakeStart; this.brakeEnd = brakeEnd;
         this.timeoutMs = Math.max(1, timeoutMs);
     }
@@ -99,13 +96,18 @@ public class ChatEntry {
     }
 
     /** Caller verifies sandbox ownership before invoking; all capacity/rate/timeout protections are shared. */
-    public Flux<String> sandbox(String message, Long sandboxId, String user) {
+    public Flux<String> sandbox(String message, Long sandboxId, String user, List<Long> mediaIds) {
         String key = String.valueOf(sandboxId); // Preserve existing sandbox memory/checkpoint IDs.
         validate(message, String.valueOf(sandboxId));
         guardrailCheck(message, true);
         Map<String, Object> input = baseInput(message, key, user);
         input.put(GraphStateKeys.SANDBOX_ID, sandboxId);
         input.put(GraphStateKeys.ADVICE, false);
+        // 与 chat(...) 同一形状：媒体只在非空时进图状态，校验规则（≤4 张、编号为正）也一致。
+        if (mediaIds != null && !mediaIds.isEmpty()) {
+            if (mediaIds.size() > 4 || mediaIds.stream().anyMatch(id -> id == null || id <= 0)) throw new BizException(400, "图片数量或编号无效");
+            input.put(GraphStateKeys.MEDIA_IDS, List.copyOf(mediaIds));
+        }
         return execute(input, key, null, () -> {});
     }
 
@@ -216,6 +218,24 @@ public class ChatEntry {
         if (message == null || message.isBlank() || message.length() > 8000) throw new BizException(400, "消息不能为空且不能超过 8000 字符");
         if (id == null || id.isBlank() || id.length() > 100 || !id.matches("[A-Za-z0-9_-]+")) throw new BizException(400, "会话编号格式无效");
     }
+    /**
+     * 情绪刹车片的业务码。
+     *
+     * <p>⛔ 为什么要单独一个常量、而不是散落的 4002：它是**唯一**一个"用户可以做动作解除"的阻断
+     * （携带 {@code continueBrake=true} 重发即可继续）。前端要据此渲染「继续发送」按钮，
+     * 所以 4002 必须有一个机器可读的出口（{@code event:brake}），不能只当普通错误文案。</p>
+     */
+    public static final int BRAKE_CODE = 4002;
+
+    /**
+     * 刹车片对用户说的话。
+     *
+     * <p>⛔ 2026-10-13 修正：原文案是「…确认仍要发送时请携带 continueBrake=true。」
+     * —— 把开发参数直接甩给用户，且那是最需要被温柔对待的时刻（深夜情绪激动）。
+     * 参数属于协议，不该出现在人话里；"可以继续"这件事由 UI 的按钮承担。</p>
+     */
+    static final String BRAKE_TEXT = "我注意到你现在情绪比较激动。可以先缓一缓，我在这儿等你。若你仍想说下去，随时可以继续。";
+
     private void guardrailCheck(String prompt, boolean continueBrake) {
         if (isPromptLeakProbe(prompt)) {
             metric("prompt_leak_blocked");
@@ -230,7 +250,7 @@ public class ChatEntry {
             // 只补 L3：L1/L2 不阻断、请求会继续走到 LLM，而 GuardrailAdvisor 那条路径已记 LOGGED，
             // 在这里再记一次会**双计**。L3 是throw 出去的，advisor 根本不会跑到，故不冲突。
             recorder.record(prompt, 3, verdict.ruleId(), GuardrailEventRecorder.ACTION_BLOCKED);
-            throw new BizException(4001, "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT);
+            throw new BizException(4001, "self_harm".equals(verdict.ruleId()) ? CrisisResources.referralText() : CrisisResources.BLOCK_TEXT);
         }
         // Jev 第二信号（2026-09-20，docs/phase7-guardrail-recall + phase7-jev-shadow）：**只加召回，不替兜底**。
         // 位置在词典 L3 分支**之后**——词典已判 L3 的消息根本走不到这里，Jev 无法放行它；
@@ -256,12 +276,15 @@ public class ChatEntry {
                             r.probability(), jevSignal.threshold());
                     log.warn("Guardrail L3 blocked by Jev second signal: {}",
                             prompt.length() > 40 ? prompt.substring(0, 40) + "…" : prompt);
-                    throw new BizException(4001, REFERRAL_TEXT);
+                    throw new BizException(4001, CrisisResources.referralText());
                 }
             }
         }
         if (brakeEnabled && !continueBrake && verdict.level() >= 2 && isLateNight() && guardrails.matchesEmotionBrake(prompt))
-            throw new BizException(4002, "我注意到你现在情绪比较激动。可以先冷静一下再继续；确认仍要发送时请携带 continueBrake=true。");
+            throw new BizException(BRAKE_CODE, BRAKE_TEXT);
+        // 未成年人模式（V34 合规）：与情绪刹车片同层，在护栏判定之后、进入编排之前强制。
+        // 抛 4004（宵禁）/4005（每日超限）——文案即给用户看的人话，走默认 data 事件。
+        minorGuard.enforce(TenantContext.getUserId());
     }
     private boolean isPromptLeakProbe(String prompt) {
         if (prompt.length() > 200) return false;

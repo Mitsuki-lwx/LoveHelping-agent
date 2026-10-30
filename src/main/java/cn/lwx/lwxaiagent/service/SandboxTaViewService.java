@@ -74,9 +74,10 @@ public class SandboxTaViewService {
         if (gv.level() >= 3) {
             log.warn("TA view guardrail L3 blocked ({}): {}", gv.ruleId(),
                     text.length() > 30 ? text.substring(0, 30) : text);
+            // ⛔ 文案走 CrisisResources（唯一事实源）：此前这里内联了一份**只有一条热线**的副本（ADR-89）
             String fallback = "self_harm".equals(gv.ruleId())
-                    ? "我注意到你现在的状态可能非常难受。如果你正在经历难以承受的时刻，请一定联系专业援助：全国心理援助热线 400-161-9995。你不需要独自面对。"
-                    : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
+                    ? cn.lwx.lwxaiagent.harness.governance.CrisisResources.referralText()
+                    : cn.lwx.lwxaiagent.harness.governance.CrisisResources.BLOCK_TEXT;
             throw new cn.lwx.lwxaiagent.common.BizException(4001, fallback);
         }
 

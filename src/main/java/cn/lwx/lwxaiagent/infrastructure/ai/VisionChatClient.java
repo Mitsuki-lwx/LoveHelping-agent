@@ -1,5 +1,6 @@
 package cn.lwx.lwxaiagent.infrastructure.ai;
 
+import cn.lwx.lwxaiagent.config.LlmProviderProperties;
 import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,22 +35,46 @@ public class VisionChatClient implements VisionPort {
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String model;
+    /** 补全路径（provider 级可配，默认 {@code /v1/chat/completions}）。 */
+    private final String completionsPath;
+    /** 非流式响应信封字段名（如 cline.bot 的 {@code data}）；null = 无信封。 */
+    private final String responseEnvelope;
     /** ADR-62/F3：只为让这条绕网关的链路在 Langfuse 里可见。 */
     private final AiTelemetry telemetry;
 
-    public VisionChatClient(@Value("${spring.ai.openai.base-url:}") String baseUrl,
-                            @Value("${spring.ai.openai.api-key:}") String apiKey,
-                            @Value("${app.llm.vision-model:}") String model,
+    /**
+     * ⛔ 2026-10-07 实测教训：这里原先读 {@code spring.ai.openai.base-url/api-key} —— 那是
+     * <b>第二个事实源</b>。聊天链由 {@code app.llm.providers} 驱动（ADR-58），视觉链却自己读 spring.ai，
+     * 于是把聊天链切到 cline-pass 之后，<b>视觉这条静默留在 DeepSeek 官方 key 上</b>。
+     * 「半迁移」在配置层看不出来，只有真去调视觉才会暴露 —— 所以现在与聊天链<b>同源</b>：
+     * 取 {@code providers.primary()}（第一个 enabled 的 provider）。
+     *
+     * <p>模型：{@code app.llm.vision-model} <b>留空</b>则用主链模型（要求它是多模态的，
+     * 例如 {@code cline-pass/deepseek-v4.1-flash} 实测可看图）；要视觉专用模型就设这个键。</p>
+     */
+    public VisionChatClient(LlmProviderProperties providers,
+                            @Value("${app.llm.vision-model:}") String modelOverride,
                             AiTelemetry telemetry) {
         this.telemetry = telemetry;
-        this.model = model;
-        // 与 curl 直连一致：{base}/v1/chat/completions；同步、长超时（视觉请求可达 30s+）
+        LlmProviderProperties.Provider p = providers.primary();
+        if (p == null || p.getBaseUrl() == null || p.getBaseUrl().isBlank()) {
+            // 不静默降级成"空端点"：宁可启动失败，也不要让视觉链悄悄指向一个不存在的地址
+            throw new IllegalStateException(
+                    "视觉链路需要至少一个 enabled 的 app.llm.providers（当前没有可用 provider）");
+        }
+        this.responseEnvelope = (p.getResponseEnvelope() == null || p.getResponseEnvelope().isBlank())
+                ? null : p.getResponseEnvelope();
+        this.model = (modelOverride == null || modelOverride.isBlank()) ? p.getModel() : modelOverride;
+        this.completionsPath = (p.getCompletionsPath() == null || p.getCompletionsPath().isBlank())
+                ? "/v1/chat/completions" : p.getCompletionsPath();
+        // 与 curl 直连一致：{base}{completions-path}（cline.bot 的 base 是 /api，路径是 /v1/chat/completions）
+        // 同步、长超时（视觉请求可达 30s+）
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(10));
         factory.setReadTimeout(Duration.ofSeconds(60));
         this.restClient = RestClient.builder()
-                .baseUrl(baseUrl + "/v1")
-                .defaultHeader("Authorization", "Bearer " + apiKey)
+                .baseUrl(p.getBaseUrl())
+                .defaultHeader("Authorization", "Bearer " + p.getApiKey())
                 .defaultHeader("Content-Type", "application/json")
                 .requestFactory(factory)
                 .build();
@@ -88,14 +113,31 @@ public class VisionChatClient implements VisionPort {
         }
 
         try {
-            String respBody = restClient.post()
-                    .uri("/chat/completions")
+            // ⛔ 必须**按字节收、显式 UTF-8 解**：body(String.class) 在响应没带 charset 时
+            //    会被 Spring 的 StringHttpMessageConverter 按 ISO-8859-1 解 —— 视觉模型回的是**中文**，
+            //    于是整段变乱码（实测：`根上的回答` → `æ ¹ä¸çåç­`）。OpenAI 兼容端点一律 UTF-8。
+            byte[] respBytes = restClient.post()
+                    .uri(completionsPath)
                     .body(body.toString())
                     .retrieve()
-                    .body(String.class);
+                    .body(byte[].class);
+            String respBody = respBytes == null ? "" : new String(respBytes, java.nio.charset.StandardCharsets.UTF_8);
             JsonNode root = objectMapper.readTree(respBody);
+            // ⛔ 少数网关把非流式响应包成 {"data": {...}}（cline.bot 实测）——
+            //    不拆封会**静默返回空串**（root.path("choices") 取不到，asText("") 给空），
+            //    现象是"模型什么都没说"，极难归因。
+            if (responseEnvelope != null) {
+                root = root.path(responseEnvelope);
+            }
             span.tag("vision.outcome", "success");
-            return root.path("choices").path(0).path("message").path("content").asText("");
+            String text = root.path("choices").path(0).path("message").path("content").asText("");
+            if (text.isBlank()) {
+                // 空正文要**看得见**：这是"信封没拆对 / 模型没吐字"的分界，不记一笔就查不出来。
+                // ⛔ 只记形状，不记正文与图片内容（docs/07 §6.1）。
+                log.warn("Vision chat returned blank content (envelope={}, model={}, bodyBytes={})",
+                        responseEnvelope, model, respBody == null ? 0 : respBody.length());
+            }
+            return text;
         } catch (Exception e) {
             log.warn("Vision chat failed: {}", e.getMessage());
             span.tag("vision.outcome", "fail");

@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.http.HttpUtil;
 import cn.hutool.json.JSONObject;
 import cn.hutool.json.JSONUtil;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Service;
@@ -68,9 +69,14 @@ public class ImageSearchTool {
     /**
      * Pexels API 的认证密钥。
      * 通过 HTTP 请求头 {@code Authorization} 传递，用于身份验证和 API 配额管理。
-     * 此密钥应妥善保管，不应泄露或提交到公开仓库。
+     *
+     * <p>⛔ 2026-10-13：此处原为**硬编码明文密钥**（违反 AGENTS.md §3），已改为配置注入。
+     * 注入方式：环境变量 {@code PEXELS_API_KEY}（{@code @Value} 经 Spring 的宽松解析命中
+     * {@code PEXELS_API_KEY}，与同包 {@link WebSearchTool} 的 {@code SEARCH_API_KEY} 同一套路）。
+     * 未配置时为空串 → 调用时按"未配置"明确报错，不静默用兜底 key。</p>
      */
-    private static final String API_KEY = "cUv3GAMzob8gBcUJazjF4F2wyo2IGuo7ObnwyEUhL8lcHbQdpBb2zZZG";
+    @Value("${pexels.api-key:}")
+    private String apiKey;
 
     /**
      * Pexels 图片搜索 API 的基础 URL。
@@ -140,7 +146,7 @@ public class ImageSearchTool {
      * <ul>
      *   <li><b>请求方式</b>：HTTP GET</li>
      *   <li><b>请求 URL</b>：{@code https://api.pexels.com/v1/search}</li>
-     *   <li><b>请求头</b>：{@code Authorization: {API_KEY}}（Bearer 认证方式）</li>
+     *   <li><b>请求头</b>：{@code Authorization: <PEXELS_API_KEY>}（Bearer 认证方式）</li>
      *   <li><b>查询参数</b>：{@code query={搜索关键词}}</li>
      * </ul>
      *
@@ -183,7 +189,11 @@ public class ImageSearchTool {
     public List<String> searchMediumImages(String query) {
         // 构建 HTTP 请求头：设置 Pexels API 的认证密钥
         Map<String, String> headers = new HashMap<>();
-        headers.put("Authorization", API_KEY);
+        if (StrUtil.isBlank(apiKey)) {
+            throw new IllegalStateException("未配置 PEXELS_API_KEY —— 图片搜索工具不可用"
+                    + "（在 .env / 容器环境注入，禁止在源码里硬编码）");
+        }
+        headers.put("Authorization", apiKey);
 
         // 构建查询参数：设置搜索关键词
         Map<String, Object> params = new HashMap<>();

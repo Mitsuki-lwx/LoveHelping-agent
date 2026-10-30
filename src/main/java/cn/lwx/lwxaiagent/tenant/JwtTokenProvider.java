@@ -41,6 +41,7 @@ import java.util.Date;
  *   "sub": "user_001",         // 主题（Subject）—— 用户 ID，JWT 标准字段
  *   "tenantId": "tenant_01",  // 自定义声明 —— 租户 ID，用于多租户数据隔离
  *   "role": "USER",            // 自定义声明 —— 角色（USER / ADMIN）
+ *   "tv": 0,                   // 自定义声明 —— 令牌版本（V33）：改密/重置/注销后 +1 即作废旧 token
  *   "iat": 1750000000,         // 签发时间（Issued At），Unix 时间戳
  *   "exp": 1750086400          // 过期时间（Expiration），Unix 时间戳
  * }
@@ -64,10 +65,15 @@ import java.util.Date;
  * </p>
  * <ul>
  *   <li>刷新令牌（Refresh Token）机制 —— Token 过期后用户需要重新登录</li>
- *   <li>令牌黑名单（Token Blacklist）—— 无法主动撤销已签发的 Token</li>
  *   <li>多设备会话管理 —— 不跟踪用户的登录设备数</li>
  *   <li>非对称签名（RS256/ES256）—— 仅使用对称 HS256</li>
  * </ul>
+ * <p>
+ * <b>撤销（V33 起已具备）：</b>令牌带 {@code tv}（token version）声明，与 Redis
+ * {@code auth:tv:{user}} 比对；改密/重置密码/注销账号时版本 +1，旧 token 立即失效
+ * （见 {@link cn.lwx.lwxaiagent.service.TokenVersionService} 与
+ * {@link cn.lwx.lwxaiagent.tenant.interceptor.TenantInterceptor}）。
+ * </p>
  * <p>
  * 对于当前系统的安全需求（轻量级 AI Agent 应用），这是"够用"的设计。
  * 如需更高安全级别，建议引入 Spring Security OAuth2 Resource Server。
@@ -178,9 +184,11 @@ public class JwtTokenProvider {
      *                 用于后续请求中的多租户数据隔离
      * @param role     角色标识，如 {@code "USER"} 或 {@code "ADMIN"}，
      *                 将作为自定义声明 {@code role}，可用于权限控制
+     * @param tokenVersion 令牌版本（V33），写入 {@code tv} 声明；改密/重置/注销后 +1
+     *                     即可让本 token 失效（拦截器比对 Redis {@code auth:tv:{user}}）
      * @return 签名的 JWT 字符串，格式为 {@code header.payload.signature}
      */
-    public String generateToken(String userId, String tenantId, String role) {
+    public String generateToken(String userId, String tenantId, String role, long tokenVersion) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
@@ -188,6 +196,7 @@ public class JwtTokenProvider {
                 .subject(userId)               // 设置主题（用户 ID）
                 .claim("tenantId", tenantId)   // 设置租户 ID 自定义声明
                 .claim("role", role)           // 设置角色自定义声明
+                .claim("tv", tokenVersion)     // V33：令牌版本（撤销依据）
                 .issuedAt(now)                 // 设置签发时间
                 .expiration(expiry)            // 设置过期时间
                 .signWith(key)                 // 使用 HMAC-SHA256 密钥签名

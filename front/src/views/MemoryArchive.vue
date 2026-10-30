@@ -1,15 +1,15 @@
 <template>
   <div class="mem-page">
     <div class="mem-header">
-      <button class="back-btn" @click="goHome">←</button>
+      <button class="back-btn" @click="goHome"><PhArrowLeft :size="18" weight="bold" aria-hidden="true" /></button>
       <div class="letterhead">
         <span class="letterhead-stamp anim-stamp">忆</span>
         <div class="letterhead-titles">
           <h1 class="letterhead-title hand">记忆档案</h1>
-          <span class="letterhead-sub">— AI 记得的关于你的事 —</span>
+          <span class="letterhead-sub">AI 记得的关于你的事</span>
         </div>
       </div>
-      <button class="refresh-btn btn-hand" @click="load">↻ 刷新</button>
+      <button class="refresh-btn btn-hand" @click="load"><PhArrowClockwise :size="15" weight="bold" class="ico" aria-hidden="true" /> 刷新</button>
       <button class="btn-hand" @click="showAdd = !showAdd">＋ 添加一条</button>
     </div>
     <!-- ⛔ 页面级失败提示：编辑/删除失败时"新增面板"并不在页面上，
@@ -44,10 +44,10 @@
       <div v-if="loading" class="mem-state">翻开档案中……</div>
 
       <div v-else-if="!groups.length" class="mem-state mem-empty anim-letter-in">
-        <div class="mem-empty-icon">📒</div>
+        <div class="mem-empty-icon"><PhNotebook :size="30" weight="bold" aria-hidden="true" /></div>
         <p class="hand">档案还是空白的</p>
         <p class="mem-empty-sub">去解忧信箱多聊几句，AI 会开始了解你——偏好的相处方式、你在意的事、你正在经历的关系阶段……</p>
-        <button class="btn-hand primary" @click="goChat">去写信 →</button>
+        <button class="btn-hand primary" @click="goChat">去写信 <PhArrowRight :size="15" weight="bold" class="ico" aria-hidden="true" /></button>
       </div>
 
       <div v-else class="mem-groups">
@@ -82,7 +82,7 @@
                 <span>{{ fmtTime(f.createdAt) }}</span>
                 <span class="mem-confidence">可信度 {{ (f.confidence || 0) }}/10</span>
                 <div class="mem-actions">
-                  <button class="mem-act" @click="startEdit(f)">✎ 修正</button>
+                  <button class="mem-act" @click="startEdit(f)"><PhPencilSimple :size="15" weight="bold" class="ico" aria-hidden="true" /> 修正</button>
                   <button class="mem-act mem-act-del" @click="delFact(f)">删除</button>
                 </div>
               </div>
@@ -97,6 +97,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { PhArrowClockwise, PhArrowLeft, PhArrowRight, PhNotebook, PhPencilSimple } from '@phosphor-icons/vue'
 import { getMyMemoryFacts, updateMemoryFact, deleteMemoryFact, addMemoryFact } from '../api/index.js'
 
 const router = useRouter()
@@ -195,15 +196,15 @@ onMounted(load)
 .letterhead { display: flex; align-items: center; gap: 12px; }
 .letterhead-stamp {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px; border-radius: 50%;
-  border: 2px dashed oklch(52% 0.09 160); color: oklch(42% 0.09 160);
+  width: 42px; height: 42px; border-radius: var(--r-seal);
+  border: 2px dashed var(--accent); color: var(--accent-text);
   font-family: var(--font-hand); font-size: 20px; font-weight: 700;
   transform: rotate(-10deg); background: var(--paper-card); flex-shrink: 0;
 }
 .letterhead-titles { display: flex; flex-direction: column; line-height: 1.15; }
 .letterhead-title { font-size: 22px; margin: 0; letter-spacing: 0.14em; }
 .letterhead-sub { font-family: var(--font-hand); font-size: 11px; color: var(--ink-faint); letter-spacing: 0.2em; margin-top: 2px; }
-.back-btn { font-family: var(--font-hand); font-size: 20px; color: var(--ink-soft); background: transparent; border: none; cursor: pointer; padding: 6px 10px; border-radius: 50%; }
+.back-btn { font-family: var(--font-hand); font-size: 20px; color: var(--ink-soft); background: transparent; border: none; cursor: pointer; padding: 6px 10px; border-radius: var(--r-seal); }
 .back-btn:hover { background: var(--paper-deep); transform: translateX(-2px); }
 .refresh-btn { font-size: 13px; }
 
@@ -222,37 +223,38 @@ onMounted(load)
 .mem-list { list-style: none; display: flex; flex-direction: column; gap: 12px; }
 .mem-card { padding: 16px 18px 12px; }
 .mem-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.mem-status { font-family: var(--font-hand); font-size: 11.5px; border-radius: 10px; padding: 1px 10px; letter-spacing: 0.08em; }
-.mem-status-active { background: oklch(34% 0.06 160); color: oklch(78% 0.1 160); border: 1px solid oklch(46% 0.08 160); }
+.mem-status { font-family: var(--font-hand); font-size: 11.5px; border-radius: var(--r-ctl); padding: 1px 10px; letter-spacing: 0.08em; }
+/* ⛔ 4.2 COLOR CONSISTENCY LOCK：原来是**绿色**徽章 —— skill 原文点名的正是
+   "rose 站突然出现 teal 状态徽章"。全站唯一强调色是酒红，状态也回到酒红家族。 */
+.mem-status-active { background: var(--chip-bg); color: var(--chip-fg); border: 1px solid var(--accent); }
 .mem-status-cand { background: oklch(34% 0.05 70); color: oklch(80% 0.09 70); border: 1px solid oklch(46% 0.07 70); }
 .mem-cand-hint { font-size: 11.5px; color: oklch(52% 0.1 70); font-family: var(--font-hand); }
 .mem-hit { margin-left: auto; font-size: 11.5px; color: var(--ink-faint); font-family: var(--font-hand); }
 .mem-content { font-size: 15px; line-height: 1.85; color: var(--ink); cursor: text; }
 .mem-content-cand { color: var(--ink-soft); }
-.mem-content-cand::after { content: ' ✍️'; font-size: 12px; }
-.mem-edit { width: 100%; border: 1.4px dashed oklch(52% 0.09 160); border-radius: 8px; padding: 9px 12px; font-size: 14.5px; color: var(--ink); line-height: 1.7; resize: none; outline: none; background: var(--paper-card-warm); font-family: inherit; }
-.mem-edit:focus { border-color: oklch(52% 0.09 160); border-style: solid; }
+.mem-edit { width: 100%; border: 1.4px dashed var(--accent); border-radius: var(--r-ctl); padding: 9px 12px; font-size: 14.5px; color: var(--ink); line-height: 1.7; resize: none; outline: none; background: var(--paper-card-warm); font-family: inherit; }
+.mem-edit:focus { border-color: var(--accent); border-style: solid; }
 .mem-edit-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .mem-edit-actions .btn-hand { font-size: 13px; }
 .mem-meta { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ink-line); font-size: 11.5px; color: var(--ink-faint); font-family: var(--font-hand); }
 .mem-confidence { color: var(--ink-soft); }
 .mem-actions { margin-left: auto; display: flex; gap: 4px; }
-.mem-act { background: transparent; border: none; cursor: pointer; font-family: var(--font-hand); font-size: 12.5px; color: var(--ink-soft); padding: 3px 8px; border-radius: 8px; transition: all 0.14s; }
-.mem-act:hover { background: var(--paper-deep); color: oklch(45% 0.1 160); }
+.mem-act { background: transparent; border: none; cursor: pointer; font-family: var(--font-hand); font-size: 12.5px; color: var(--ink-soft); padding: 3px 8px; border-radius: var(--r-ctl); transition: all 0.14s; }
+.mem-act:hover { background: var(--paper-deep); color: var(--accent-text); }
 .mem-act-del:hover { color: var(--danger); background: oklch(32% 0.06 27); }
 
 /* ---- 手动添加（2026-09-08 产品闭环 ⑤） ---- */
-.add-fact { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--wine); }
+.add-fact { margin: 10px 0; padding: 12px 14px; border-left: 3px solid var(--accent); }
 .add-fact-row { display: flex; gap: 8px; align-items: center; }
 .add-cat {
-  border: 1.2px solid var(--ink-line); border-radius: 8px; padding: 7px 8px;
+  border: 1.2px solid var(--ink-line); border-radius: var(--r-ctl); padding: 7px 8px;
   font-size: 13px; background: var(--paper-card-warm); color: var(--ink-soft);
 }
-.add-input { flex: 1; border: 1.2px solid var(--ink-line); border-radius: 8px; padding: 7px 10px; font-size: 13px; background: var(--paper-card-warm); }
-.add-msg { margin-top: 8px; font-size: 12.5px; color: var(--teal-deep, #0f6e56); }
-.add-msg.err { color: var(--wine-deep); }
+.add-input { flex: 1; border: 1.2px solid var(--ink-line); border-radius: var(--r-ctl); padding: 7px 10px; font-size: 13px; background: var(--paper-card-warm); }
+.add-msg { margin-top: 8px; font-size: 12.5px; color: var(--ok); }
+.add-msg.err { color: var(--accent-deep); }
 .page-error {
-  margin: 0 0 10px; padding: 8px 12px; border-radius: 8px;
+  margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r-ctl);
   background: oklch(32% 0.06 27); color: oklch(82% 0.1 27);
   border: 1px solid oklch(46% 0.08 27); font-size: 13px;
 }

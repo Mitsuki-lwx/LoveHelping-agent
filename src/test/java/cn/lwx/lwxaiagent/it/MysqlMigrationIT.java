@@ -181,4 +181,42 @@ class MysqlMigrationIT {
                 .as("content 是 NOT NULL —— 没有约束的库会让脏数据一路走到线上")
                 .isNotNull();
     }
+
+    @Test
+    @DisplayName("V34 契约：complaint 表就位（分类/状态默认 OPEN，两个查询索引）")
+    void complaint_table_contract() throws Exception {
+        migrate();
+        List<String> status = query("SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS "
+                + "WHERE TABLE_SCHEMA='agentdb' AND TABLE_NAME='complaint' AND COLUMN_NAME='status'");
+        assertThat(status).as("complaint.status 必须存在").hasSize(1);
+        assertThat(status.get(0)).as("新投诉默认 OPEN").isEqualTo("OPEN");
+
+        List<String> tenant = query("SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS "
+                + "WHERE TABLE_SCHEMA='agentdb' AND TABLE_NAME='complaint' AND COLUMN_NAME='tenant_id'");
+        assertThat(tenant.get(0)).as("租户默认 default（ADR-13）").isEqualTo("default");
+
+        List<String> idx = query("SELECT DISTINCT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS "
+                + "WHERE TABLE_SCHEMA='agentdb' AND TABLE_NAME='complaint'");
+        assertThat(idx).as("按人查 / 按状态查都走索引")
+                .contains("idx_complaint_user", "idx_complaint_status");
+    }
+
+    @Test
+    @DisplayName("V34 契约：users 三个合规列就位，且 minor_mode / evolution_consent **默认关**")
+    void user_compliance_columns_contract() throws Exception {
+        migrate();
+        // 出生年份可空（老数据没有，不能编造）
+        List<String> birthNullable = query("SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+                + "WHERE TABLE_SCHEMA='agentdb' AND TABLE_NAME='users' AND COLUMN_NAME='birth_year'");
+        assertThat(birthNullable).as("birth_year 列必须存在").hasSize(1);
+        assertThat(birthNullable.get(0)).as("老数据无出生年份 → 必须可空").isEqualTo("YES");
+
+        // ⛔ 隐私默认必须是"关"：minor_mode=0、evolution_consent=0
+        for (String col : new String[]{"minor_mode", "evolution_consent"}) {
+            List<String> def = query("SELECT COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS "
+                    + "WHERE TABLE_SCHEMA='agentdb' AND TABLE_NAME='users' AND COLUMN_NAME='" + col + "'");
+            assertThat(def).as(col + " 列必须存在").hasSize(1);
+            assertThat(def.get(0)).as(col + " 默认必须是 0（隐私/合规默认关）").isEqualTo("0");
+        }
+    }
 }

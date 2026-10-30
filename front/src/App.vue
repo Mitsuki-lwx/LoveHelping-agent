@@ -13,6 +13,27 @@
         <router-link v-if="isAdminUser" to="/admin" class="nav-link">管理</router-link>
       </div>
       <div class="nav-right">
+        <!-- 心情主题切换：主题名就是**心情名**（恋爱产品不该叫"粉色/蓝色"） -->
+        <div class="theme-picker">
+          <button class="theme-btn" :title="'换个心情的界面 · 当前：' + theme" @click.stop="themeOpen = !themeOpen">
+            <PhPalette :size="15" weight="bold" aria-hidden="true" />
+            <span class="theme-btn-name">{{ theme }}</span>
+          </button>
+          <div v-if="themeOpen" class="theme-menu" @click.stop>
+            <button
+              v-for="t in THEMES"
+              :key="t.id"
+              :class="['theme-opt', { on: t.id === theme }]"
+              @click="pickTheme(t.id)"
+            >
+              <!-- ⛔ 把 data-theme 挂在色块**自己**身上：属性选择器对任意元素生效，
+                   于是这块小圆点会解析成**那一套**主题的 --accent（不用在 JS 里抄一份颜色）。 -->
+              <span class="theme-swatch" :data-theme="t.id" aria-hidden="true"></span>
+              <span class="theme-opt-text"><b>{{ t.label }}</b><i>{{ t.hint }}</i></span>
+              <PhCheck v-if="t.id === theme" :size="15" weight="bold" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         <router-link v-if="user" to="/profile" class="nav-me" :title="'个人中心 · ' + (user.username || '')">
           <span class="nav-avatar hand">{{ user.avatarEmoji || (user.username || '?').slice(0, 1).toUpperCase() }}</span>
           <span class="nav-nick">{{ user.nickname || user.username }}</span>
@@ -30,6 +51,30 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { getUser, removeToken, isAuthenticated } from './utils/auth.js'
+import { PhPalette, PhCheck } from '@phosphor-icons/vue'
+import { THEMES, getTheme, setTheme } from './utils/theme.js'
+import { refreshProfile } from './utils/profile.js'
+
+const theme = ref(getTheme())
+const themeOpen = ref(false)
+function pickTheme(id) {
+  theme.value = setTheme(id)
+  themeOpen.value = false
+}
+// 别的地方（如今日心情打卡）也能切主题 —— 用事件同步选中态，避免两处各自维护
+function onThemeChanged(e) { theme.value = e.detail.theme }
+function closeThemeMenu() { themeOpen.value = false }
+onMounted(() => {
+  window.addEventListener('lh:theme-changed', onThemeChanged)
+  document.addEventListener('click', closeThemeMenu)
+  // 个人资料的**唯一取数点**：应用外壳启动时刷一次，写进缓存；
+  // 其他组件（首页纪念日卡等）一律读缓存，不各自发请求（见 utils/profile.js 的教训注释）。
+  if (isAuthenticated()) refreshProfile()
+})
+onUnmounted(() => {
+  window.removeEventListener('lh:theme-changed', onThemeChanged)
+  document.removeEventListener('click', closeThemeMenu)
+})
 
 const router = useRouter()
 const route = useRoute()
@@ -100,8 +145,8 @@ function logout() {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1.8px dashed var(--wine-glow);
-  color: var(--wine-glow);
+  border: 1.8px dashed var(--accent-text);
+  color: var(--accent-text);
   font-size: 15px;
   transform: rotate(-10deg);
 }
@@ -130,8 +175,10 @@ function logout() {
 }
 /* 当前位：桌面上的一枚小印 */
 .nav-link.router-link-active {
-  color: var(--wine-glow);
-  background: var(--wine-soft);
+  /* ⛔ 成对取色：--accent-glow 当字 + --accent-wash 当底，在深色主题成立，
+     换到浅色主题就是"浅字浮浅底"（实测 2.42）。徽章类一律走 --chip-*。 */
+  color: var(--chip-fg);
+  background: var(--chip-bg);
 }
 
 .nav-right {
@@ -151,14 +198,14 @@ function logout() {
   background: var(--desk);
   transition: border-color 0.2s, transform 0.15s;
 }
-.nav-me:hover { border-color: var(--wine-glow); transform: translateY(-1px); }
+.nav-me:hover { border-color: var(--accent); transform: translateY(-1px); }
 .nav-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 27px; height: 27px;
   border-radius: 50%;
-  background: linear-gradient(180deg, var(--wine), var(--wine-deep));
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: oklch(97% 0.012 80);
   font-size: 13px;
   flex-shrink: 0;
@@ -198,5 +245,42 @@ function logout() {
 .main-content {
   flex: 1;
   overflow: hidden;
+}
+/* ---------- 心情主题切换器 ---------- */
+.theme-picker { position: relative; }
+.theme-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: transparent; border: 1px solid var(--ink-line);
+  color: var(--ink-soft); border-radius: var(--r-pill);
+  font-family: var(--font-hand); font-size: 13px; letter-spacing: 0.08em;
+  padding: 5px 13px; cursor: pointer; transition: all 0.18s;
+}
+.theme-btn:hover { border-color: var(--accent); color: var(--accent-text); }
+.theme-btn-name { line-height: 1; }
+.theme-menu {
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 40;
+  display: flex; flex-direction: column; gap: 2px; min-width: 210px; padding: 7px;
+  background: var(--paper-card); border: 1px solid var(--ink-line);
+  border-radius: var(--r-card); box-shadow: var(--sh-2);
+}
+.theme-opt {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  padding: 8px 10px; border-radius: var(--r-ctl); color: var(--ink-on-paper);
+  transition: background 0.15s;
+}
+.theme-opt:hover { background: var(--accent-wash); }
+.theme-opt.on { background: var(--accent-wash); }
+.theme-swatch {
+  width: 18px; height: 18px; flex-shrink: 0; border-radius: var(--r-seal);
+  background: var(--accent); border: 2px solid var(--paper-card);
+  box-shadow: 0 0 0 1px var(--ink-line);
+}
+.theme-opt-text { display: flex; flex-direction: column; gap: 1px; flex: 1; }
+.theme-opt-text b { font-size: 13.5px; font-weight: 700; font-family: var(--font-hand); letter-spacing: 0.06em; }
+.theme-opt-text i { font-size: 11.5px; font-style: normal; color: var(--ink-on-paper-soft); }
+@media (max-width: 720px) {
+  .theme-btn-name { display: none; }
+  .theme-btn { padding: 5px 9px; }
 }
 </style>

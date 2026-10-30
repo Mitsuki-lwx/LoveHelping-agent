@@ -436,8 +436,11 @@ describe('Sandbox：复盘', () => {
 
     expect(sandboxReview).toHaveBeenCalledWith('s1')
     expect(w.find('.sb-review-summary').text()).toContain('演练对话太短')
-    // reviewing 必须回到 false：否则按钮永远停在"复盘中…"，用户再也点不动
-    expect(toolBtn(w, '复盘').text()).toContain('📋 复盘')
+    // reviewing 必须回到 false：否则按钮永远停在"复盘中…"，用户再也点不动。
+    // ⚠️ 断言**不变量的本身**（不再处于加载态 + 可点），不要钉住图标字形 ——
+    //    emoji 已按 taste-skill §3.D 迁到 @phosphor-icons/vue，钉字形等于把"换了图标"当成"功能坏了"。
+    expect(toolBtn(w, '复盘').text()).not.toContain('复盘中')
+    expect(toolBtn(w, '复盘').text()).toContain('复盘')
     expect(toolBtn(w, '复盘').element.disabled).toBe(false)
   })
 })

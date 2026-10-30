@@ -33,7 +33,7 @@
 > **LoveHelping 不是一个"套壳聊天框"。** 它把三件通常被含糊过去的事做成了产品能力：
 > **① 用户不必判断"这该问知识库还是调工具"**（意图在服务端自动路由）；
 > **② 内容安全是分层的边界，而不是一句系统提示词**（危机干预 / 操控识别 / 域外拦截三层，24h 生效）；
-> **③ 评测有真值、有对照、有量具标定**（检索 45 例 + 答案 16 例判分，367 项单测、22 项真实 E2E）。
+> **③ 评测有真值、有对照、有量具标定**（检索 45 例 + 答案 16 例判分，650 项单测、27 项真实 E2E）。
 > `docker compose up -d` 即可拉起完整栈。
 
 ## 🎯 为什么做这个
@@ -126,7 +126,7 @@ docker compose logs -f app
 open http://localhost:8088/api/
 ```
 
-> ✅ 首次启动自动完成：MySQL **Flyway V1–V29** 迁移、PostgreSQL 建表与索引、
+> ✅ 首次启动自动完成：MySQL **37 个 Flyway 迁移**（V1–V37）、PostgreSQL 建表与索引、
 > **131 篇文档自动切块 + 向量化**（之后按 `doc_hash` 增量同步，重启只处理变更文档）。
 
 ### B. 本地开发
@@ -138,16 +138,17 @@ open http://localhost:8088/api/
 # 前端热更新
 cd front && npm install && npm run dev    # → http://localhost:5173（proxy 到后端 /api）
 
-# 冒烟回归（需后端在跑）
-BASE_URL=http://localhost:8088/api ADMIN_API_KEY=xxx bash scripts/e2e-smoke.sh
+# 冒烟回归（需后端在跑；ADR-68：CI 与本地同一套实现）
+python scripts/e2e_live.py --base http://localhost:8088/api
 ```
 
 ## ⚙️ 环境变量
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` | ✅ | 主对话模型（OpenAI 兼容端点，可为自建/网关） |
-| `DASHSCOPE_API_KEY` | ✅ | 备模型（主模型故障时降级链切到它） |
+| `CLINE_API_KEY` | ✅ | 主对话模型（ADR-93：cline.bot 网关） |
+| `CLINE_BASE_URL` / `CLINE_MODEL` | ⭕ | 网关地址 / 模型名（默认 `https://api.cline.bot/api` / `cline-pass/deepseek-v4.1-flash`，模型名**必须带 `cline-pass/` 前缀**） |
+| `OPENAI_*` | ⭕ | 仅 `VisionChatClient` 仍读它；DeepSeek 官方 provider 默认停用 |
 | `SF_API_KEY` | ⭕ | 硅基流动 key：embedding 与远端 rerank 共用（默认通道） |
 | `JWT_SECRET` | ✅ | 签名密钥，**≥32 字符随机串**（缺失或过短**拒绝启动**） |
 | `MYSQL_PASSWORD` / `PGVECTOR_PASSWORD` | ✅ | 主数据源 / 向量库密码（首启创建） |
@@ -186,21 +187,21 @@ flowchart LR
 
 | 资产 | 规模 / 结果 |
 |---|---|
-| 📐 技术决策记录（ADR） | **67 条**（`docs/03`，含被推翻结论的修订标注 —— 不改写历史） |
-| 🗄 数据库迁移 | **28 次 Flyway（V1–V28）**，DDL 只走迁移，不手改 schema |
-| ✅ 单元测试 | **367 项全绿** |
-| 🧪 真实 E2E | **22 项**（真实 HTTP / SSE / 数据库，非 mock） |
+| 📐 技术决策记录（ADR） | **92 条**（`docs/03`，含被推翻结论的修订标注 —— 不改写历史） |
+| 🗄 数据库迁移 | **37 个 Flyway 迁移**，DDL 只走迁移，不手改 schema |
+| ✅ 单元测试 | **650 项全绿**（后端；前端另 **276 项**） |
+| 🧪 真实 E2E | **27 项**（真实 HTTP / SSE / 数据库，非 mock） |
 | 🎯 检索评测 | 45 例 ground-truth：**Recall@5 0.96 · MRR@5 0.885**（生产配置） |
 | 💬 答案质量 | 16 例 × 3 轮 LLM 判分：**0.89**（并做过"缺陷前 / 修复后"对照：**0.35 → 0.89**） |
 | ⚡ 容量实测 | LLM 通道厂商并发上限 **≈24**（超出立即 429）；embedding ≥64、rerank ≥32 无 429 |
-| 🧰 评测脚本 | **62 个**（检索 / 答案 / Agent / 护栏 / 压测 / 上游探测），全部随仓库维护 |
+| 🧰 评测脚本 | **104 个**（检索 / 答案 / Agent / 护栏 / 压测 / 上游探测），全部随仓库维护 |
 
 **方法论上刻意守的几条**（也都是踩过坑才写下的）：
 
 - 🧪 **行为断言必须带对照实验** —— 改坏 → 精确失败 → 恢复 → 复跑全绿，才算证明；"跑通"不等于"证明"。
 - 📏 **量具先标定，再量** —— 先求同臂可复现，把**仪器分辨率**（本次 ±0.015 MRR）写进结论，不用它去判更小的效应。
 - 🧾 **判定阈值事先写死**，事后不改；跨期比较先核对口径。
-- 🔎 **"接上了" ≠ "传对了"** —— 换掉有返回契约的组件时逐字段核对载荷（这条正是 67 条 ADR 里最贵的一条）。
+- 🔎 **"接上了" ≠ "传对了"** —— 换掉有返回契约的组件时逐字段核对载荷（这条正是 92 条 ADR 里最贵的一条）。
 
 ### 🔧 运维与合规
 
@@ -217,7 +218,7 @@ flowchart LR
 |---|---|
 | [00 · 文档导读](docs/00-文档导读.md) | 阅读路线图（按角色给入口） |
 | [01 · 产品定位](docs/01-产品定位与需求.md) · [02 · 架构设计](docs/02-架构设计.md) | 为什么做 / 怎么搭 |
-| [03 · 技术决策记录](docs/03-技术决策记录.md) | **67 条 ADR**：父子索引为何放弃、降级链怎么落地、过滤为何要下推…… |
+| [03 · 技术决策记录](docs/03-技术决策记录.md) | **92 条 ADR**：父子索引为何放弃、降级链怎么落地、过滤为何要下推…… |
 | [04 · 数据模型](docs/04-数据模型设计.md) · [05 · API 契约](docs/05-API契约设计.md) · [06 · 核心流程](docs/06-核心流程设计.md) | 表结构 / 接口 / 时序 |
 | [07 · 安全与合规](docs/07-安全与合规.md) | 内容安全 · 数据合规 · 越权校验 |
 | [08 · 可观测](docs/08-可观测性与发布.md) · [09 · 测试策略](docs/09-测试策略.md) | 指标与 trace / 测试分层与 NFR |
@@ -235,7 +236,7 @@ flowchart LR
 │   └── controller/          # REST + SSE API（/api 前缀）
 ├── front/src               # Vue 3 前端（纸感主题 UI）
 ├── mcp-server/             # 独立工具面进程（Docker 单独构建）
-├── scripts/                # 评测 / 冒烟 / 压测资产（62 个）
+├── scripts/                # 评测 / 冒烟 / 压测资产（104 个）
 ├── docs/                   # 产品 → 架构 → ADR → 部署 全决策链
 └── docker-compose.yml      # 一键部署
 ```
@@ -260,8 +261,8 @@ flowchart LR
 提交前请跑：
 
 ```bash
-./mvnw test                                    # 367 项单测
-BASE_URL=... ADMIN_API_KEY=... bash scripts/e2e-smoke.sh   # 22 项真实 E2E
+./mvnw test                                     # 650 项后端单测（前端：cd front && npm test）
+python scripts/e2e_live.py --base http://localhost:8088/api   # 27 项真实 E2E
 ```
 
 > 🔐 **安全披露**：请**不要**在公开 Issue 里贴漏洞细节，直接联系作者。

@@ -26,7 +26,6 @@ public class CheckNode {
      * <p>⚠️ 唯一的文案事实源在 {@link GuardrailMessages} —— {@code StreamRegistry} 的流式拦截
      * 也用同一份，两条路径必须给出一致的话。</p>
      */
-    public static final String OUTPUT_SELF_HARM_REPLACEMENT = GuardrailMessages.SELF_HARM_OUTPUT;
 
     /** 输出侧其它 L3（伤人/违法/操控）的婉拒文案 */
     public static final String OUTPUT_OTHER_REPLACEMENT = GuardrailMessages.OTHER_OUTPUT;
@@ -47,7 +46,7 @@ public class CheckNode {
         Verdict v = guardrailRuleService.check(output, GuardrailRuleService.Scope.OUTPUT);
         if (v.level() >= 3) {
             log.warn("Final-reply guardrail L3 blocked ({}): {}", v.ruleId(), output.length() > 40 ? output.substring(0, 40) : output);
-            String replaced = isSelfHarm(v.ruleId()) ? OUTPUT_SELF_HARM_REPLACEMENT : OUTPUT_OTHER_REPLACEMENT;
+            String replaced = isSelfHarm(v.ruleId()) ? GuardrailMessages.selfHarmOutput() : OUTPUT_OTHER_REPLACEMENT;
             Map<String, Object> out = new HashMap<>();
             out.put(GraphStateKeys.OUTPUT, replaced);
             return out;

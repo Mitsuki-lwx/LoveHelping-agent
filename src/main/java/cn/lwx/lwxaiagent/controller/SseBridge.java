@@ -27,6 +27,36 @@ final class SseBridge {
     static final String STATUS_EVENT = "status";
 
     /**
+     * 情绪刹车片事件名（ADR-87）。
+     *
+     * <p><b>为什么它必须独立成事件，而不是像其它 BizException 那样发默认 data：</b>
+     * 默认 data 会被前端当成<b>正文</b>追加进气泡 —— 对 4001（转介文案）那是对的，
+     * 因为那句话本身就是 AI 该说的话；但刹车片不同，它<b>带着一个用户动作</b>
+     * （携带 {@code continueBrake=true} 重发即可继续）。当正文发 ⇒ 前端拿不到码，
+     * 只能把「请携带 continueBrake=true」当回复展示，用户既看不懂也走不下去。</p>
+     */
+    static final String BRAKE_EVENT = "brake";
+
+    /** 序列化载荷用（手写 JSON 转义是隐患：刹车文案里将来放引号就会破帧）。 */
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * 刹车事件的载荷：{@code {"code":4002,"message":"…","canContinue":true}}。
+     *
+     * <p>{@code canContinue} 是给 UI 的：true ⇒ 渲染「继续发送」（重发时带 {@code continueBrake=true}）。</p>
+     */
+    static String brakePayload(int code, String message, boolean canContinue) {
+        try {
+            return JSON.writeValueAsString(java.util.Map.of(
+                    "code", code, "message", message, "canContinue", canContinue));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            // 序列化 String 不会失败；真失败也要保证帧合法，否则整个 SSE 流破掉
+            return "{\"code\":" + code + ",\"message\":\"\",\"canContinue\":false}";
+        }
+    }
+
+    /**
      * 占位文案。
      *
      * <p>⛔ 必须<b>诚实</b>：此刻可能还在建连接/检索，<b>并没有</b>「在分析你的问题」。

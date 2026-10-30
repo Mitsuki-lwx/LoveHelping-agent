@@ -42,9 +42,9 @@
   justify-content: center;
   width: 52px;
   height: 52px;
-  border-radius: 50%;
-  border: 2px dashed var(--wine);
-  color: var(--wine-deep);
+  border-radius: var(--r-seal);
+  border: 2px dashed var(--accent);
+  color: var(--accent-deep);
   font-family: var(--font-hand);
   font-size: 24px;
   font-weight: 700;

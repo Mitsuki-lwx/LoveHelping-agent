@@ -6,6 +6,7 @@ import cn.lwx.lwxaiagent.tenant.context.TenantContext;
 import io.jsonwebtoken.Claims;
 import cn.lwx.lwxaiagent.audit.AuditLog;
 import cn.lwx.lwxaiagent.common.BizException;
+import cn.lwx.lwxaiagent.common.Result;
 import cn.lwx.lwxaiagent.tenant.AdminGuard;
 import cn.lwx.lwxaiagent.service.DeleteService;
 import jakarta.annotation.Resource;
@@ -78,6 +79,10 @@ public class AuthController {
     @Resource
     private AdminGuard adminGuard;
 
+    /** 回访邮件的签名/退订校验（V37，ADR-92）。 */
+    @Resource
+    private cn.lwx.lwxaiagent.mail.ReengageService reengage;
+
     /**
      * <h3>用户注册接口</h3>
      * <p>
@@ -95,6 +100,8 @@ public class AuthController {
      *   <li><b>password</b>（必填）：密码，不能为空或空白字符串</li>
      *   <li><b>tenantId</b>（可选，默认值 "default"）：租户 ID，用于数据隔离</li>
      *   <li><b>role</b>（可选，默认值 "USER"）：用户角色，如 "USER"、"ADMIN" 等</li>
+     *   <li><b>birthYear</b>（V34 合规，<b>必填</b>）：出生年份，1900..当前年；
+     *       未满 18 岁自动进入未成年人模式（服务端强制宵禁/每日上限）</li>
      * </ul>
      *
      * <p><b>返回值示例：</b></p>
@@ -129,6 +136,8 @@ public class AuthController {
         String tenantId = body.getOrDefault("tenantId", "default");
         // 安全（2026-09-05 高危修复 #1）：忽略请求体 role，公开注册恒为 USER（防自封 ADMIN）
         String role = "USER";
+        // V34 合规：出生年份必填（int）。缺失/非数字/越界 → UserService 统一抛 BizException(400)
+        Integer birthYear = parseBirthYear(body.get("birthYear"));
 
         // 参数校验：用户名和密码不能为空
         if (username == null || password == null || username.isBlank() || password.isBlank()) {
@@ -137,11 +146,27 @@ public class AuthController {
 
         try {
             // 调用用户服务进行注册，返回 JWT Token
-            String token = userService.register(username, password, tenantId, role);
+            String token = userService.register(username, password, tenantId, role, birthYear);
             return Map.of("success", true, "token", token, "username", username, "role", role);
+        } catch (BizException e) {
+            // 参数/合规错误（如出生年份无效）走统一 Result 形状 {code,message}，
+            // 不被下面的 Map 兜底吞掉——否则前端拿不到 400 码。
+            throw e;
         } catch (RuntimeException e) {
             // 注册失败（如用户名已存在），返回错误信息
             return Map.of("success", false, "message", e.getMessage());
+        }
+    }
+
+    /** 解析出生年份：缺失/空白/非数字 → null（交给 {@code UserService} 统一报 400）。 */
+    private static Integer parseBirthYear(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
@@ -250,25 +275,38 @@ public class AuthController {
         }
         String role = TenantContext.getRole();
         // V18：返回完整个人资料（昵称/头像 emoji/签名/注册时间/账号状态）
+        // V33：追加 email / emailVerified（本人可见自己的邮箱；前端据此显示"已绑定/去绑定"）
         cn.lwx.lwxaiagent.entity.User profile = userService.findProfile(userId);
-        if (profile == null) {
-            return Map.of("success", true, "username", userId, "role", role != null ? role : "USER");
-        }
         java.util.Map<String, Object> data = new java.util.LinkedHashMap<>();
         data.put("success", true);
         data.put("username", userId);
         data.put("role", role != null ? role : "USER");
-        data.put("nickname", profile.getNickname());
-        data.put("avatarEmoji", profile.getAvatarEmoji());
-        data.put("bio", profile.getBio());
-        data.put("enabled", profile.getEnabled());
-        data.put("createdAt", profile.getCreatedAt() == null ? null : profile.getCreatedAt().toString());
+        data.put("nickname", profile == null ? null : profile.getNickname());
+        data.put("avatarEmoji", profile == null ? null : profile.getAvatarEmoji());
+        data.put("bio", profile == null ? null : profile.getBio());
+        data.put("anniversaryDate", profile == null || profile.getAnniversaryDate() == null
+                ? null : profile.getAnniversaryDate().toString());
+        data.put("email", profile == null ? null : profile.getEmail());
+        data.put("emailVerified", profile != null && profile.getEmailVerifiedAt() != null);
+        // V34 合规：未成年人模式 + 出生年份（老数据 birthYear 为 null，minorMode 为 false）
+        data.put("birthYear", profile == null ? null : profile.getBirthYear());
+        data.put("minorMode", profile != null && Boolean.TRUE.equals(profile.getMinorMode()));
+        // V36：首次体验引导是否已看过（前端据此决定是否显示「能做什么」卡）
+        data.put("onboarded", profile != null && Boolean.TRUE.equals(profile.getOnboarded()));
+        // V37（ADR-92）：回访邮件同意 —— 默认 false，触达类同意必须显式给予
+        data.put("reengageConsent", profile != null && Boolean.TRUE.equals(profile.getReengageConsent()));
+        // V34 合规：进化模块单独同意（默认 false —— 隐私默认"不同意"）
+        data.put("evolutionConsent", profile != null && Boolean.TRUE.equals(profile.getEvolutionConsent()));
+        data.put("enabled", profile == null ? null : profile.getEnabled());
+        data.put("createdAt", profile == null || profile.getCreatedAt() == null
+                ? null : profile.getCreatedAt().toString());
         return data;
     }
 
     /**
-     * <h3>更新个人资料（V18 个人中心）</h3>
-     * <p>body 可含：nickname / avatarEmoji / bio（均为可选，非空字段才更新）。</p>
+     * <h3>更新个人资料（V18 个人中心，V31 增加纪念日）</h3>
+     * <p>body 可含：nickname / avatarEmoji / bio / anniversaryDate（均为可选，非空字段才更新）。
+     * anniversaryDate 为 ISO {@code yyyy-MM-dd}；格式非法时返回 success:false 并给出提示（不落库）。</p>
      */
     @AuditLog("update_profile")
     @PutMapping("/profile")
@@ -280,7 +318,7 @@ public class AuthController {
         try {
             Map<String, String> b = body == null ? Map.of() : body;
             boolean changed = userService.updateProfile(userId,
-                    b.get("nickname"), b.get("avatarEmoji"), b.get("bio"));
+                    b.get("nickname"), b.get("avatarEmoji"), b.get("bio"), b.get("anniversaryDate"));
             return Map.of("success", true, "message", changed ? "资料已更新" : "没有需要更新的字段");
         } catch (RuntimeException e) {
             return Map.of("success", false, "message", e.getMessage());
@@ -310,6 +348,98 @@ public class AuthController {
         } catch (RuntimeException e) {
             return Map.of("success", false, "message", e.getMessage());
         }
+    }
+
+    /**
+     * <h3>进化模块单独同意（V34 合规，docs/07 §5.4）</h3>
+     * <p>body：{@code {"consent": true|false}}。这是<b>隐私开关</b>——只有同意后，
+     * 该用户的对话才可能被提炼为技能沉淀进知识库（默认不同意）。</p>
+     */
+    @AuditLog("evolution_consent")
+    @PutMapping("/evolution-consent")
+    public Result<String> updateEvolutionConsent(@RequestBody(required = false) Map<String, Object> body) {
+        String userId = TenantContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new BizException(401, "未登录");
+        }
+        Boolean consent = parseConsent(body == null ? null : body.get("consent"));
+        if (consent == null) {
+            throw new BizException(400, "consent 必须为 true 或 false");
+        }
+        userService.updateEvolutionConsent(userId, consent);
+        return Result.ok("ok");
+    }
+
+    /**
+     * 标记「首次体验引导已看过」（V36，ADR-91）。
+     *
+     * <p>幂等：重复调用无副作用。⛔ 不接收客户端传的状态 —— 只有"已看过"这一个方向，
+     * 免得前端传错把用户重新推回引导态。</p>
+     */
+    @AuditLog("onboarded")
+    @PostMapping("/onboarded")
+    public Result<String> markOnboarded() {
+        String userId = TenantContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new BizException(401, "未登录");
+        }
+        userService.markOnboarded(userId);
+        return Result.ok("ok");
+    }
+
+    /**
+     * 设置回访邮件同意（V37，ADR-92）。
+     *
+     * <p>⛔ 与 {@code evolution-consent} **分开**：那是"允许用我的对话提炼技巧"（数据用途），
+     * 这是"允许给我发信"（触达渠道）。**两类同意不能捆绑** —— 捆绑等于用一次授权换两件事。</p>
+     */
+    @AuditLog("reengage_consent")
+    @PutMapping("/reengage-consent")
+    public Result<String> updateReengageConsent(@RequestBody(required = false) Map<String, Object> body) {
+        String userId = TenantContext.getUserId();
+        if (userId == null || userId.isBlank()) {
+            throw new BizException(401, "未登录");
+        }
+        Boolean consent = parseConsent(body == null ? null : body.get("consent"));
+        if (consent == null) {
+            throw new BizException(400, "consent 必须为 true 或 false");
+        }
+        userService.updateReengageConsent(userId, consent);
+        return Result.ok("ok");
+    }
+
+    /**
+     * 一键退订（V37，ADR-92）—— **免登录**，靠签名校验。
+     *
+     * <p>⛔ 为什么免登录：退订链接会在邮件客户端的内置浏览器里打开，那里通常没有登录态。
+     * 要求登录才能退订 = 事实上退不掉 = 违反"一键退订"。</p>
+     *
+     * <p>⛔ 幂等：重复点、或点一个已经退订过的链接，都返回成功（而不是报错让用户困惑）。</p>
+     */
+    @GetMapping("/reengage/unsubscribe")
+    public Result<String> unsubscribeReengage(@RequestParam(required = false) String u,
+                                              @RequestParam(required = false) String t) {
+        if (u == null || u.isBlank() || t == null || t.isBlank()) {
+            throw new BizException(400, "退订链接不完整");
+        }
+        if (!reengage.verify(u, t)) {
+            // 不区分"用户不存在"与"签名不对" —— 不给枚举/伪造探路
+            throw new BizException(403, "退订链接无效或已过期");
+        }
+        userService.unsubscribeReengage(u);
+        return Result.ok("ok");
+    }
+
+    /** 解析 consent：接受 JSON boolean 或字符串 "true"/"false"；其余返回 null（调用方报 400）。 */
+    private static Boolean parseConsent(Object raw) {
+        if (raw instanceof Boolean b) {
+            return b;
+        }
+        if (raw instanceof String s) {
+            if ("true".equalsIgnoreCase(s.trim())) return Boolean.TRUE;
+            if ("false".equalsIgnoreCase(s.trim())) return Boolean.FALSE;
+        }
+        return null;
     }
 
     /**

@@ -19,6 +19,10 @@ public class RelationshipProfile {
     @TableField("stage")
     private String stage;
 
+    /** 用户怎么称呼对方（V32；同样喂给模型，保证回信称呼一致） */
+    @TableField("partner_alias")
+    private String partnerAlias;
+
     /** JSON 字段，使用 JacksonTypeHandler 自动序列化/反序列化 */
     @TableField(value = "key_people", typeHandler = JacksonTypeHandler.class)
     private String keyPeople;

@@ -144,13 +144,29 @@ def run(base, output):
     #    否则这条用例会随"跑测试的时刻"时红时绿。再验 `continueBrake=true` 能继续（信任红线：不替用户决定）
     brake_prompt = "分手吧，我真的受不了了"
     _, brake = ask("brake", brake_prompt)
-    # ⛔ SSE 事件里没有 code 字段（只有 event/data）→ 在整个载荷里找刹车片特征，不猜事件形状
-    brake_blob = json.dumps(brake, ensure_ascii=False)
-    brake_fired = ("情绪比较激动" in brake_blob) or ("4002" in brake_blob)
+    # ⛔ 2026-10-07 修：原来用 `"4002" in json.dumps(整个载荷)` —— 而载荷里塞满**随机 hex id**
+    #    （trace_id / session_hash / user_hash，每个 32 位）⇒ "4002" 会**随机命中**，
+    #    于是窗口关着（实测 15:04 刹车根本不触发）也会报"通过"。**假通过比不测更糟**。
+    #    判据只看该看的地方：正文里的刹车话术 + `error` 事件里的 4002。
+    brake_fired = ("情绪比较激动" in (brake.get("text") or "")) or any(
+        "4002" in (e or "") for e in (brake.get("errors") or []))
     _, brake_bypass = ask("brake-bypass", brake_prompt, params={"prompt": brake_prompt, "chatId": "v_bp_" + uuid.uuid4().hex, "continueBrake": "true"})
-    check("情绪刹车片：深夜+极端词触发 4002，且 continueBrake=true 可继续",
-          brake_fired and brake_bypass["success"],
-          {"fired": brake_fired, "bypass_success": brake_bypass["success"], "brake_text": brake["text"][:120]})
+    # ⛔ 2026-10-07 改成**任一时刻都有意义**的断言：
+    #    窗口内 → 断言"应触发"；窗口外 → 断言"**不应误触发**"（放行）。
+    #    为什么：原来只断言"应触发"，于是非深夜跑必然红 —— 而"永久红的用例"会把人训练成
+    #    忽略整套测试（本仓已有这条教训）。同时旧判据还有**假通过**（在随机 hex id 里找 4002）。
+    #    现在两个方向都测，CI 强制窗口 0-24 走第一支，本地白天走第二支。
+    import datetime as _dt
+    _hour = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=8)).hour   # Asia/Shanghai，免 tzdata 依赖
+    _in_window = _hour >= 23 or _hour < 6
+    if _in_window:
+        check("情绪刹车片：深夜+极端词触发 4002，且 continueBrake=true 可继续",
+              brake_fired and brake_bypass["success"],
+              {"hour": _hour, "fired": brake_fired, "bypass_success": brake_bypass["success"], "brake_text": brake["text"][:120]})
+    else:
+        check("情绪刹车片：非深夜时段**不应误触发**（窗口外放行，且 continueBrake 路径正常）",
+              (not brake_fired) and brake_bypass["success"],
+              {"hour": _hour, "fired": brake_fired, "bypass_success": brake_bypass["success"], "brake_text": brake["text"][:120]})
 
     report = {"passed":sum(c["passed"] for c in checks), "total":len(checks),"checks":checks,"traces":traces}
     if output:

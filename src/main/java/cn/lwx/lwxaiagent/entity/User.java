@@ -111,11 +111,71 @@ public class User {
     private String bio;
 
     /**
+     * 纪念日（V31 首页「在一起第 N 天」），对应数据库列 {@code anniversary_date}。
+     * <p>「在一起」的起始日期，属于用户的关系事实。可空——空表示用户尚未设置，
+     * 前端首页不展示「第 N 天」。只存日期（{@link java.time.LocalDate}），不含时间与时区。</p>
+     */
+    @TableField("anniversary_date")
+    private java.time.LocalDate anniversaryDate;
+
+    /**
      * 创建时间，对应数据库列 {@code created_at}。
      * <p>记录该用户账号的注册/创建时间戳。</p>
      */
     @TableField("created_at")
     private java.time.LocalDateTime createdAt;
+
+    /**
+     * 绑定邮箱（V33 找回密码），对应数据库列 {@code email}。
+     * <p>唯一索引（MySQL 允许多个 NULL）；空 = 未绑定，老用户不受影响。
+     * 只有 {@link #emailVerifiedAt} 非空（= 验证码校验通过）才可用于找回密码。</p>
+     */
+    private String email;
+
+    /**
+     * 邮箱验证通过时间（V33），对应数据库列 {@code email_verified_at}。
+     * <p>空 = 邮箱未验证；非空 = 该邮箱确属本人（验证码校验通过后写入）。</p>
+     */
+    @TableField("email_verified_at")
+    private java.time.LocalDateTime emailVerifiedAt;
+
+    /**
+     * 出生年份（V34 合规），对应数据库列 {@code birth_year}。
+     * <p>注册时必填（1900..当前年）；老数据为空 = 未知，按非未成年人处理。</p>
+     */
+    @TableField("birth_year")
+    private Integer birthYear;
+
+    /**
+     * 未成年人模式（V34 合规），对应数据库列 {@code minor_mode}。
+     * <p>注册时按 {@link #birthYear} 判定（未满 18 ⇒ {@code true}）。服务端据此在
+     * 聊天入口强制宵禁与每日条数上限——<b>合规要求，不依赖前端声明</b>。</p>
+     */
+    @TableField("minor_mode")
+    private Boolean minorMode;
+
+    /**
+     * 进化模块单独同意（V34 合规），对应数据库列 {@code evolution_consent}。
+     * <p>docs/07 §5.4：只有用户<b>明确同意</b>后，其对话才会被提炼为技能沉淀进知识库。
+     * <b>默认 {@code false}</b>（隐私默认必须是"不同意"）；{@code ReflectionScheduler}
+     * 只处理已同意用户的会话，查不到归属的会话一律跳过。</p>
+     */
+    @TableField("evolution_consent")
+    private Boolean evolutionConsent;
+
+    /** 首次体验引导是否已看过（V36，ADR-91）。false/null = 还没看过 ⇒ 聊天页显示引导卡。 */
+    private Boolean onboarded;
+
+    /** 是否同意接收回访邮件（V37，ADR-92）。默认 false —— 触达类同意必须显式给予。 */
+    private Boolean reengageConsent;
+
+    /**
+     * 令牌版本（V33），对应数据库列 {@code token_version}。
+     * <p>签发 JWT 时写入 {@code tv} 声明；改密/重置密码/注销账号时 +1，
+     * 使旧 token 立即失效（JWT 无黑名单，靠版本号撤销）。默认 0。</p>
+     */
+    @TableField("token_version")
+    private Integer tokenVersion;
 
     /**
      * 无参构造函数。

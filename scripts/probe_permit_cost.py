@@ -63,8 +63,8 @@ def classify(body, status=None):
 
 def login_one(idx):
     u = "pc_%d_%d" % (idx, int(time.time()))
-    post("/auth/register", {"username": u, "password": "Passw0rd!123"})
-    r = post("/auth/login", {"username": u, "password": "Passw0rd!123"})
+    post("/auth/register", {"username": u, "password": "Passw0rd!123", "birthYear": 1990})
+    r = post("/auth/login", {"username": u, "password": "Passw0rd!123", "birthYear": 1990})
     return r.get("token") or r.get("data", {}).get("token")
 
 

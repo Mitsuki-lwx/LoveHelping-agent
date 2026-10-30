@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -61,9 +62,12 @@ public interface EvolutionSkillMapper extends BaseMapper<EvolutionSkill> {
      * 零产出占位（2026-09-05 中危修复）：反思无有效技能时插 is_active=0 占位行——
      * 让 {@code source_session_id} 去重生效，避免该会话永久重候选、每 5min 重复烧 LLM。
      * 检索方均过滤 is_active=1，占位行不参与任何技能消费。
+     *
+     * <p>⛔ V35（2026-10-13）：audit_status 显式写 <b>NO_SKILL</b>，不再用默认的 PENDING——
+     * 否则占位行会混进技能审核队列（实测占 36%），管理员翻页全是空行。</p>
      */
-    @Insert("INSERT INTO evolution_skill (tenant_id, skill_name, description, content, source_session_id, quality_score, is_active) "
-            + "VALUES ('default', '__reflected_no_skill__', '', '', #{sessionId}, 0, 0)")
+    @Insert("INSERT INTO evolution_skill (tenant_id, skill_name, description, content, source_session_id, quality_score, is_active, audit_status) "
+            + "VALUES ('default', '__reflected_no_skill__', '', '', #{sessionId}, 0, 0, 'NO_SKILL')")
     int insertSkipMark(@Param("sessionId") String sessionId);
 
     /**
@@ -103,4 +107,47 @@ public interface EvolutionSkillMapper extends BaseMapper<EvolutionSkill> {
     @Select("SELECT * FROM evolution_skill WHERE is_active = 1 AND tenant_id = #{tenantId} AND quality_score >= #{minScore}")
     List<EvolutionSkill> findActiveByTenantAndMinScore(@Param("tenantId") String tenantId,
                                                         @Param("minScore") int minScore);
+
+    /**
+     * 按审核状态分页查询（V34 审核闭环）。
+     *
+     * <p>⛔ 必须带 {@code limit}：库里 PENDING 曾有 1.2 万+ 条，无条件全量查询会拖垮内存与响应。
+     * 由 {@code VoteController} 把 limit 归一化到 [1,200]。</p>
+     */
+    /**
+     * 按审核状态计数（V35）：口径与 {@link #findByAuditStatus} **一致**（排除占位行）。
+     *
+     * <p>⛔ 前端不许再写死积压数字：写死的那个数会随真实积压漂移，
+     * 变成"界面说 12,532、实际 8,347"的**撒谎数字**（本仓最典型的复发缺陷）。</p>
+     */
+    @Select("SELECT COUNT(*) FROM evolution_skill WHERE audit_status = #{status} "
+            + "AND skill_name <> '__reflected_no_skill__'")
+    long countByAuditStatus(@Param("status") String status);
+
+    @Select("SELECT * FROM evolution_skill WHERE audit_status = #{status} "
+            + "AND skill_name <> '__reflected_no_skill__' "
+            + "ORDER BY created_at DESC, id DESC LIMIT #{limit}")
+    List<EvolutionSkill> findByAuditStatus(@Param("status") String status, @Param("limit") int limit);
+
+    /**
+     * 批量驳回候选 id（V34）：{@code audit_status='PENDING'} 且 {@code quality_score <= maxScore}。
+     *
+     * <p>只返回 id（不取整行），供 {@link #bulkRejectByIds} 分批更新——
+     * 12k 行的大事务会锁表，所以先限量取 id、再按 ≤500 一批更新。</p>
+     */
+    @Select("SELECT id FROM evolution_skill WHERE audit_status = 'PENDING' AND quality_score <= #{maxScore} "
+            + "ORDER BY id LIMIT #{limit}")
+    List<Long> findPendingIdsByMaxScore(@Param("maxScore") int maxScore, @Param("limit") int limit);
+
+    /**
+     * 按 id 批量置为 REJECTED / is_active=0。
+     *
+     * <p>⛔ WHERE 里再带一次 {@code audit_status='PENDING'}：<b>已 APPROVED 的技能绝不能被驳回</b>，
+     * 即使调用方误传了它的 id（纵深防御，不靠调用方自觉）。</p>
+     */
+    @Update("<script>UPDATE evolution_skill SET audit_status = 'REJECTED', is_active = 0 "
+            + "WHERE audit_status = 'PENDING' AND id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>"
+            + "</script>")
+    int bulkRejectByIds(@Param("ids") List<Long> ids);
 }

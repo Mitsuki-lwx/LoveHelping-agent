@@ -1,20 +1,20 @@
 <template>
   <div class="history-page">
     <div class="page-header">
-      <button class="back-btn" @click="$router.push('/')">←</button>
+      <button class="back-btn" @click="$router.push('/')"><PhArrowLeft :size="18" weight="bold" aria-hidden="true" /></button>
       <span class="page-title hand">对话历史 · 旧信存档</span>
       <span class="count-badge" v-if="conversations.length">{{ conversations.length }} 条</span>
     </div>
 
     <div class="tabs">
-      <button :class="['tab', activeTab === 'love' ? 'tab-active' : '']" @click="switchTab('love')">💕 恋爱专家</button>
-      <button :class="['tab', activeTab === 'manus' ? 'tab-active' : '']" @click="switchTab('manus')">🤖 恋爱全能帮</button>
+      <button :class="['tab', activeTab === 'love' ? 'tab-active' : '']" @click="switchTab('love')"><PhHeart :size="15" weight="bold" class="ico" aria-hidden="true" /> 恋爱专家</button>
+      <button :class="['tab', activeTab === 'manus' ? 'tab-active' : '']" @click="switchTab('manus')"><PhRobot :size="15" weight="bold" class="ico" aria-hidden="true" /> 恋爱全能帮</button>
     </div>
 
     <!-- ④ 情绪时间线（2026-09-08）：让用户看见自己在变好 -->
     <div v-if="sentiment.length > 1" class="sentiment-card letter-card">
       <div class="sentiment-head">
-        <span class="sentiment-title">🌱 你的情绪轨迹</span>
+        <span class="sentiment-title"><PhPlant :size="15" weight="bold" class="ico" aria-hidden="true" /> 你的情绪轨迹</span>
         <span class="sentiment-sub">按对话记录的情绪走向 · 仅供参考</span>
       </div>
       <svg class="sentiment-svg" :viewBox="'0 0 ' + sentimentWidth + ' 120'" preserveAspectRatio="none">
@@ -51,7 +51,7 @@
         <button class="btn-hand" @click="load">重试</button>
       </div>
       <div v-else-if="conversations.length === 0" class="empty-state">
-        <div class="empty-icon">📝</div>
+        <div class="empty-icon"><PhNotePencil :size="30" weight="bold" aria-hidden="true" /></div>
         <p>暂无 {{ activeTab === 'love' ? '恋爱专家' : '恋爱全能帮' }} 对话记录</p>
       </div>
 
@@ -67,7 +67,7 @@
             </div>
           </div>
           <div class="conv-actions">
-            <button class="action-btn del-btn" title="删除" @click.stop="confirmDelete(conv)">🗑️</button>
+            <button class="action-btn del-btn" title="删除" @click.stop="confirmDelete(conv)"><PhTrash :size="15" weight="bold" class="ico" aria-hidden="true" /></button>
           </div>
         </div>
       </div>
@@ -90,6 +90,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { PhArrowLeft, PhHeart, PhNotePencil, PhPlant, PhRobot, PhTrash } from '@phosphor-icons/vue'
 import { listConversations, clearConversation, sentimentTimeline } from '../api/index.js'
 
 const router = useRouter()
@@ -194,7 +195,7 @@ const sentimentTrend = computed(() => {
   if (n < 2) return ''
   const first = sentiment.value[0].score
   const last = sentiment.value[n - 1].score
-  if (last > first) return '和最开始比，最近的你在往上走 🌱'
+  if (last > first) return '和最开始比，最近的你在往上走'
   if (last < first) return '最近有点沉——没关系，写封信说说'
   return '情绪还算平稳——有想说的随时写下来'
 })
@@ -227,17 +228,19 @@ onMounted(load)
   border: none;
   cursor: pointer;
   padding: 6px 10px;
-  border-radius: 50%;
+  border-radius: var(--r-seal);
 }
 .back-btn:hover { background: var(--paper-deep); transform: translateX(-2px); }
 .page-title { font-size: 21px; letter-spacing: 0.12em; flex: 1; }
 .count-badge {
   font-family: var(--font-hand);
   font-size: 12px;
-  color: var(--wine-deep);
-  background: var(--wine-soft);
-  border: 1px dashed var(--wine);
-  border-radius: 12px;
+  /* --accent-wash 是**深**酒红(0.33)，配 --accent-deep(0.46) 文字实测对比度 1.65（看不见）；
+     深底上必须用 --accent-glow(0.66) —— 与 Sandbox 的 .sb-mem-type 一致 */
+  color: var(--chip-fg);
+  background: var(--chip-bg);
+  border: 1px dashed var(--accent);
+  border-radius: var(--r-card);
   padding: 3px 10px;
   transform: rotate(-2deg);
 }
@@ -255,17 +258,17 @@ onMounted(load)
   background: transparent;
   border: 1.4px solid var(--ink-line);
   border-bottom: none;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--r-card) var(--r-card) 0 0;
   padding: 8px 18px;
   cursor: pointer;
   transition: all 0.18s;
   transform: translateY(1px);
 }
-.tab:hover { color: var(--wine-deep); }
+.tab:hover { color: var(--accent-deep); }
 .tab-active {
   background: var(--paper-card);
-  border-color: var(--wine);
-  color: var(--wine-deep);
+  border-color: var(--accent);
+  color: var(--accent-deep);
   font-weight: 700;
   transform: translateY(0);
 }
@@ -276,7 +279,7 @@ onMounted(load)
 .load-error { color: oklch(78% 0.12 27); }
 .load-error .btn-hand { margin-top: 12px; }
 .del-error {
-  margin: 0 0 12px; padding: 8px 12px; border-radius: 8px;
+  margin: 0 0 12px; padding: 8px 12px; border-radius: var(--r-ctl);
   background: oklch(32% 0.06 27); color: oklch(82% 0.1 27);
   border: 1px solid oklch(46% 0.08 27); font-size: 13px;
 }
@@ -288,8 +291,8 @@ onMounted(load)
   gap: 14px;
   background: var(--paper-card);
   border: 1px solid var(--ink-line);
-  border-left: 3px solid var(--wine);
-  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-ctl);
   padding: 15px 18px;
   cursor: pointer;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s, border-color 0.2s;
@@ -297,7 +300,7 @@ onMounted(load)
 }
 .conv-card:hover {
   transform: translateX(3px);
-  border-color: var(--wine);
+  border-color: var(--accent);
   box-shadow: 0 10px 22px -14px oklch(40% 0.1 25 / 0.4);
 }
 .conv-title { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 5px; }
@@ -310,7 +313,7 @@ onMounted(load)
   font-size: 16px;
   cursor: pointer;
   padding: 6px;
-  border-radius: 50%;
+  border-radius: var(--r-seal);
   opacity: 0.55;
   transition: opacity 0.15s, transform 0.15s;
 }
@@ -329,7 +332,7 @@ onMounted(load)
 .modal {
   background: var(--paper-card);
   border: 1px solid var(--ink-line);
-  border-radius: 8px;
+  border-radius: var(--r-ctl);
   padding: 26px 30px;
   width: min(340px, 90%);
   animation: letter-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -341,7 +344,7 @@ onMounted(load)
   font-family: var(--font-hand);
   font-size: 14px;
   letter-spacing: 0.1em;
-  border-radius: 14px 10px 13px 9px;
+  border-radius: var(--r-paper);
   padding: 8px 18px;
   cursor: pointer;
   border: 1.4px solid var(--ink-line);
@@ -349,13 +352,13 @@ onMounted(load)
   color: var(--ink);
   transition: transform 0.15s, border-color 0.15s;
 }
-.confirm-btn:hover { transform: translateY(-1px); border-color: var(--wine); color: var(--wine-deep); }
-.confirm-btn.danger { background: var(--wine); border-color: var(--wine); color: oklch(98% 0.012 78); }
-.confirm-btn.danger:hover { background: var(--wine-deep); }
+.confirm-btn:hover { transform: translateY(-1px); border-color: var(--accent); color: var(--accent-deep); }
+.confirm-btn.danger { background: var(--accent); border-color: var(--accent); color: oklch(98% 0.012 78); }
+.confirm-btn.danger:hover { background: var(--accent-deep); }
 .cancel-btn:hover { transform: translateY(-1px); }
 
 /* ---- 情绪时间线（2026-09-08 产品闭环 ④） ---- */
-.sentiment-card { margin: 12px 0 4px; padding: 12px 16px; border-left: 3px solid var(--wine); }
+.sentiment-card { margin: 12px 0 4px; padding: 12px 16px; border-left: 3px solid var(--accent); }
 .sentiment-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
 .sentiment-title { font-family: var(--font-hand); font-size: 14px; color: var(--ink); }
 .sentiment-sub { font-size: 11.5px; color: var(--ink-faint); }

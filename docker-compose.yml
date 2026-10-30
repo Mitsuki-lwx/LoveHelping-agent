@@ -69,6 +69,10 @@ services:
     restart: unless-stopped
     environment:
       TZ: Asia/Shanghai
+      # MCP 的联网搜索工具（不填则该工具不可用，不阻断启动）
+      SEARCH_API_KEY: ${SEARCH_API_KEY:-}
+      # MCP 的图片搜索工具（Pexels；同上）
+      PEXELS_API_KEY: ${PEXELS_API_KEY:-}
     expose:
       - "8125"
 
@@ -99,15 +103,28 @@ services:
       REDIS_HOST: redis
       # 工具面
       MCP_SERVER_URL: http://mcp-server:8125/mcp
-      # LLM（主=BigModel 兼容，yml 默认 glm-4-flash；embedding/备=dashscope）
+      # ---- LLM 主链（ADR-58：供应商在 app.llm.providers 声明；主链 = DeepSeek 官方 deepseek-flash）----
+      # ⛔ 2026-10-13 修正：原默认 glm-4-flash + bigmodel 端点（ADR-51 已实测 400）会让生产直接跑挂；
+      #    dashscope 自 2026-09-16 起 TLS 中断已停用（ADR-51），不再强制要求它的 key。
       OPENAI_API_KEY: ${OPENAI_API_KEY:?请在 .env 设置 OPENAI_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL:-glm-4-flash}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请在 .env 设置 DASHSCOPE_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-deepseek-flash}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.deepseek.com}
+      # ---- embedding + 远端 rerank（ADR-45/41：硅基流动；⛔ 缺了 RAG 检索全废）----
+      SF_API_KEY: ${SF_API_KEY:?请在 .env 设置 SF_API_KEY（embedding/rerank）}
+      # ---- 邮件（ADR-84：prod 未配置 SMTP 会**拒绝启动**，故必须传）----
+      MAIL_HOST: ${MAIL_HOST:?请在 .env 设置 MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:?请在 .env 设置 MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?请在 .env 设置 MAIL_PASSWORD（SMTP 授权码，不是登录密码）}
+      MAIL_FROM: ${MAIL_FROM:?请在 .env 设置 MAIL_FROM}
       # 安全
       JWT_SECRET: ${JWT_SECRET:?请在 .env 设置 JWT_SECRET（≥32 字符随机串）}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?请在 .env 设置 ADMIN_API_KEY（管理端点 X-Admin-Key）}
-      # 可选覆盖
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}
+      # ---- 可选（不填则对应能力关闭/降级，不阻断启动）----
+      SEARCH_API_KEY: ${SEARCH_API_KEY:-}          # MCP 联网搜索工具
+      CLINE_API_KEY: ${CLINE_API_KEY:-}            # 第二 provider（ADR-58，需同时在 providers 里启用）
+      JEV_API_KEY: ${JEV_API_KEY:-}                # 窄结构化判定（ADR-36/38，默认关）
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}    # 仅回滚用（ADR-51 已停用）
     ports:
       - "${APP_PORT:-8088}:8088"
 

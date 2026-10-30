@@ -129,7 +129,8 @@ public class SandboxController {
     // ==================== 沙盘对话 ====================
 
     @GetMapping(value = "/chat", produces = "text/event-stream;charset=UTF-8")
-    public Flux<String> chat(@RequestParam Long sandboxId, @RequestParam String message) {
+    public Flux<String> chat(@RequestParam Long sandboxId, @RequestParam String message,
+                             @RequestParam(required = false) String mediaIds) {
         String userId = TenantContext.getUserId();
         if (userId == null) throw new BizException(401, "未登录");
 
@@ -139,9 +140,11 @@ public class SandboxController {
         if (gv.level() >= 3) {
             log.warn("Sandbox guardrail L3 blocked ({}): {}", gv.ruleId(),
                     message.length() > 30 ? message.substring(0, 30) : message);
+            // ⛔ 文案走 CrisisResources（唯一事实源）：此前这里内联了一份**只有一条热线**的副本，
+            //    与主链路的四条副本互相漂移（ADR-89）。
             String fallback = "self_harm".equals(gv.ruleId())
-                    ? "我注意到你现在的状态可能非常难受。如果你正在经历难以承受的时刻，请一定联系专业援助：全国心理援助热线 400-161-9995。你不需要独自面对。"
-                    : "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
+                    ? cn.lwx.lwxaiagent.harness.governance.CrisisResources.referralText()
+                    : cn.lwx.lwxaiagent.harness.governance.CrisisResources.BLOCK_TEXT;
             throw new BizException(4001, fallback);
         }
 
@@ -150,8 +153,21 @@ public class SandboxController {
         sandboxService.touchSession(sandboxId);
 
         // Shared subscription admission, total timeout, cancellation and trace propagation.
-        return chatEntry.sandbox(message, sandboxId, userId)
+        // mediaIds 为逗号分隔（与主链 Love_app/chat/sse 同格式、同解析语义）。
+        return chatEntry.sandbox(message, sandboxId, userId, parseMediaIds(mediaIds))
                 .onErrorResume(e -> Flux.just(e instanceof BizException b ? b.getMessage() : "沙盘对话出错，请稍后再试"));
+    }
+
+    /** 解析 mediaIds 字符串为 Long 列表（逗号分隔，空白过滤）——语义与主链 AiController.parseMediaIds 一致。 */
+    private List<Long> parseMediaIds(String mediaIds) {
+        if (mediaIds == null || mediaIds.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(mediaIds.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(Long::parseLong)
+                .toList();
     }
 
     // ==================== 记忆注入（CAP-8,10,11）====================

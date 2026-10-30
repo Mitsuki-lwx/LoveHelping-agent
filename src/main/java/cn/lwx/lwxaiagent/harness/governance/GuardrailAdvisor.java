@@ -37,17 +37,7 @@ import reactor.core.publisher.Flux;
 public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
 
     /** 心理援助转介文案（07 §5：检测到自伤信号的动作是转介，不是治疗） */
-    private static final String REFERRAL_TEXT = """
-            我注意到你现在的状态可能非常难受。我想先让你知道：你的感受是真实的，也值得被认真对待。
-            如果你正在经历难以承受的时刻，请一定联系专业援助——你不需要独自面对：
-            全国心理援助热线：400-161-9995
-            北京心理危机研究与干预中心：010-82951332
-            我在你身边，但专业帮助能给你更稳妥的支持。要不要先深呼吸几次，我们再慢慢聊？
-            """;
-
     /** 通用 L3 阻断文案 */
-    private static final String BLOCK_TEXT = "这个话题涉及的内容我不能帮你处理。如果你愿意，我们可以聊聊关系中的沟通、情绪与相处之道。";
-
     private final OutputGuardrail outputGuardrail;
     private final GuardrailRuleService ruleService;
     private final GuardrailEventRecorder recorder;
@@ -79,7 +69,7 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked ({}): {}", verdict.ruleId(), truncate(userText));
             recorder.record(userText, verdict.level(), verdict.ruleId(), "BLOCKED");
-            String fallback = "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT;
+            String fallback = "self_harm".equals(verdict.ruleId()) ? CrisisResources.referralText() : CrisisResources.BLOCK_TEXT;
             return fallbackResponse(fallback);
         }
         if (verdict.level() > 0) {
@@ -97,7 +87,7 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
             //    而"用户提到自伤、回复缺危机资源"恰恰最该给出**援助热线**，
             //    {@code CRISIS_FALLBACK} 就是为此存在的。改用本层自己的 fallback。
             String text = outputCheck.fallback() != null && !outputCheck.fallback().isBlank()
-                    ? outputCheck.fallback() : BLOCK_TEXT;
+                    ? outputCheck.fallback() : CrisisResources.BLOCK_TEXT;
             return fallbackResponse(text);
         }
 
@@ -120,7 +110,7 @@ public class GuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         if (verdict.level() >= 3) {
             log.warn("Guardrail L3 blocked (stream) ({}): {}", verdict.ruleId(), truncate(userText));
             recorder.record(userText, verdict.level(), verdict.ruleId(), "BLOCKED");
-            String fallback = "self_harm".equals(verdict.ruleId()) ? REFERRAL_TEXT : BLOCK_TEXT;
+            String fallback = "self_harm".equals(verdict.ruleId()) ? CrisisResources.referralText() : CrisisResources.BLOCK_TEXT;
             return Flux.just(fallbackResponse(fallback));
         }
         if (verdict.level() > 0) {

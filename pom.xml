@@ -393,6 +393,29 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- JavaMail（V33 邮箱绑定/找回密码）：SMTP 发信能力。
+             ⛔ 这里**不写 spring-boot-starter-mail**，而是显式声明它等价的两个部分：
+                · spring-context-support → JavaMailSenderImpl / SimpleMailMessage（版本由 Boot BOM 管）
+                · org.eclipse.angus:jakarta.mail → Jakarta Mail 2.x 全量（API + Angus SMTP 实现）
+             原因（2026-10-07 实测，非推测）：
+                · 本机全局 settings.xml 把 central 镜像到 **http** 阿里云，Maven 3.9 的
+                  maven-default-http-blocker 直接拦死 → 不在本地仓库的坐标**无法下载**；
+                · 本地仓库（D:\apache-maven-3.9.11\repo）里 spring-boot-starter-mail 只有 3.5.6，
+                  **3.4.4 只有 .lastUpdated 失败标记**，写它会让整个构建（含 mvn test）失败。
+             这两个坐标都在本地仓库中，功能与 starter 等价：我们自建 JavaMailSenderImpl，
+             不使用 spring.mail.* 自动配置（未设 spring.mail.host 时不会产生第二个 JavaMailSender bean）。
+             ⚠️ 待镜像修好（改 https）后可换回 spring-boot-starter-mail（去掉版本，由 BOM 管理）。
+             ⛔ 只提供**能力**，凭据一律走 app.mail.*（${ENV:} 占位，见 MailProperties），禁止落盘。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context-support</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>jakarta.mail</artifactId>
+            <version>2.0.4</version>
+        </dependency>
+
     </dependencies>
 
     <!-- ======================== 构建配置 ======================== -->

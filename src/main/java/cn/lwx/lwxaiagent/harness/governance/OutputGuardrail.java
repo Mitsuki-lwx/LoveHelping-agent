@@ -110,24 +110,22 @@ public class OutputGuardrail {
      * <p>文本包含：</p>
      * <ul>
      *   <li>情感支持和安抚语句</li>
-     *   <li><b>24 小时心理援助热线：</b>400-161-9995</li>
-     *   <li><b>北京心理危机研究与干预中心：</b>010-82951332</li>
+     *   <li>24 小时心理援助热线 + 北京心理危机研究与干预中心（<b>号码不在此处硬编码</b>，
+     *       统一来自 {@link CrisisResources}）</li>
      *   <li>寻求专业心理咨询师帮助的建议</li>
      * </ul>
      *
-     * <p><strong>热线号码说明：</strong></p>
-     * <ul>
-     *   <li>400-161-9995 —— 全国 24 小时心理援助热线（中国）</li>
-     *   <li>010-82951332 —— 北京心理危机研究与干预中心</li>
-     * </ul>
-     * <p>这些号码应在定期审查中确认仍然有效。如号码变更，需及时更新。</p>
+     * <p><strong>热线号码说明：</strong>号码的唯一事实源是 {@link CrisisResources}
+     * （由 {@code app.crisis.hotlines} 覆盖）。⛔ <b>不要在本文件里再写一遍号码</b> ——
+     * 曾经有 6 份副本，其中两份只有一条热线，且互相漂移。</p>
      */
-    private static final String CRISIS_FALLBACK = """
-            如果你正在经历痛苦，请记住你不是一个人。
-            🆘 24小时心理援助热线：400-161-9995
-            🆘 北京心理危机研究与干预中心：010-82951332
-            请寻求专业心理咨询师的帮助，他们能提供更系统的支持。
-            """;
+    private static String crisisFallback() {
+        return """
+                如果你正在经历痛苦，请记住你不是一个人。
+                🆘 """ + CrisisResources.hotlines() + """
+                请寻求专业心理咨询师的帮助，他们能提供更系统的支持。
+                """;
+    }
 
     /**
      * <h3>执行输出安全检查</h3>
@@ -181,7 +179,7 @@ public class OutputGuardrail {
 
         if (aiMissingCrisisResponse) {
             log.warn("Output guardrail: user mentioned self-harm but AI missed crisis response");
-            return GuardrailResult.block("missing_crisis_response", CRISIS_FALLBACK);
+            return GuardrailResult.block("missing_crisis_response", crisisFallback());
         }
 
         // 第二层（有害建议）已搬进规则表，见类字段处的说明与 `guardrail_rule`(V30)。

@@ -2,6 +2,13 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+import { applyTheme, getTheme } from './utils/theme.js'
+
+/**
+ * ⛔ 启动即应用主题，**必须在 mount 之前**：晚一帧会先闪一下默认主题（FOUC）。
+ * 主题只是 `<html data-theme>`，颜色全在 style.css 里 —— 这里不持有任何颜色。
+ */
+applyTheme(getTheme())
 
 const app = createApp(App)
 

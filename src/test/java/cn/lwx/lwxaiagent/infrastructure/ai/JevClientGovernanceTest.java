@@ -33,7 +33,10 @@ class JevClientGovernanceTest {
         p.setEnabled(true);
         p.setApiKey("apikey_test_only");
         p.setBaseUrl(baseUrl);
-        p.setTimeoutMs(400);
+        // ⛔ 400ms 对"冷启动 + 本机 HttpServer"太紧：实测首请求有时还没被服务端接受就超时，
+        //    导致"前两次都应真的发过请求"偶发失败（expected 2 but was 1）。
+        //    本类测的是**熔断语义**，不是超时阈值 ⇒ 放宽到 2000ms，失败仍会发生（500），断言不受影响。
+        p.setTimeoutMs(2000);
         return p;
     }
 
