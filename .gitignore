@@ -105,4 +105,7 @@ target_lockbak*/
 
 # Python bytecode
 __pycache__/
+
+# 根目录运行日志（java -jar 重定向产物）
+/*.log
 *.pyc
