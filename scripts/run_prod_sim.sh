@@ -1,5 +1,5 @@
 #!/bin/bash
-# 生产模拟（docs/phase7-prod-sim）—— 按轮次跑，每轮：起应用(prod profile) → 压测 → 收数 → 停应用
+# 生产模拟（openspec/changes/archive/phase7-prod-sim）—— 按轮次跑，每轮：起应用(prod profile) → 压测 → 收数 → 停应用
 #
 # 用法： JEV_KEY=apikey_xxx bash scripts/run_prod_sim.sh <round>
 #   round = off      | 真实 Jev，护栏关（基线）

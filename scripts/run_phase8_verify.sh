@@ -5,7 +5,7 @@
 #       Qwen/Qwen3-Embedding-0.6B（scripts/reembed_knowledge_base.py）。
 #
 # 全程用**运行态环境变量**打开远端通道，不改 application.yml 的默认值——
-# 默认值等本脚本的结论出来再定（见 docs/phase8-embedding-rerank-migration）。
+# 默认值等本脚本的结论出来再定（见 openspec/changes/archive/phase8-embedding-rerank-migration）。
 #
 # 用法：SF_API_KEY=xxx bash scripts/run_phase8_verify.sh
 set -u

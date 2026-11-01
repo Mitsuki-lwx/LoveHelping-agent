@@ -17,7 +17,7 @@
 | 位置 | 内容 | 状态 |
 | --- | --- | --- |
 | `docs/00`–`11` | OpenSpec 之前的需求/架构/契约/测试记录 | 冻结 |
-| `docs/phase*`（45 个） | 历史变更的 spec/tasks/checklist | 冻结（迁入 `openspec/changes/archive/`，见 change `migrate-docs-to-specs`） |
+| `openspec/changes/archive/` | 45 个历史变更（原 `docs/phase*`，正文原样迁入） | 只读追溯，不再改动 |
 | `docs/03-技术决策记录.md` | ADR-1…93 | 冻结：**不再新增 ADR**；新决策进 `design.md` |
 | `archive/` | 更早的历史资料 | 不参考 |
 

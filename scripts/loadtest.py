@@ -22,7 +22,7 @@
   --timeout 120        单请求超时秒数
 
 输出：每档 成功 / 过载拒(4003) / 限流拒(429) / 错误、延迟中位数与 P95、墙钟、拒绝率。
-      验收口径见 docs/phase6-concurrency/spec.md §4。
+      验收口径见 openspec/changes/archive/phase6-concurrency/proposal.md §4。
 """
 import argparse
 import json
@@ -160,7 +160,7 @@ def main():
         run_level(args.base, tokens, lvl, args.endpoint, args.prompt, args.timeout)
 
     print("-" * 118)
-    print("验收口径（docs/phase6-concurrency/spec.md §4）：闸门满时按有界排队（最多等 app.online.wait-ms），")
+    print("验收口径（openspec/changes/archive/phase6-concurrency/proposal.md §4）：闸门满时按有界排队（最多等 app.online.wait-ms），")
     print("  到点仍无额度才拒绝，且拒绝必须带可读说明与 retryAfterSec；任何情况下不得出现 5xx。")
 
 

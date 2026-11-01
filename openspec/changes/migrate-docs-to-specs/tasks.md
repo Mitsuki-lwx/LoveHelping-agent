@@ -8,13 +8,13 @@
 
 ## 2. 历史归位
 
-- [ ] 2.1 写一次性脚本 `scripts/migrate_phase_docs.py`：把 `docs/phase*/` 复制为
+- [x] 2.1 写一次性脚本 `scripts/migrate_phase_docs.py`：把 `docs/phase*/` 复制为
       `openspec/changes/archive/<phase>/`（`spec.md→proposal.md`、`checklist.md→verification.md`，
       `tasks.md` 原名），头部补一行"迁移自 docs/…，原文未改"
-- [ ] 2.2 试跑 1 个 phase（`phase4-advice`），人工核对产物
-- [ ] 2.3 全量执行 45 个 phase，确认 `openspec list --specs` 与归档目录数量一致
-- [ ] 2.4 修 `docs/03` 中指向 `docs/phase*/` 的相对链接（断链改指新路径）
-- [ ] 2.5 删除 `docs/phase*/`（与 2.3 同一 PR，遵循"新旧并存不超过一个 Phase"）
+- [x] 2.2 试跑 1 个 phase（`phase4-advice`），人工核对产物
+- [x] 2.3 全量执行 45 个 phase：130 个文件入库（127 新写 + 3 已存在跳过）
+- [x] 2.4 修 `docs/03`/`docs/09`/`knowledge-base-sources.md`/14 个脚本里指向 `docs/phase*/` 的引用（共 74 处）
+- [x] 2.5 删除 `docs/phase*/`（与 2.3 同一提交，遵循"新旧并存不超过一个 Phase"）
 
 ## 3. API 契约抽取（CI 依赖，优先）
 

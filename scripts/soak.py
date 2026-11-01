@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""30 分钟混合负载长稳压测（Phase 6 收尾，docs/phase6-soak）。
+"""30 分钟混合负载长稳压测（Phase 6 收尾，openspec/changes/archive/phase6-soak）。
 
-设计（见 docs/phase6-soak/spec.md §3）：
+设计（见 openspec/changes/archive/phase6-soak/proposal.md §3）：
   连续 worker 持续发起**混合**请求，不做批次同步——批次同步会让并发永远等于 worker 数，
   有界队列根本用不上。这里默认 --workers 32（= 闸门 24 + 队列 8），使在途稳定贴住闸门、
   队列长期非零，这样"队列深度是否随时间漂移"才是一个可观测的量。
@@ -62,7 +62,7 @@ SCENARIOS = [
 GAUGE_KEYS = [
     ("inflight", "online_inflight_current"),
     # 准入天花板（动态）：ADR-32 后它跟随网关自适应上限。S10a 修订判据要用它做
-    # 「两层闸门是否对齐」的比对（见 docs/phase6-soak/spec.md §5.4）。
+    # 「两层闸门是否对齐」的比对（见 openspec/changes/archive/phase6-soak/proposal.md §5.4）。
     ("inflight_ceiling", "online_inflight_ceiling"),
     ("queue_depth", "online_queue_depth"),
     ("hikari_active", "hikaricp_connections_active"),
@@ -294,7 +294,7 @@ def summarize(samples, requests, args, started_at, load_ended_at):
     err = kinds.get("err", 0)
     upstream = kinds.get("upstream", 0)
 
-    # S9 口径修订（2026-09-19，见 docs/phase6-soak/spec.md §5.2）：
+    # S9 口径修订（2026-09-19，见 openspec/changes/archive/phase6-soak/proposal.md §5.2）：
     # ADR-32 之后闸门是 AIMD 自适应，"在途 = 24"不再是**可持续**工作点
     # （24 并发本身就会触发厂商 429 → 乘性收缩 → 有效天花板降到 12 上下）。
     # 因此判据必须按「过订阅倍数 = offered 并发 / 稳态收敛天花板」分档，

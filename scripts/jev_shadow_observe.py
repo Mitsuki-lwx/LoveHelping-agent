@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""影子观测报告（docs/phase7-jev-shadow）。
+"""影子观测报告（openspec/changes/archive/phase7-jev-shadow）。
 
 探针在 `logs/JevShadowCorpus.java`：它 **复用产线类**（真实 EncryptionService 解密、
 真实 GuardrailRuleService 判词典、真实 JevSelfHarmSignal.judge 调第二信号），

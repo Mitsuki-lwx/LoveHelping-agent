@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""影子模式的端到端验证（docs/phase7-jev-shadow）。
+"""影子模式的端到端验证（openspec/changes/archive/phase7-jev-shadow）。
 
 只负责 HTTP 侧；DB 断言由调用方（logs/run_shadow_e2e.sh）用 mysql 查——
 两侧都是真实链路，不用 mock 顶上。

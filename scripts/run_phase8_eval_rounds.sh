@@ -1,7 +1,7 @@
 #!/bin/bash
 # Phase 8 检索质量多轮对照：把"单轮噪声"这件事处理掉。
 #
-# 为什么必须多轮（docs/phase9-query-rewrite-prompt §S5 实测）：
+# 为什么必须多轮（openspec/changes/archive/phase9-query-rewrite-prompt §S5 实测）：
 # 同一配置两轮 MRR 就差 0.012，而 45 例上 0.012 的总位移不到"一个用例挪一个名次"
 # → 单轮对照判不出小效应，只有 ~10% 量级的大效应才看得见。
 # 排查/决策（要不要开重排、用哪个 embedding）必须多轮取中位。

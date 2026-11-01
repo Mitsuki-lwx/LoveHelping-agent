@@ -1,5 +1,5 @@
 #!/bin/bash
-# 影子模式真实 E2E（docs/phase7-jev-shadow）：
+# 影子模式真实 E2E（openspec/changes/archive/phase7-jev-shadow）：
 #   启动应用（JEV_GUARDRAIL_MODE=shadow）→ 走真实 SSE 聊天 → 断言
 #   ① 越阈消息**不改变响应**（用户拿到正常回复，不是转介文案）
 #   ② DB 里出现 action=SHADOW 且 signal_score 非空的事件

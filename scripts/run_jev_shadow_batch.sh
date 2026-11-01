@@ -1,5 +1,5 @@
 #!/bin/bash
-# 影子观测语料跑批 —— 一键复现（docs/phase7-jev-shadow §S5）
+# 影子观测语料跑批 —— 一键复现（openspec/changes/archive/phase7-jev-shadow §S5）
 #
 #   1) 从 agentdb 导出 USER 消息（密文，TSV）
 #   2) 编译并运行 scripts/JevShadowCorpus.java

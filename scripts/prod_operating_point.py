@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""阈值运营点：召回用 hold-out 实测，误报当**自由参数**做敏感性表（docs/phase7-prod-sim §S4）。
+"""阈值运营点：召回用 hold-out 实测，误报当**自由参数**做敏感性表（openspec/changes/archive/phase7-prod-sim §S4）。
 
 为什么误报不能只给一个数：真实语料**给不出可信的误报率**——
 53,028 条去重后只有约 20~55 条不同文本（483/800 条随机样本是"你好"），

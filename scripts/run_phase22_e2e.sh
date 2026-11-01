@@ -9,7 +9,7 @@
 #   2. ⭐ 新增断言 A5：**输入侧未被放松** —— 用户输入含自伤词仍必须被拦（4001）。
 #      这是本轮"放宽输出侧"的回归底线：**门不能一起开**。
 #   3. ⭐ 新增断言 A6：**输出侧不再误伤** —— 正常求助不被替换成转介文案。
-#      （装置：scripts/probe_l3_stream.py，判据 J1/J3 见 docs/phase22-l3-stream-guardrail）
+#      （装置：scripts/probe_l3_stream.py，判据 J1/J3 见 openspec/changes/archive/phase22-l3-stream-guardrail）
 #   4. 沿用 phase21 的 A3（scope 措辞自报）与 A4（JEV shadow）。
 #
 # 与 run_phase20_e2e.sh 的差别（**这几点就是要验的东西**）：
