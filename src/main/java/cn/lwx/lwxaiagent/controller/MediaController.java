@@ -122,7 +122,7 @@ public class MediaController {
         if (media == null) {
             throw new BizException(404, "图片不存在");
         }
-        if (!userId.equals(media.getUserId())) {
+        if (cn.lwx.lwxaiagent.tenant.Ownership.requireOrNull(userId, media, m -> m.getUserId()) == null) {
             log.warn("Media read denied: id={} owner={} requester={}", id, media.getUserId(), userId);
             throw new BizException(403, "无权访问这张图片");
         }

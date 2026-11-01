@@ -50,7 +50,7 @@ public class GraphVisionNode {
         String mime = "image/jpeg";
         for (Long id : mediaIds) {
             MessageMedia media = mediaMapper.selectById(id);
-            if (media == null || !userId.equals(media.getUserId())) {
+            if (cn.lwx.lwxaiagent.tenant.Ownership.requireOrNull(userId, media, m -> m.getUserId()) == null) {
                 out.put(GraphStateKeys.OUTPUT, "无权访问这张图片，请联系对方在原会话中查看。");
                 return out;
             }

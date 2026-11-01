@@ -305,7 +305,7 @@ public class MemoryStore {
 
     public boolean updateFact(String userId, Long id, String content) {
         UserMemory m = memoryMapper.selectById(id);
-        if (m == null || !userId.equals(m.getUserId())) {
+        if (cn.lwx.lwxaiagent.tenant.Ownership.requireOrNull(userId, m, x -> x.getUserId()) == null) {
             return false;
         }
         m.setContent(Desensitizer.mask(content));
@@ -319,7 +319,7 @@ public class MemoryStore {
 
     public boolean deleteFact(String userId, Long id) {
         UserMemory m = memoryMapper.selectById(id);
-        if (m == null || !userId.equals(m.getUserId())) {
+        if (cn.lwx.lwxaiagent.tenant.Ownership.requireOrNull(userId, m, x -> x.getUserId()) == null) {
             return false;
         }
         memoryMapper.deleteById(id);

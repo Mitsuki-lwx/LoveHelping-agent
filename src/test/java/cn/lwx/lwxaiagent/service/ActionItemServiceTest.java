@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 class ActionItemServiceTest {
 
     private final ActionItemMapper mapper = mock(ActionItemMapper.class);
-    private final ActionItemService service = new ActionItemService(mapper, new cn.lwx.lwxaiagent.tenant.Ownership());
+    private final ActionItemService service = new ActionItemService(mapper);
 
     private static final String REPLY = """
             先抱抱你。

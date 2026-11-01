@@ -123,7 +123,7 @@ public class InsightService {
 
         // 加载图片，校验归属
         MessageMedia media = mediaMapper.selectById(mediaId);
-        if (media == null || !userId.equals(media.getUserId())) {
+        if (cn.lwx.lwxaiagent.tenant.Ownership.requireOrNull(userId, media, m -> m.getUserId()) == null) {
             throw new BizException(403, "无权访问该图片");
         }
 
@@ -183,7 +183,7 @@ public class InsightService {
     public InsightRecord getRecord(Long id, String userId) {
         InsightRecord record = recordMapper.selectById(id);
         if (record == null) throw new BizException(404, "记录不存在");
-        if (!record.getUserId().equals(userId)) throw new BizException(403, "无权访问");
+        cn.lwx.lwxaiagent.tenant.Ownership.require(userId, record, r -> r.getUserId(), "无权访问");
         return record;
     }
 

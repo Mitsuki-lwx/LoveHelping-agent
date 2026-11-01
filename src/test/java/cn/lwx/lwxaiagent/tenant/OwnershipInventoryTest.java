@@ -33,7 +33,7 @@ class OwnershipInventoryTest {
     /** 归属校验的可接受信号（任一出现即视为该端点"有防线"）。 */
     private static final List<String> SIGNALS = List.of(
             "checkOwnership(",   // MemoryController 的显式 helper
-            "ownership.require", // 统一收口（Ownership 组件）
+            "Ownership.",        // 统一收口（静态工具；ownership-rollout 后的主信号）
             "owned(",            // 既有 service 内的 owned(...) 语义
             "getUserId()",       // 控制器内显式比对当前用户
             "requireUserId()",   // 控制器 helper：把当前用户 id 传进按 user 过滤的查询

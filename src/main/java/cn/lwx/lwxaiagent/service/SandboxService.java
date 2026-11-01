@@ -85,7 +85,7 @@ public class SandboxService {
         if (session == null) {
             throw new BizException(404, "沙盘会话不存在");
         }
-        if (!session.getUserId().equals(userId)) {
+        if (cn.lwx.lwxaiagent.tenant.Ownership.requireOrNull(userId, session, s -> s.getUserId()) == null) {
             throw new BizException(403, "无权访问此沙盘会话");
         }
         return session;
@@ -235,7 +235,7 @@ public class SandboxService {
     public void updateMemory(Long memoryId, String userId, String factText) {
         SandboxMemory mem = memoryMapper.selectById(memoryId);
         if (mem == null) throw new BizException(404, "记忆不存在");
-        if (!mem.getUserId().equals(userId)) throw new BizException(403, "无权修改");
+        cn.lwx.lwxaiagent.tenant.Ownership.require(userId, mem, m -> m.getUserId(), "无权修改");
         mem.setFactText(factText);
         memoryMapper.updateById(mem);
     }
@@ -246,7 +246,7 @@ public class SandboxService {
     public void deleteMemory(Long memoryId, String userId) {
         SandboxMemory mem = memoryMapper.selectById(memoryId);
         if (mem == null) throw new BizException(404, "记忆不存在");
-        if (!mem.getUserId().equals(userId)) throw new BizException(403, "无权删除");
+        cn.lwx.lwxaiagent.tenant.Ownership.require(userId, mem, m -> m.getUserId(), "无权删除");
         memoryMapper.deleteById(memoryId);
     }
 
