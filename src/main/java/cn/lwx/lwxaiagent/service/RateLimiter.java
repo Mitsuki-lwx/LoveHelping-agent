@@ -3,6 +3,8 @@ package cn.lwx.lwxaiagent.service;
 import cn.lwx.lwxaiagent.common.BizException;
 import cn.lwx.lwxaiagent.infrastructure.observability.AiTelemetry;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Atomic user rate admission. Redis failure is bounded local degradation, never unlimited fail-open. */
+@Slf4j
 @Service
 public class RateLimiter {
     @SuppressWarnings("rawtypes")
@@ -54,6 +57,22 @@ public class RateLimiter {
         this.redis = redis;
         this.props = props;
         this.meters = meters;
+    }
+
+    /**
+     * 启动时把**实际生效**的限流配置打进日志（change security-hardening / task 3.2）。
+     * 此前默认关且无任何输出，导致"以为开了"这种问题永远没有信号。
+     */
+    @PostConstruct
+    void logEffectiveConfig() {
+        if (props.isEnabled()) {
+            log.info("[rate-limit] 生效：daily-quota={}/天，burst={}（capacity={}, refill={}/s）",
+                    props.getDailyQuota(), props.isBurstEnabled(),
+                    props.getBurstCapacity(), props.getRefillPerSecond());
+        } else {
+            log.warn("[rate-limit] 每日配额已关闭（DAILY_QUOTA_ENABLED=false）—— burst={}。"
+                    + "关闭期间刷接口/撞库没有配额约束，仅在明确需要时这样做。", props.isBurstEnabled());
+        }
     }
 
     /** Checks AND consumes once, before execution. The old check/increment race no longer exists. */

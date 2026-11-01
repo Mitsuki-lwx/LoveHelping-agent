@@ -53,6 +53,9 @@ class AuthControllerTest {
     private DeleteService deleteService;
     @MockBean
     private AdminGuard adminGuard;
+    /** change security-hardening：登录失败节流 —— 漏了 @MockBean 会让整个 MVC 切片上下文起不来。 */
+    @MockBean
+    private cn.lwx.lwxaiagent.tenant.LoginThrottle loginThrottle;
     /** V37（ADR-92）：退订/签名校验依赖它 —— 漏了 @MockBean 会让整个 MVC 切片上下文起不来。 */
     @MockBean
     private cn.lwx.lwxaiagent.mail.ReengageService reengageService;

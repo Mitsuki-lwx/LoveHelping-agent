@@ -16,7 +16,7 @@ import static org.mockito.Mockito.*;
 
 class RateLimiterTest {
     @Test void disabledNeverTouchesRedis() {
-        var redis = mock(StringRedisTemplate.class); var p = new RateLimitProperties(); p.setBurstEnabled(false);
+        var redis = mock(StringRedisTemplate.class); var p = new RateLimitProperties(); p.setEnabled(false); p.setBurstEnabled(false);
         new RateLimiter(redis, p, new SimpleMeterRegistry()).acquire("user"); verifyNoInteractions(redis);
     }
     @Test void atomicScriptAllows() {
@@ -36,7 +36,7 @@ class RateLimiterTest {
     @Test void localFallbackIsBoundedAndCooldownAvoidsRedisStorm() throws Exception {
         var redis = mock(StringRedisTemplate.class);
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class))).thenThrow(new IllegalStateException("offline"));
-        var p = new RateLimitProperties(); p.setBurstCapacity(4); p.setRefillPerSecond(0.01);
+        var p = new RateLimitProperties(); p.setEnabled(false); p.setBurstCapacity(4); p.setRefillPerSecond(0.01);
         var limiter = new RateLimiter(redis, p, new SimpleMeterRegistry());
         limiter.acquire("same-user");
         AtomicInteger allowed = new AtomicInteger(1);
@@ -51,7 +51,7 @@ class RateLimiterTest {
     }
     @Test void localFallbackCannotEvictActiveUsersToResetQuota() {
         var redis = mock(StringRedisTemplate.class);
-        var p = new RateLimitProperties(); p.setMaxLocalBuckets(1); p.setBurstCapacity(1); p.setRefillPerSecond(0.01);
+        var p = new RateLimitProperties(); p.setEnabled(false); p.setMaxLocalBuckets(1); p.setBurstCapacity(1); p.setRefillPerSecond(0.01);
         var limiter = new RateLimiter(redis, p, new SimpleMeterRegistry());
         limiter.acquire("first");
         assertThrows(BizException.class, () -> limiter.acquire("second"));

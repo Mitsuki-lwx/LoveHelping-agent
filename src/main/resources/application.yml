@@ -561,8 +561,11 @@ app:
 
   # 速率限制配置（防止用户频繁调用 API）
   rate-limit:
-    enabled: ${DAILY_QUOTA_ENABLED:false} # Daily entitlement remains opt-in.
-    daily-quota: 5
+    # change security-hardening（2026-11-01）：默认开启。此前默认关 = 口令爆破/刷接口零成本。
+    # ⛔ 回滚：DAILY_QUOTA_ENABLED=false（重启即生效，不用发版）；启动日志会打印实际生效值。
+    # ⚠️ 开启后 Redis 不可用时配额路径**fail-closed**（503），这是刻意选择——宁可短暂拒绝，也不无限放行。
+    enabled: ${DAILY_QUOTA_ENABLED:true}
+    daily-quota: ${DAILY_QUOTA:100}   # 单用户每日对话次数（默认 100；旧值 5 是收费档假设，不适合当默认）
     burst-enabled: ${BURST_LIMIT_ENABLED:true}
     burst-capacity: 8
     refill-per-second: 1.0

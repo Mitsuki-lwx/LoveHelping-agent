@@ -83,6 +83,10 @@ public class AuthController {
     @Resource
     private cn.lwx.lwxaiagent.mail.ReengageService reengage;
 
+    /** 登录失败节流（change security-hardening / task 4）。 */
+    @Resource
+    private cn.lwx.lwxaiagent.tenant.LoginThrottle loginThrottle;
+
     /**
      * <h3>用户注册接口</h3>
      * <p>
@@ -210,7 +214,8 @@ public class AuthController {
      */
     @AuditLog("login")
     @PostMapping("/login")
-    public Map<String, Object> login(@RequestBody Map<String, String> body) {
+    public Map<String, Object> login(@RequestBody Map<String, String> body,
+                                     jakarta.servlet.http.HttpServletRequest request) {
         String username = body.get("username");
         String password = body.get("password");
 
@@ -219,9 +224,14 @@ public class AuthController {
             return Map.of("success", false, "message", "用户名和密码不能为空");
         }
 
+        // 登录失败节流（change security-hardening）：退避期内直接 429，不进入口令校验
+        String ip = clientIp(request);
+        loginThrottle.check(username, ip);
+
         try {
             // 调用用户服务进行登录验证，返回 JWT Token
             String token = userService.login(username, password);
+            loginThrottle.onSuccess(username);
             // 从 Token 中解析出用户角色信息，用于返回给客户端
             String role = "USER"; // 默认角色
             try {
@@ -232,9 +242,25 @@ public class AuthController {
             }
             return Map.of("success", true, "token", token, "username", username, "role", role);
         } catch (RuntimeException e) {
-            // 登录失败（如用户名不存在或密码错误），返回错误信息
+            // 计数（账号 + IP 两个维度），响应文案不区分"账号不存在/密码错误"
+            loginThrottle.onFailure(username, ip);
             return Map.of("success", false, "message", e.getMessage());
         }
+    }
+
+    /**
+     * 取客户端 IP：优先 X-Forwarded-For 的第一个（反代场景），否则 remoteAddr。
+     * 仅用于节流计数，不参与任何鉴权判断。
+     */
+    private static String clientIp(jakarta.servlet.http.HttpServletRequest request) {
+        if (request == null) {
+            return "unknown";
+        }
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
     }
 
     /**
