@@ -2,10 +2,26 @@
 
 任何 AI 助手（或人）在本仓库工作前必须先读本文件。
 
-## 1. 文档即事实源
+## 1. 唯一工作流：OpenSpec
 
-- 架构与需求以 `docs/` 为准（00 为导读），根目录其余历史文档在 `archive/`，**不要**参考。
-- 做出与技术决策冲突的实现前，先在 `docs/03-技术决策记录.md` 里补 ADR 或修改对应 ADR——不允许代码与文档静默偏离。
+需求、变更、规格**只走 OpenSpec**（`openspec/`，CLI ≥ 1.16）。
+
+- **新需求** → `openspec/changes/<change>/`：`proposal.md`（做什么/为什么）、`design.md`（怎么定与代价）、`tasks.md`（步骤）、`specs/` delta。技能：`openspec-propose`
+- **实施** → 按 `tasks.md` 逐项做。技能：`openspec-apply-change`
+- **完成** → `openspec archive`，delta 合入 `openspec/specs/<capability>/spec.md`
+- **系统「必须怎样」的唯一事实源 = `openspec/specs/`**。改代码前先确认有对应 change；没有就先 propose。
+- 跨变更的长期决策：写进对应 change 的 `design.md`；归档时把仍然生效的约束抽进 `specs/`。
+
+### 历史文档（只读，不再更新）
+
+| 位置 | 内容 | 状态 |
+| --- | --- | --- |
+| `docs/00`–`11` | OpenSpec 之前的需求/架构/契约/测试记录 | 冻结 |
+| `docs/phase*`（45 个） | 历史变更的 spec/tasks/checklist | 冻结（迁入 `openspec/changes/archive/`，见 change `migrate-docs-to-specs`） |
+| `docs/03-技术决策记录.md` | ADR-1…93 | 冻结：**不再新增 ADR**；新决策进 `design.md` |
+| `archive/` | 更早的历史资料 | 不参考 |
+
+例外（机器依赖，迁移完成前保持可读）：`scripts/check_api_contract.py` 仍读 `docs/05-API契约设计.md`；迁移后改指 `openspec/specs/api-contract/spec.md`。
 
 ## 2. 每次修改必须端到端验证（硬性纪律）
 
