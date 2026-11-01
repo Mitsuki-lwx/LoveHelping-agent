@@ -33,7 +33,7 @@
 > **LoveHelping 不是一个"套壳聊天框"。** 它把三件通常被含糊过去的事做成了产品能力：
 > **① 用户不必判断"这该问知识库还是调工具"**（意图在服务端自动路由）；
 > **② 内容安全是分层的边界，而不是一句系统提示词**（危机干预 / 操控识别 / 域外拦截三层，24h 生效）；
-> **③ 评测有真值、有对照、有量具标定**（检索 45 例 + 答案 16 例判分，650 项单测、27 项真实 E2E）。
+> **③ 评测有真值、有对照、有量具标定**（检索 45 例 + 答案 16 例判分，656 项单测、27 项真实 E2E）。
 > `docker compose up -d` 即可拉起完整栈。
 
 ## 🎯 为什么做这个
@@ -189,12 +189,41 @@ flowchart LR
 |---|---|
 | 📐 技术决策记录（ADR） | **92 条**（`docs/03`，含被推翻结论的修订标注 —— 不改写历史） |
 | 🗄 数据库迁移 | **37 个 Flyway 迁移**，DDL 只走迁移，不手改 schema |
-| ✅ 单元测试 | **650 项全绿**（后端；前端另 **276 项**） |
+| ✅ 单元测试 | **656 项全绿**（后端；前端另 **278 项**） |
 | 🧪 真实 E2E | **27 项**（真实 HTTP / SSE / 数据库，非 mock） |
 | 🎯 检索评测 | 45 例 ground-truth：**Recall@5 0.96 · MRR@5 0.885**（生产配置） |
 | 💬 答案质量 | 16 例 × 3 轮 LLM 判分：**0.89**（并做过"缺陷前 / 修复后"对照：**0.35 → 0.89**） |
 | ⚡ 容量实测 | LLM 通道厂商并发上限 **≈24**（超出立即 429）；embedding ≥64、rerank ≥32 无 429 |
 | 🧰 评测脚本 | **104 个**（检索 / 答案 / Agent / 护栏 / 压测 / 上游探测），全部随仓库维护 |
+
+### 🔁 怎么复现上面这些数字
+
+数字不是装饰。下面每条命令都能在本机跑出与表格一致的结果（CI 用同一套脚本）：
+
+```bash
+# 1) 后端单测：零外部依赖，约 90s
+./mvnw -B test                       # → Tests run: 656, Failures: 0
+
+# 2) 前端单测：约 15s
+cd front && npm test                 # → 278 passed
+
+# 3) 覆盖率门槛 + 静态检查 + 集成测试（需 Docker，约 4min）
+./mvnw -B verify                     # → LINE ≥ 0.52（实测 0.547）、SpotBugs High=0、IT 40 项
+                                     #    以 "All coverage checks have been met." 结尾才算过
+
+# 4) 契约漂移与规格结构
+python scripts/check_api_contract.py # → MISSING=0
+openspec validate --strict           # → 4 个 capability spec 通过
+
+# 5) 真实栈 E2E：需 MySQL/PG/Redis + 真实 LLM key
+java -jar mcp-server/target/mcp-server-0.0.1-SNAPSHOT.jar &   # 工具面 :8125
+java -jar target/lwx-ai-agent-0.0.1-SNAPSHOT.jar &            # 主应用 :8088
+python scripts/e2e_live.py --base http://localhost:8088/api   # → 27/27
+```
+
+> ⚠️ 第 3 步会**真的启动容器**（Testcontainers）与 SpotBugs；第 5 步会**真的调模型**，产生 Token 费用。
+> 缺 Docker 时集成测试显示 SKIP 而非假绿；缺 key 时 E2E 跑不起来——这两种情况都不算通过。
+
 
 **方法论上刻意守的几条**（也都是踩过坑才写下的）：
 
@@ -261,7 +290,7 @@ flowchart LR
 提交前请跑：
 
 ```bash
-./mvnw test                                     # 650 项后端单测（前端：cd front && npm test）
+./mvnw test                                     # 656 项后端单测（前端：cd front && npm test）
 python scripts/e2e_live.py --base http://localhost:8088/api   # 27 项真实 E2E
 ```
 
