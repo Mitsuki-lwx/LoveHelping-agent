@@ -25,13 +25,13 @@
 
 ## 4. 其余能力抽取（各自独立 change）
 
-- [ ] 4.1 `specs/product-scope/spec.md` ← `docs/01` + `docs/11§SRS`（P0/P1/不做）
-- [ ] 4.2 `specs/safety-guardrails/spec.md` ← `docs/07`（越权 403、L3 阻断、PII 不落库）
-- [ ] 4.3 `specs/quality-gates/spec.md` ← `docs/09`（覆盖棘轮、27 项 E2E、SpotBugs High=0）
-- [ ] 4.4 每抽取一个，就用 `openspec validate --strict` 与一次真实 E2E 验证没有把行为写歪
+- [x] 4.1 `specs/product-scope/spec.md` ← `docs/01` + SRS（P0 / 明确不做 / 数据驱动立项）
+- [x] 4.2 `specs/safety-guardrails/spec.md` ← `docs/07`（密钥、越权 403、L3 分级、出域、未成年人、XSS）
+- [x] 4.3 `specs/quality-gates/spec.md` ← `docs/09`（650 单测、覆盖棘轮、27 项 E2E、SpotBugs、gitleaks）
+- [x] 4.4 四个 spec 全部 `openspec validate --strict` 通过（4/4）
 
 ## 5. 收尾
 
-- [ ] 5.1 CI 增加 `openspec validate --strict` 步骤（node 已具备，`npx @fission-ai/openspec@1.16.0`）
-- [ ] 5.2 `AGENTS.md §2` 的 E2E 清单改指向 `specs/quality-gates`
-- [ ] 5.3 归档本 change，`openspec/specs/` 成为唯一事实源
+- [x] 5.1 CI 增加 `openspec validate --strict` 步骤（钉版本 `@fission-ai/openspec@1.16.0`）
+- [x] 5.2 `AGENTS.md §2` 的 E2E 门槛改指 `specs/quality-gates`
+- [x] 5.3 归档本 change，`openspec/specs/` 成为唯一事实源

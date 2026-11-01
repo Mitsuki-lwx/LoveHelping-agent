@@ -21,13 +21,13 @@
 | `docs/03-技术决策记录.md` | ADR-1…93 | 冻结：**不再新增 ADR**；新决策进 `design.md` |
 | `archive/` | 更早的历史资料 | 不参考 |
 
-例外（机器依赖，迁移完成前保持可读）：`scripts/check_api_contract.py` 仍读 `docs/05-API契约设计.md`；迁移后改指 `openspec/specs/api-contract/spec.md`。
+例外：无。`scripts/check_api_contract.py` 已改读 `openspec/specs/api-contract/spec.md`（缺失时回退 `docs/05` 兜底）。
 
 ## 2. 每次修改必须端到端验证（硬性纪律）
 
 **Definition of Done = 编译通过 + 相关单测通过 + 触达面的 E2E 冒烟通过。** 三者缺一不可，只有编译通过不算完成。
 
-- E2E 冒烟最小路径与命令见 `docs/09-测试策略.md` §7（登录 → SSE 聊天 → RAG → Agent → 记忆 → 安全负向用例）。
+- 门槛与实测基线见 `openspec/specs/quality-gates/spec.md`；历史细节在 `docs/09-测试策略.md` §7（登录 → SSE 聊天 → RAG → Agent → 记忆 → 安全负向用例）。
 - 改动触达哪个面，就跑哪一段冒烟：动认证/拦截器跑 §7.1+§7.6；动聊天管道跑 §7.2–7.4；动 Agent/工具跑 §7.5。
 - 本地依赖（MySQL/Redis/API Key）不可用时：明确声明"未做 E2E 验证"并列出待验证项，不得默认通过。
 

@@ -35,6 +35,11 @@ jobs:
       #    这道门守的是"同一段文本被复制成多份后各自演化"+ prompt 的**分档结构契约**。
       - name: Prompt drift check
         run: python3 scripts/check_prompt_drift.py
+      # ⛔ OpenSpec 结构校验（change migrate-docs-to-specs / 5.1）：
+      #    specs 与在途 change 必须结构合法，否则"唯一事实源"就是一句口头承诺。
+      #    版本钉死，避免上游格式变更让门禁无声改变含义。
+      - name: OpenSpec validate
+        run: npx --yes @fission-ai/openspec@1.16.0 validate --strict
 
   # ---- 前端单测（27 条，2026-10-01 接入）----
   # ⛔ 此前 CI **完全不碰前端**（无 node/npm 步骤）—— 而 `front/src/__tests__/sseEventRouting.test.js`
