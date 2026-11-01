@@ -13,11 +13,12 @@
 
 ## 2. 归属校验收口
 
-- [ ] 2.1 新增 `Ownership` 组件（加载 + 归属判定，404/403 语义分离）
-- [ ] 2.2 把 `ActionItemService.owned`、`InsightService`、`MemoryService` 等手写比对改为走统一入口
-- [ ] 2.3 新增 `OwnershipMatrixTest`：反射枚举 `{id}` 型端点，用"用户 A 的 token + 用户 B 的资源"断言 403
-- [ ] 2.4 白名单机制：`@SkipOwnershipMatrix("理由")`，CI 打印白名单条数（防止无限增长）
-- [ ] 2.5 跑 E2E 27 项 + 单测，确认无行为回归
+- [x] 2.1 新增 `Ownership` 组件（`require` 严格版 401/404/403；`requireOrNull` 宽松版含显式 userId 重载）
+- [x] 2.2a 首批迁移：`ActionItemService.owned` 改走 `Ownership.requireOrNull(userId, …)`
+- [ ] 2.2b 其余手写比对逐步收口（`InsightService`、`MemoryService` 等）；本变更不强制一次改完
+- [x] 2.3 新增 `OwnershipInventoryTest`（方案 A）：扫描 26 个 `{*Id}` 端点，要求方法体内有归属校验信号
+- [x] 2.4 反向验证：植入一个无守卫端点 → 测试变红并打印「文件:行」；删除 → 变绿（证明不是恒真判据）
+- [ ] 2.5 跑 E2E 27 项 + 单测，确认无行为回归（单测 651/651 已过，E2E 待跑）
 
 ## 3. 限流默认开启（行为变更，独立提交）
 

@@ -23,9 +23,12 @@ import java.util.List;
 public class ActionItemService {
 
     private final ActionItemMapper actionItemMapper;
+    private final cn.lwx.lwxaiagent.tenant.Ownership ownership;
 
-    public ActionItemService(ActionItemMapper actionItemMapper) {
+    public ActionItemService(ActionItemMapper actionItemMapper,
+                             cn.lwx.lwxaiagent.tenant.Ownership ownership) {
         this.actionItemMapper = actionItemMapper;
+        this.ownership = ownership;
     }
 
     /** 单条行动项最多字数（超出截断，避免长句不便勾选） */
@@ -109,10 +112,12 @@ public class ActionItemService {
         return actionItemMapper.updateById(item) > 0;
     }
 
+    /**
+     * 归属校验（change security-hardening / 2.2 首批迁移到统一入口）。
+     * 语义保持"返回 null = 不是你的"，由调用方决定后续动作。
+     */
     private ActionItem owned(String userId, Long id) {
         if (userId == null || id == null) return null;
-        ActionItem item = actionItemMapper.selectById(id);
-        if (item == null) return null;
-        return userId.equals(item.getUserId()) ? item : null;
+        return ownership.requireOrNull(userId, actionItemMapper.selectById(id), ActionItem::getUserId);
     }
 }

@@ -41,12 +41,18 @@ public <T> T require(Supplier<T> loader, Function<T,String> ownerOf, String user
 - 资源不存在 → 404 语义；存在但非本人 → 403。
 - 强制所有按 id 取数的路径走它。
 
-**矩阵测试**：扫描控制器里带 `{id}` 的 `@GetMapping/@DeleteMapping`，对每个端点用"用户 B 的 id + 用户 A 的 token"
-发请求，断言 403。清单从**注解反射**生成，不手写——手写清单会腐烂。
-这是本变更最关键的一条：**它让"下一次漏写"必然变红**。
+**盘点测试（方案 A，2026-11-01 决策）**：扫描控制器源码里所有带 `{*Id}` 的映射，要求处理函数体内
+出现归属校验信号（`checkOwnership(` / `ownership.require` / `owned(` / `getUserId()` /
+`requireUserId()` / `adminGuard` / `@RequireRole`）；缺失即失败并打印「文件:行」。
 
-**代价**：反射枚举需要构造合法路径参数（`{id}` 替换成 B 的资源 id），对资源类型多的端点要建夹具；
-初期允许 `@SkipOwnershipMatrix` 白名单，但必须逐条写理由，且 CI 打印白名单条数。
+为什么不选运行时矩阵（26 个端点 × 每类资源造夹具 + 真起上下文，约 1–2 天）：
+本仓测试分层是「Mockito 单测 + Testcontainers IT + 脚本级 E2E」，塞一个 MockMvc 矩阵会破坏分层，
+而它要证明的**行为**已经由 E2E 的跨用户负向用例覆盖。方案 A 补的是**遗漏检测**，成本约 1/10。
+
+**代价（写清楚）**：它是源码启发式，不是运行时断言——一个"调了 `getUserId()` 却没真比对"的端点能骗过它。
+因此配套要求：信号必须出现在**处理函数体内**，且 `OwnershipInventoryTest` 已做过**反向验证**
+（植入一个无守卫端点 → 变红；删除 → 变绿），确保它不是恒真判据。
+同一 `{id}` 端点若把校验藏进 service，需在控制器里留下可识别信号（如 `requireUserId()`）。
 
 ## 4. 前端 scheme 白名单
 
