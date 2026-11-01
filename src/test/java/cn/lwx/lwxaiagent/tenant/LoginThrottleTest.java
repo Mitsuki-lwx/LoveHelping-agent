@@ -23,10 +23,49 @@ class LoginThrottleTest {
     @SuppressWarnings("unchecked")
     private final ValueOperations<String, String> ops = mock(ValueOperations.class);
     private final LoginThrottleProperties props = new LoginThrottleProperties();
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
 
     private LoginThrottle throttle() {
         when(redis.opsForValue()).thenReturn(ops);
-        return new LoginThrottle(redis, props, new SimpleMeterRegistry());
+        return new LoginThrottle(redis, props, meters);
+    }
+
+    @Test
+    void shadow_命中退避也不拦截但记指标与日志() {
+        props.setMode(LoginThrottleProperties.Mode.SHADOW);
+        when(redis.getExpire("auth:lock:user:u1")).thenReturn(90L);
+
+        assertDoesNotThrow(() -> throttle().check("u1", "1.1.1.1"),
+                "shadow 只判定不拦截，否则就不是标定而是上线");
+
+        assertEquals(1.0, meters.counter("auth.throttle.shadow_block", "dimension", "user").count());
+    }
+
+    @Test
+    void shadow_未命中退避时不产生would_block() {
+        props.setMode(LoginThrottleProperties.Mode.SHADOW);
+        when(redis.getExpire(anyString())).thenReturn(-1L);
+        throttle().check("u1", "1.1.1.1");
+        assertEquals(0.0, meters.counter("auth.throttle.shadow_block", "dimension", "user").count());
+    }
+
+    @Test
+    void off_完全不碰Redis() {
+        props.setMode(LoginThrottleProperties.Mode.OFF);
+        LoginThrottle t = throttle();
+        t.check("u1", "1.1.1.1");
+        t.onFailure("u1", "1.1.1.1");
+        t.onSuccess("u1");
+        verifyNoInteractions(redis);
+    }
+
+    @Test
+    void evaluate_是纯判定不抛异常() {
+        when(redis.getExpire("auth:lock:user:u1")).thenReturn(60L);
+        LoginThrottle.Verdict v = throttle().evaluate("u1", "1.1.1.1");
+        assertTrue(v.locked());
+        assertEquals("user", v.dimension());
+        assertEquals(60L, v.retryAfterSec());
     }
 
     @Test

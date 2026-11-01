@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * 登录失败节流配置（change security-hardening / task 4）。
+ * 登录失败节流配置（change security-hardening；三态由 change login-throttle-shadow 引入）。
  *
  * <p>两个维度独立计数：<b>账号</b>（防止专打一个账号）与<b>来源 IP</b>（防止换账号横向撞库）。</p>
  */
@@ -18,8 +18,13 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "app.auth.login-throttle")
 public class LoginThrottleProperties {
 
-    /** 总开关。关闭后登录失败不再计数，启动日志会 WARN。 */
-    private boolean enabled = true;
+    /** 运行形态：OFF 不计数 / SHADOW 只判定不拦截（上线前标定）/ ENFORCE 拦截。 */
+    public enum Mode {
+        OFF, SHADOW, ENFORCE
+    }
+
+    /** 默认 ENFORCE：本变更不改变现网行为，shadow 是标定手段而非长期态。 */
+    private Mode mode = Mode.ENFORCE;
 
     /** 账号维度：窗口内允许的连续失败次数，达到即开始退避。 */
     @Min(1) @Max(100) private int maxAttempts = 5;

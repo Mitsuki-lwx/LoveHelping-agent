@@ -559,6 +559,15 @@ app:
       username: postgres
       password: ${PGVECTOR_PASSWORD:}                  # 从环境变量读取
 
+  # 登录失败节流（change security-hardening；三态见 change login-throttle-shadow）
+  #   mode: ENFORCE（默认，命中即 429）/ SHADOW（只记 would_block，不拦）/ OFF（不计数）
+  #   切 SHADOW 是为了**上线前量误伤**；切回 ENFORCE 时影子期攒下的失败会计入真实锁定。
+  auth:
+    login-throttle:
+      mode: ${LOGIN_THROTTLE_MODE:ENFORCE}
+      max-attempts: ${LOGIN_THROTTLE_MAX_ATTEMPTS:5}
+      max-ip-attempts: ${LOGIN_THROTTLE_MAX_IP_ATTEMPTS:20}
+
   # 速率限制配置（防止用户频繁调用 API）
   rate-limit:
     # change security-hardening（2026-11-01）：默认开启。此前默认关 = 口令爆破/刷接口零成本。
