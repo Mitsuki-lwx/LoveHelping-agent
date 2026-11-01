@@ -255,6 +255,25 @@ describe('LoveChat：markdown 渲染的 XSS 防线（ADR-79，P0）', () => {
     }
   })
 
+  it('⛔ 协议相对 URL（//host）不给可点链接、不给 img', async () => {
+    // change security-hardening：startsWith('/') 会把 //evil.example 当站内路径放行
+    for (const payload of ['[点我](//evil.example/p)', '![x](//evil.example/a.png)']) {
+      const el = await render(payload)
+      const a = el.find('a')
+      if (a.exists()) expect(a.attributes('href') || '').not.toMatch(/^\/\//)
+      expect(el.find('img').exists()).toBe(false)
+    }
+  })
+
+  it('站内路径（单斜杠）与 https 链接必须仍然可用（收口不许误杀）', async () => {
+    const same = await render('[回信](/api/memory/1)')
+    expect(same.find('a').exists()).toBe(true)
+    expect(same.find('a').attributes('href')).toBe('/api/memory/1')
+
+    const ext = await render('[文档](https://example.com/a)')
+    expect(ext.find('a').attributes('href')).toBe('https://example.com/a')
+  })
+
   it('裸 HTML 标签仍被转义（原有防线不许退化）', async () => {
     const el = await render('<img src=x onerror=window.__pwned=1>')
     expect(el.find('img').exists()).toBe(false)

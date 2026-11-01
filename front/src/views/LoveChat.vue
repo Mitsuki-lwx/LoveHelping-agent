@@ -273,10 +273,15 @@ function escAttr(v) {
 /**
  * 只放行 http/https 与站内相对路径 —— 拦掉 `javascript:` / `data:` 这类可执行 scheme。
  * ⛔ 只转义引号是不够的：`[点我](javascript:...)` 不需要逃出属性就能执行。
+ * ⛔ 2026-11-01（change security-hardening）：`//host` 是**协议相对 URL**，
+ *    `startsWith('/')` 会把它当站内路径放行 → 渲染成外链（钓鱼/开放跳转）。
+ *    站内路径必须是单斜杠开头，`//` 一律拒绝。
  */
 function safeUrl(raw) {
   const url = String(raw ?? '').trim()
-  if (/^https?:\/\//i.test(url) || url.startsWith('/') || url.startsWith('#')) return url
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.startsWith('/') && !url.startsWith('//')) return url
+  if (url.startsWith('#')) return url
   return ''
 }
 

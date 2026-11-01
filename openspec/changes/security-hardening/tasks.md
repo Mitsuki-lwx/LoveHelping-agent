@@ -7,9 +7,9 @@
 
 ## 1. 前端 scheme 白名单（零风险，先上）
 
-- [ ] 1.1 `front/src/views/LoveChat.vue` 的 `safeUrl` 拒绝协议相对 URL（`//host`）
-- [ ] 1.2 补用例：`//evil.example`、`javascript:`、`data:` 全部降级为纯文本；`https://` 与同源 `/api/...` 正常
-- [ ] 1.3 `npm test` 全绿（当前 276 项）
+- [x] 1.1 `front/src/views/LoveChat.vue` 的 `safeUrl` 拒绝协议相对 URL（`//host`）
+- [x] 1.2 补用例：`//evil.example`、`javascript:`、`data:` 全部降级为纯文本；`https://` 与同源 `/api/...` 正常
+- [x] 1.3 `npm test` 全绿（**278 项**，原 276 + 新增 2 条）
 
 ## 2. 归属校验收口
 
