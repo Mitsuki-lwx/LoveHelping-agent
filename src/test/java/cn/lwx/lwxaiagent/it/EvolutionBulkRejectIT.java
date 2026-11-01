@@ -71,6 +71,10 @@ class EvolutionBulkRejectIT {
      * （MysqlMigrationIT 显式 clean 后再断言"空库"）。
      */
     private static void clearSkills() {
+        // ⛔ 2026-11-01：必须先确保 Flyway 跑过。clearSkills() 在各用例开头被调用，
+        //    而迁移是在 factory() 里跑的 —— 首次调用时表还不存在，直接 DELETE 会报
+        //    "Table 'agentdb.evolution_skill' doesn't exist"（mvn verify 实测）。
+        factory();
         try (java.sql.Connection c = java.sql.DriverManager.getConnection(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
              java.sql.Statement st = c.createStatement()) {
