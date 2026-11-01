@@ -1,5 +1,8 @@
 # 05 · API 契约设计
 
+> ⚠️ **2026-11-01 起契约事实源已迁到 `openspec/specs/api-contract/spec.md`**（change `migrate-docs-to-specs`）。
+> 本文件仅作历史存档，不再更新；`scripts/check_api_contract.py` 默认已读新路径（缺失时回退本文件）。
+
 > 基线：context-path `/api`，端口 8088。OpenAPI 由 Springdoc/Knife4j 自动生成，本文定义**规范**，逐端点字段以代码注解为准。
 
 ## 1. 通信协议

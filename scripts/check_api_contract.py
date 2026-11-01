@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""API 契约漂移检查：docs/05-API契约设计.md ↔ 控制器实现（ADR-72）。
+"""API 契约漂移检查：openspec/specs/api-contract/spec.md ↔ 控制器实现（ADR-72）。
 
 AGENTS.md §1 明令"不允许代码与文档静默偏离"，但这条此前**靠人肉** ——
 2026-10-01 phase33 审计就抓到同族的事（SRS §7 把早已实现的功能标成"待立项"）。
+
+2026-11-01（change migrate-docs-to-specs）：契约事实源从 `docs/05-API契约设计.md`
+迁到 `openspec/specs/api-contract/spec.md`。新路径优先，缺失时回退旧文档，避免门禁断供。
 
 判定：
 - MISSING（文档写了、代码没有）→ ⛔ 退出码 1：文档在撒谎。
@@ -11,7 +14,7 @@ AGENTS.md §1 明令"不允许代码与文档静默偏离"，但这条此前**�
 - UNPARSED（`[/{id}]` 这类可选段）→ **显式列出**，不许静默跳过：
   "没检查"和"检查通过"必须分得开。
 
-用法：python scripts/check_api_contract.py [--doc docs/05-API契约设计.md]
+用法：python scripts/check_api_contract.py [--doc <spec.md>]
 """
 import argparse
 import io
@@ -82,7 +85,12 @@ def doc_endpoints(doc):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--doc", default=os.path.join(ROOT, "docs", "05-API契约设计.md"))
+    # ADR-93 之后的文档归属：契约事实源已迁到 openspec/specs（change migrate-docs-to-specs）。
+    # 新路径优先；仓库若还在迁移中（specs 尚未落地），回退旧 docs/05，避免门禁断供。
+    spec_doc = os.path.join(ROOT, "openspec", "specs", "api-contract", "spec.md")
+    legacy_doc = os.path.join(ROOT, "docs", "05-API契约设计.md")
+    default_doc = spec_doc if os.path.exists(spec_doc) else legacy_doc
+    ap.add_argument("--doc", default=default_doc)
     ap.add_argument("--show-extra", action="store_true")
     args = ap.parse_args()
 

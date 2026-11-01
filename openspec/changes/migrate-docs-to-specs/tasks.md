@@ -18,11 +18,10 @@
 
 ## 3. API 契约抽取（CI 依赖，优先）
 
-- [ ] 3.1 `openspec/specs/api-contract/spec.md`：按 capability 写 Requirement + Scenario，
-      覆盖 `docs/05` 里现有的全部端点（对照 `scripts/check_api_contract.py` 的解析规则）
-- [ ] 3.2 `check_api_contract.py` 增加 `--doc` 双读回退（新路径优先，旧路径兜底）
-- [ ] 3.3 切换默认值为 `openspec/specs/api-contract/spec.md`，跑一次 CI 确认 MISSING=0
-- [ ] 3.4 `docs/05` 顶部加一行"已被 specs/api-contract 取代，仅存档"
+- [x] 3.1 `openspec/specs/api-contract/spec.md`：12 个 Requirement / 34 条端点声明，覆盖 `docs/05` 全部端点并补上分析层与同意项
+- [x] 3.2 `check_api_contract.py` 改为「新路径优先、旧文档兜底」，并更新 docstring
+- [x] 3.3 实测：新 spec `MISSING=0`（声明 34 / 实现 77 / EXTRA 46，旧文档是 24/77/56）；默认无参调用已读新路径
+- [x] 3.4 `docs/05` 顶部加"已迁到 specs/api-contract，仅存档"横幅
 
 ## 4. 其余能力抽取（各自独立 change）
 
